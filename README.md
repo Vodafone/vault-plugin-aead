@@ -308,7 +308,7 @@ select "value1" as ORIGINAL,
         pii_dataset_eu.pii_aead_field0_encrypt("value1",'field0') as ENCRYPTED,
         pii_dataset_eu.pii_aead_field0_decrypt(pii_dataset_eu.pii_aead_field0_encrypt("value1",'field1'),'field1') as ENCRYPTED_DECRYPTED
 ```
-So a value encrypted in the vault api, can be decrypted in a BQ function, and vice versa
+**in other words, a value encrypted in the vault api, can be decrypted in a BQ function, and vice versa**
 
 
 # PERFORMANCE TESTING
@@ -317,13 +317,13 @@ So a value encrypted in the vault api, can be decrypted in a BQ function, and vi
 ## Notes
 I can't honestly say this was designed from the ground up, it sort of evolved into a bit of a swiss army knife. It's almost certainly not a reference implementation of a test framework, it assumes happy path, and I wouldn't dream of using it in production. But it is enough for now.
 
-Having said that - it does some cool things in quite a hacky way - inspecting the spec of the client, gathering kube metrics, saving the results
+Having said that - it does some cool things in quite a hacky way - inspecting the spec of the client machine, inspecting the spec and number of k8s pods, gathering average kube metrics, saving the results
 
 Also, it does have, and needs, 2 exponential backoff retrys - because all sorts of things can happen in distributed computing
 1. uses Hashi's http retry client so that http errors are caught and retried - test this by putting an invalid url for vault in
 2. uses Go's retry package to wrap the http retry, so that errors returned from vault (but that are successfull http call) are retried - put an invalid token in to see this in action.
 
-**DON'T FORGET TO SET THE KEYSETS UP FIRST USING THE createAEADkey or createDAEADkey for each field 'field0....fieldn'**
+**BEFORE TESTING - DON'T FORGET TO SET THE KEYSETS UP FIRST USING THE createAEADkey or createDAEADkey for each field 'field0....fieldn'**
 ## Quick start
 ```
 git clone https://github.com/Vodafone/vault-plugin-aead.git
