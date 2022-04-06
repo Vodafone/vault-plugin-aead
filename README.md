@@ -36,7 +36,7 @@ VAULT AEAD SECRETS PLUGIN
 
 # INSPIRATION
 
-https://open.nytimes.com/we-built-a-plugin-but-its-not-a-secret-dfdf68b0e44f
+https://open.nytimes.com/we-built-a-plugin-but-its-not-a-secret-dfdf68b0e44f (an epiphany that we could use the config to store keys and implement something akin to transit engine using those keys)
 
 https://learn.hashicorp.com/tutorials/vault/plugin-backends?in=vault/secrets-management
 
