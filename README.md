@@ -58,12 +58,12 @@ Houston we have a problem… we want to implement Google Tink encryption for PII
 * To have RBAC policies that allow separation of administration, encryption and decryption roles
 * To have a rock-solid disaster recovery solution
 
-And we need to do this at massive scale - just one of the typical data feeds is 350 files, each of 4 million rows of data, each with 6 fields to be encrypted. In 1 hour. Thats 8.4 billion encryptions in an hour, or a rate of 2.3 million per second. There are other shapes of data with less rows and more firlds for example.
+And we need to do this at massive scale - just one of the typical data feeds is 350 files, each of 4 million rows of data, each with 6 fields to be encrypted. In 1 hour. Thats 8.4 billion encryptions in an hour, or a rate of 2.3 million per second. There are other shapes of data with less rows and more fields. Data comes in all shapes and sizes.
   
 
 # QUICK START
 ```
-git clone https://github.com/vodafone/vault-plugin-aead.git
+git clone https://github.com/Vodafone/vault-plugin-aead.git
 cd vault-plugin-aead
 go test -v -cover -race
 ```
@@ -110,9 +110,11 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1
 ```
 
 ### encrypt
-Lots of parallelisation. Splits bulk data into 1 goroutine per data row, and then every key:value pair is also a goroutine. So a file of 100 rows and 6 fields is 6000 parallel goroutines.
-Unanswered questions about whether thsi is really executed in parallel for bulk data
-Fields that do not have an encryption key are returned as-is, not errored
+Lots of parallelisation. Splits bulk data into 1 goroutine per data row, and then every key:value pair is also a goroutine. So a file of 1000 rows and 6 fields is 6000 parallel goroutines.
+Unanswered questions about whether thsi is really executed in parallel for bulk data when in a container.
+Fields that do not have an encryption key are returned as-is and not errored
+Note there is a 32Mb json restriction on http message size - the client is expected to handle this
+
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d '{"fieldname":"plaintext"}'
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d '{"fieldname1":"plaintext","fieldname2":"plaintext",...}'
@@ -122,9 +124,9 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1
 
 ### decrypt
 Lots of parallelisation. Splits bulk data into 1 goroutine per data row, and then every key:value pair is also a goroutine. So a file of 1000 rows and 6 fields is 6000 parallel goroutines.
-Unanswered questions about whether thsi is really executed in parallel for bulk data
-Fields that do not have an encryption key are returned as-is, not errored
-Note 32Mb json restriction on http
+Unanswered questions about whether thsi is really executed in parallel for bulk data when in a container,
+Fields that do not have an encryption key are returned as-is, and not errored
+Note there is a 32Mb json restriction on http message size - the client is expected to handle this
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/decrypt -H "Content-Type: application/json" -d '{"fieldname":"cyphertext"}'
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/decrypt -H "Content-Type: application/json" -d '{"fieldname1":"cyphertext","fieldname2":"cyphertext",...}'
@@ -204,7 +206,7 @@ Note that a keyset for 1 field, with in this case 2 keys looks like this (this i
 
 ## BULK DATA EXAMPLE
 
-
+See performance.go makeRandomData() for an example of how to create bulk data 
 
 
 ```
@@ -315,16 +317,16 @@ So a value encrypted in the vault api, can be decrypted in a BQ function, and vi
 ## Notes
 I can't honestly say this was designed from the ground up, it sort of evolved into a bit of a swiss army knife. It's almost certainly not a reference implementation of a test framework, it assumes happy path, and I wouldn't dream of using it in production. But it is enough for now.
 
-Having said that - it does some cool thinks in quite a hacky way - inspecting the spec of the client, gathering kube metrics, saving the results
+Having said that - it does some cool things in quite a hacky way - inspecting the spec of the client, gathering kube metrics, saving the results
 
 Also, it does have, and needs, 2 exponential backoff retrys - because all sorts of things can happen in distributed computing
 1. uses Hashi's http retry client so that http errors are caught and retried - test this by putting an invalid url for vault in
-2. uses Go's retry package to wrap the http retry, so that errors returned from vault (but that are successfull http call) are retried - put an invalud token in to see this in action.
+2. uses Go's retry package to wrap the http retry, so that errors returned from vault (but that are successfull http call) are retried - put an invalid token in to see this in action.
 
 **DON'T FORGET TO SET THE KEYSETS UP FIRST USING THE createAEADkey or createDAEADkey for each field 'field0....fieldn'**
 ## Quick start
 ```
-git clone https://github.com/vodafone/vault-plugin-aead.git
+git clone https://github.com/Vodafone/vault-plugin-aead.git
 cd vault-plugin-aead/cmd/performance
 go build
 (or if destined for Linux: env GOOS=linux GOARCH=amd64 go build)
