@@ -424,3 +424,6 @@ deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back ag
 * Settle on the 'Additional Data' - right now i have used the name of the field, i think this is industry practice, but what is VF's strategy
 * Test behaviour and performance for different data shapes
 * Write another test framework. Right now the author of the plugin also authored the performance test framework - so if I missed, or mis-calculated something - I probably did it in both places
+* Confirm that it is impossible to decode the plaintext-binary-kms-encrypted keyset
+* Determine the impact on performance of having the Vault audit logs enabled
+* Figure out where the logging is going
