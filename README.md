@@ -163,7 +163,7 @@ curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_URL}/v1/aead-se
 ### bqsync
 Sync keysets to a defined BQ dataset so the same key can be wholey used in BQ
 Consider this a draft endpoint for now. It functionally works fine, but...
-1. It hard-codes the project and BQ dataset to place the routines in
+1. It hard-codes the project and BQ dataset to place the routines in and the KMS to use - consider using config for this too
 2. The Determinstic BQ stuff is not GA from Google - you have to have the projects(s) whitelisted
 
 
@@ -259,27 +259,26 @@ if the column based endpoints are used, internally this will be pivoted to the b
 
 
 The code identifies that we are dealing with bulk data because the first key of the first element is "0" (ie row zero.) TODO - there must be a better way - maybe make an explicit endpoint and let the client decide
-Note that in Vault, data is passed in and returned back as 
+Note that in Vault, data is passed in and returned back as...
 
 ```
 map[string]interface{}
 ```
 
-For a set of key:value pairs
-such as this:
+For a set of key:value pairs such as this...
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/decrypt -H "Content-Type: application/json" -d '{"fieldname1":"cyphertext","fieldname2":"cyphertext",...}'
 ```
-the keys are the fields and the values are the text - in other words tha map is asserted to be:
+where the keys are the fields and the values are the text - in other words tha map is asserted to be...
 ```
 map[string]string
 ```
 
-However, for bulk data it is still of type 
+However, for bulk data it is still of type...
 ```
 map[string]interface{}
 ```
-but interface{} is actually another map - so it is asserted to be:
+but interface{} is actually another map - so it is asserted to be...
 ```
 map[string]map[string]string
 ```
@@ -302,7 +301,7 @@ Using the keys synced over using the bqsync endpoint
 
 ![alt text](jpg-files/EaaS-BQEncryption.jpg "BigQuery Encryption")
 
-The purpose of this is not to dwell on thye BQ side of things but the bqsync endpoint puts the SAME KEY into BQ so that operations like this can be done
+The purpose of this is not to dwell on the BQ side of things but the bqsync endpoint puts the SAME KEY into BQ so that operations like this can be done
 ```
 select "value1" as ORIGINAL,
         pii_dataset_eu.pii_aead_field0_encrypt("value1",'field0') as ENCRYPTED,
@@ -410,7 +409,7 @@ deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back ag
 
 # LIMITATIONS AND TODO's
 * Choose between Autoscaling on AutoPilot or a fixed GKE cluster with a CUD. If autopilot chosen we need to fully understand the behaviour of the horizonal autoscaler. For example when a vault container is routed bulk data it can be near 100% cpu. But if 3/10 pods are at 100% does it scale up as 3 pods are max, or will it say on average it is 30% so we are fine - and what is the impact of this on performance and 'warm-up' time.
-* Choose between a sepertate vault per market (urghh) or a seperate engine per market (hurrah)
+* Choose between a seperate vault per market (urghh) or a seperate engine per market (hurrah). Confirm configs are seperate.
 * Test the mechanism such the config (ie Keys) are not destroyed when a new version of the plugin is created
 * Consider KMS encrypting the keys in consul. The downside to this is that unless column level batch ops are used, or some clever key caching and TTL is employed, every encryption or decryption operation will have to be retrieve the key (this is fine its in memory) but will also have to use KMS - billions of ops
 * Implement a keyset delete, and key disable endpoint
@@ -424,6 +423,7 @@ deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back ag
 * Settle on the 'Additional Data' - right now i have used the name of the field, i think this is industry practice, but what is VF's strategy
 * Test behaviour and performance for different data shapes
 * Write another test framework. Right now the author of the plugin also authored the performance test framework - so if I missed, or mis-calculated something - I probably did it in both places
-* Confirm that it is impossible to decode the plaintext-binary-kms-encrypted keyset
+* Confirm that it is impossible to decode the plaintext-binary-kms-encrypted keyset that is stored in the BQ routine on bq sync
+* Decide on whwre to keep the config for target BQ routines
 * Determine the impact on performance of having the Vault audit logs enabled
 * Figure out where the logging is going
