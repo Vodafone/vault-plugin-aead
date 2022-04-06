@@ -311,6 +311,10 @@ select "value1" as ORIGINAL,
 
 
 # PERFORMANCE TESTING
+
+**5 Million encryptions/decryptions per second have been achieved with a large performance test rig and pods of 300 x 8 CPU**
+- this claim needs to be independently verified
+
 ![alt text](jpg-files/EaaS-PerformanceTesting.jpg "Perormance Testing")
 
 ## Notes
@@ -424,6 +428,6 @@ deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back ag
 * Test behaviour and performance for different data shapes
 * Write another test framework. Right now the author of the plugin also authored the performance test framework - so if I missed, or mis-calculated something - I probably did it in both places
 * Confirm that it is impossible to decode the plaintext-binary-kms-encrypted keyset that is stored in the BQ routine on bq sync
-* Decide on whwre to keep the config for target BQ routines
+* Decide on where to keep the config for target BQ routines
 * Determine the impact on performance of having the Vault audit logs enabled
 * Figure out where the logging is going
