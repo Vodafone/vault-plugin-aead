@@ -20,6 +20,13 @@ import (
 var aeadConfig = cmap.New()
 
 func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	return b.pathConfigWriteOverwriteCheck(ctx, req, data, false)
+}
+func (b *backend) pathConfigOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	return b.pathConfigWriteOverwriteCheck(ctx, req, data, true)
+
+}
+func (b *backend) pathConfigWriteOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
 
 	if err := data.Validate(); err != nil {
 		return nil, logical.CodedError(422, err.Error())
@@ -27,6 +34,14 @@ func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, dat
 
 	// iterate through the supplied map, adding it to the config map
 	for k, v := range data.Raw {
+		if !overwrite {
+			// don't do this if we already have a key in the config - prevents overwrite
+			_, ok := aeadConfig.Get(k)
+			if ok {
+				hclog.L().Info("pathConfigWrite - key already exists " + k)
+				continue
+			}
+		}
 		aeadConfig.Set(k, v)
 	}
 
@@ -38,6 +53,16 @@ func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, dat
 
 	if err := req.Storage.Put(ctx, entry); err != nil {
 		return nil, err
+	}
+
+	return nil, nil
+}
+
+func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	// iterate through the supplied map, deleting from the store
+	for k, _ := range data.Raw {
+		req.Storage.Delete(ctx, k)
 	}
 
 	return nil, nil
@@ -122,7 +147,7 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 					}, nil
 				}
 				RotateKeys(kh, true)
-				saveKeyToConfig(kh, fieldName, b, ctx, req)
+				saveKeyToConfig(kh, fieldName, b, ctx, req, true)
 			} else {
 				kh, _, err := CreateInsecureHandleAndAead(encryptionKeyStr)
 				if err != nil {
@@ -132,7 +157,7 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 					}, nil
 				}
 				RotateKeys(kh, false)
-				saveKeyToConfig(kh, fieldName, b, ctx, req)
+				saveKeyToConfig(kh, fieldName, b, ctx, req, true)
 			}
 		}
 	}

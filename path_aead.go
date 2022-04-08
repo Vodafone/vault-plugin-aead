@@ -16,6 +16,14 @@ import (
 )
 
 func (b *backend) pathAeadCreateDeterministicKeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	return b.pathAeadCreateDeterministicKeysOverwriteCheck(ctx, req, data, false)
+}
+
+func (b *backend) pathAeadCreateDeterministicKeysOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	return b.pathAeadCreateDeterministicKeysOverwriteCheck(ctx, req, data, true)
+}
+
+func (b *backend) pathAeadCreateDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
 
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
@@ -27,6 +35,15 @@ func (b *backend) pathAeadCreateDeterministicKeys(ctx context.Context, req *logi
 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for fieldName, unencryptedData := range data.Raw {
+
+		if !overwrite {
+			// don't do this if we already have a key in the config - prevents overwrite
+			_, ok := aeadConfig.Get(fieldName)
+			if ok {
+				resp[fieldName] = fieldName + " key exists"
+				continue
+			}
+		}
 
 		// create new DAEAD key
 		keysetHandle, tinkDetAead, err := CreateNewDeterministicAead()
@@ -54,16 +71,23 @@ func (b *backend) pathAeadCreateDeterministicKeys(ctx context.Context, req *logi
 		// set the response as the base64 encrypted data
 		resp[fieldName] = b64.StdEncoding.EncodeToString(cypherText)
 
-		// extract the key that could be stored
-		saveKeyToConfig(keysetHandle, fieldName, b, ctx, req)
+		// extract the key that could be stored, do not overwrite
+		saveKeyToConfig(keysetHandle, fieldName, b, ctx, req, true)
 	}
 
 	return &logical.Response{
 		Data: resp,
 	}, nil
 }
-
 func (b *backend) pathAeadCreateNonDeterministicKeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	return b.pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx, req, data, false)
+}
+
+func (b *backend) pathAeadCreateNonDeterministicKeysOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	return b.pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx, req, data, true)
+}
+
+func (b *backend) pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
 
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
@@ -75,6 +99,15 @@ func (b *backend) pathAeadCreateNonDeterministicKeys(ctx context.Context, req *l
 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for fieldName, unencryptedData := range data.Raw {
+
+		if !overwrite {
+			// don't do this if we already have a key in the config - prevents overwrite
+			_, ok := aeadConfig.Get(fieldName)
+			if ok {
+				resp[fieldName] = fieldName + " key exists"
+				continue
+			}
+		}
 
 		// create new DAEAD key
 		keysetHandle, tinkAead, err := CreateNewAead()
@@ -102,8 +135,8 @@ func (b *backend) pathAeadCreateNonDeterministicKeys(ctx context.Context, req *l
 		// set the response as the base64 encrypted data
 		resp[fieldName] = b64.StdEncoding.EncodeToString(cypherText)
 
-		// extract the key that could be stored
-		saveKeyToConfig(keysetHandle, fieldName, b, ctx, req)
+		// extract the key that could be stored, do not overwrite
+		saveKeyToConfig(keysetHandle, fieldName, b, ctx, req, true)
 	}
 
 	return &logical.Response{
@@ -132,8 +165,7 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 	var respStruct = logical.Response{}
 	var resp = &respStruct
 
-	// is there a value for key="0" - if there is, it is bulk data
-	_, isBulk := data.Raw["0"]
+	isBulk, _ := isBulkData(data.Raw)
 
 	if isBulk {
 
@@ -321,13 +353,22 @@ func doEncryptionChan(fieldName string, unencryptedData interface{}, data *frame
 		}
 	} else {
 		// we didn't find a key - return original data
-		hclog.L().Info("did not find a key for field %s", fieldName)
+		hclog.L().Info("did not find a key for field " + fieldName)
 		resp[fieldName] = fmt.Sprintf("%s", unencryptedData)
 	}
 	ch <- resp
 }
 
-func saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string, b *backend, ctx context.Context, req *logical.Request) {
+func saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string, b *backend, ctx context.Context, req *logical.Request, overwrite bool) {
+
+	if !overwrite {
+		// don't do this if we already have a key in the config - prevents overwrite
+		_, ok := aeadConfig.Get(fieldName)
+		if ok {
+			hclog.L().Error("saveKeyToConfig - key already exists " + fieldName)
+			return
+		}
+	}
 	// extract the key that could be stored
 	// save the new key into config
 	keyAsJson, err := ExtractInsecureKeySetFromKeyhandle(keysetHandle)
@@ -336,9 +377,6 @@ func saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string, b *backend, 
 	}
 
 	aeadConfig.Set(fieldName, keyAsJson)
-
-	// data.Raw = aeadConfig.Items()
-	// b.pathConfigWrite(ctx, req, &dn)
 
 	m1 := make(map[string]interface{})
 	m1[fieldName] = keyAsJson
@@ -349,7 +387,11 @@ func saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string, b *backend, 
 		Raw:    m1,
 		Schema: nil,
 	}
-	b.pathConfigWrite(ctx, req, &dn)
+	if overwrite {
+		b.pathConfigOverwrite(ctx, req, &dn)
+	} else {
+		b.pathConfigWrite(ctx, req, &dn)
+	}
 }
 
 func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -364,7 +406,7 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 	var respStruct = logical.Response{}
 	var resp = &respStruct
 
-	_, isBulk := data.Raw["0"]
+	isBulk, _ := isBulkData(data.Raw)
 
 	if isBulk {
 
@@ -498,7 +540,7 @@ func doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, ch chan
 		}
 	} else {
 		// we didn't find a key - return original data
-		hclog.L().Info("did not find a key for field %s", fieldName)
+		hclog.L().Info("did not find a key for field " + fieldName)
 		resp[fieldName] = fmt.Sprintf("%s", encryptedDataBase64)
 	}
 	ch <- resp
@@ -525,8 +567,7 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 	var respStruct = logical.Response{}
 	var resp = &respStruct
 
-	// is there a value for key="0" - if there is, it is bulk data
-	_, isBulk := data.Raw["0"]
+	isBulk, _ := isBulkData(data.Raw)
 
 	if isBulk {
 
@@ -696,7 +737,7 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 	var respStruct = logical.Response{}
 	var resp = &respStruct
 
-	_, isBulk := data.Raw["0"]
+	isBulk, _ := isBulkData(data.Raw)
 
 	if isBulk {
 
@@ -838,7 +879,7 @@ func (b *backend) pathAeadDecryptCol(ctx context.Context, req *logical.Request, 
 			}
 		} else {
 			// we didn't find a key - return original data
-			hclog.L().Info("did not find a key for field %s", fieldName)
+			hclog.L().Info("did not find a key for field " + fieldName)
 			resp[rowNumber] = fmt.Sprintf("%s", encryptedDataBase64)
 		}
 	}
@@ -846,4 +887,18 @@ func (b *backend) pathAeadDecryptCol(ctx context.Context, req *logical.Request, 
 	return &logical.Response{
 		Data: resp,
 	}, nil
+}
+
+func isBulkData(data map[string]interface{}) (bool, error) {
+	// it is bulk data if it is a nested map
+	// map[string]map[string]interface{}
+	// else it is not bulk data because it is
+	// map[string]interface{}
+	for _, v := range data {
+		// is the value of the outer map another mnap
+		_, ok := v.(map[string]interface{})
+		return ok, nil
+	}
+	// this should never be reached
+	return false, nil
 }

@@ -99,10 +99,39 @@ func Backend(c *logical.BackendConfig) *backend {
 						ForwardPerformanceSecondary: true,
 					},
 				},
-				// Callbacks: map[logical.Operation]framework.OperationFunc{
-				// 	logical.ReadOperation:   b.pathConfigRead,
-				// 	logical.UpdateOperation: b.pathConfigWrite,
-				// },
+			},
+			// aead/configOverwrite
+			&framework.Path{
+				Pattern:         "configOverwrite",
+				HelpSynopsis:    "Configure aead secret engine.",
+				HelpDescription: "Configure aead secret engine.",
+				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathConfigRead,
+					},
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathConfigOverwrite,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+				},
+			},
+			&framework.Path{
+				Pattern:         "configDelete",
+				HelpSynopsis:    "Configure aead secret engine.",
+				HelpDescription: "Configure aead secret engine.",
+				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathConfigRead,
+					},
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathConfigDelete,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+				},
 			},
 			// aead/encrypt
 			&framework.Path{
@@ -159,9 +188,6 @@ func Backend(c *logical.BackendConfig) *backend {
 						ForwardPerformanceSecondary: true,
 					},
 				},
-				// Callbacks: map[logical.Operation]framework.OperationFunc{
-				// 	logical.UpdateOperation: b.pathKeyRotate,
-				// },
 			},
 			// aead/createAEADkey
 			&framework.Path{
@@ -178,6 +204,26 @@ func Backend(c *logical.BackendConfig) *backend {
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathAeadCreateNonDeterministicKeys,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+				},
+			},
+			// aead/createAEADkeyOverwrite
+			&framework.Path{
+				Pattern:         "createAEADkeyOverwrite",
+				HelpSynopsis:    "Create AEAD keys",
+				HelpDescription: "Create a AEAD key held in config.",
+				Fields: map[string]*framework.FieldSchema{
+					"aeadData": &framework.FieldSchema{
+						Type:        framework.TypeString,
+						Description: "Data to be Encrypted",
+						Default:     "",
+					},
+				},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathAeadCreateNonDeterministicKeysOverwrite,
 						ForwardPerformanceStandby:   true,
 						ForwardPerformanceSecondary: true,
 					},
@@ -203,6 +249,26 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
+			// aead/createDAEADkey
+			&framework.Path{
+				Pattern:         "createDAEADkeyOverwrite",
+				HelpSynopsis:    "Create DAEAD keys",
+				HelpDescription: "Create a DAEAD key held in config.",
+				Fields: map[string]*framework.FieldSchema{
+					"aeadData": &framework.FieldSchema{
+						Type:        framework.TypeString,
+						Description: "Data to be Encrypted",
+						Default:     "",
+					},
+				},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathAeadCreateDeterministicKeysOverwrite,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+				},
+			},
 			// aead/keytypes
 			&framework.Path{
 				Pattern:         "keytypes",
@@ -214,9 +280,6 @@ func Backend(c *logical.BackendConfig) *backend {
 						Callback: b.pathReadKeyTypes,
 					},
 				},
-				// Callbacks: map[logical.Operation]framework.OperationFunc{
-				// 	logical.ReadOperation: b.pathReadKeyTypes,
-				// },
 			},
 			// aead/bqsync
 			&framework.Path{

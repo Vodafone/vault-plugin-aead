@@ -47,7 +47,7 @@ func TestBackend(t *testing.T) {
 			"test2-bonjour": "le monde",
 		}
 
-		saveConfig(b, storage, data, t)
+		saveConfig(b, storage, data, false, t)
 
 		resp := readConfig(b, storage, t)
 
@@ -79,7 +79,7 @@ func TestBackend(t *testing.T) {
 		}
 
 		// store the config
-		saveConfig(b, storage, encryptionMap, t)
+		saveConfig(b, storage, encryptionMap, false, t)
 
 		// set some data to be encrypted using the keys
 		data := map[string]interface{}{
@@ -120,20 +120,20 @@ func TestBackend(t *testing.T) {
 
 		// set some data to be encrypted using the keys
 		data := map[string]interface{}{
-			"address2": "my address",
-			"phone2":   "my phone",
+			"test5-address2": "my address",
+			"test5-phone2":   "my phone",
 		}
 
-		resp := encryptDataDetermisticallyAndCreateKey(b, storage, data, t)
+		resp := encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
 
 		// retreive the encrypted data for field address
-		actualEncryptedValue := fmt.Sprintf("%v", resp.Data["address2"]) // convert the cyphertext (=interface{}) received to a string
+		actualEncryptedValue := fmt.Sprintf("%v", resp.Data["test5-address2"]) // convert the cyphertext (=interface{}) received to a string
 
 		// now read the config
 		configResp := readConfig(b, storage, t)
 
 		// get the actual Json key used from teh config for address
-		actualJSonKey := configResp.Data["address2"].(string)
+		actualJSonKey := configResp.Data["test5-address2"].(string)
 
 		// re-encrypt the data using the same key
 		_, d, err := CreateInsecureHandleAndDeterministicAead(actualJSonKey)
@@ -142,7 +142,7 @@ func TestBackend(t *testing.T) {
 		}
 
 		// encrypt it
-		ct, err := d.EncryptDeterministically([]byte("my address"), []byte("address2"))
+		ct, err := d.EncryptDeterministically([]byte("my address"), []byte("test5-address2"))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -166,7 +166,7 @@ func TestBackend(t *testing.T) {
 			"test6-address3": "my address",
 		}
 
-		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, t)
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
 
 		// encrypt the data
 		resp := encryptData(b, storage, data, t)
@@ -215,7 +215,7 @@ func TestBackend(t *testing.T) {
 			"test7-address4": rawKeyset,
 		}
 
-		saveConfig(b, storage, configData, t)
+		saveConfig(b, storage, configData, false, t)
 
 		data := map[string]interface{}{
 			"test7-address4": "my address",
@@ -264,7 +264,7 @@ func TestBackend(t *testing.T) {
 			key: value,
 		}
 
-		encryptDataDetermisticallyAndCreateKey(b, storage, data, t)
+		encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
 
 		// encrypt the data
 		respEncrypt := encryptData(b, storage, data, t)
@@ -292,7 +292,7 @@ func TestBackend(t *testing.T) {
 			key: value,
 		}
 
-		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, t)
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
 
 		// encrypt the data
 		respEncrpt := encryptData(b, storage, data, t)
@@ -328,13 +328,13 @@ func TestBackend(t *testing.T) {
 			key1: value1,
 		}
 		// create the deterministic key for key1
-		encryptDataDetermisticallyAndCreateKey(b, storage, deterministicData, t)
+		encryptDataDetermisticallyAndCreateKey(b, storage, deterministicData, false, t)
 
 		nonDeterministicData := map[string]interface{}{
 			key2: value2,
 		}
 		// create the deterministic key for key1
-		encryptDataNonDetermisticallyAndCreateKey(b, storage, nonDeterministicData, t)
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, nonDeterministicData, false, t)
 
 		data := map[string]interface{}{
 			key1: value1,
@@ -393,7 +393,7 @@ func TestBackend(t *testing.T) {
 		data := map[string]interface{}{
 			fieldName: fieldValue,
 		}
-		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, t)
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
 
 		// encrypt the data
 		encryptData(b, storage, data, t)
@@ -415,7 +415,7 @@ func TestBackend(t *testing.T) {
 		}
 
 		// encrypt the data
-		encryptDataDetermisticallyAndCreateKey(b, storage, data, t)
+		encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
 
 		resp := readKeyTypes(b, storage, t)
 
@@ -473,7 +473,7 @@ func TestBackend(t *testing.T) {
 				fieldName: fieldName,
 			}
 			// encrypt the data
-			encryptDataNonDetermisticallyAndCreateKey(b, storage, data, t)
+			encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
 			// encryptData(b, storage, data, t)
 		}
 
@@ -539,7 +539,7 @@ func TestBackend(t *testing.T) {
 				fieldName: fieldName,
 			}
 			// encrypt the data
-			encryptDataNonDetermisticallyAndCreateKey(b, storage, data, t)
+			encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
 			// encryptData(b, storage, data, t)
 		}
 
@@ -614,8 +614,8 @@ func TestBackend(t *testing.T) {
 
 	})
 
-	// t.Run("test19 fake test to debug bqsync ", func(t *testing.T) {
-	// un comment this if you need to debif bqsync
+	// t.Run("test-bqsync fake test to debug bqsync ", func(t *testing.T) {
+	// un comment this if you need to debug bqsync
 	// 	// t.Parallel()
 	// 	b, storage := testBackend(t)
 
@@ -632,6 +632,170 @@ func TestBackend(t *testing.T) {
 	// 	}
 	// })
 
+	t.Run("test19 test config and bq override-no-override ", func(t *testing.T) {
+		// t.Parallel()
+		b, storage := testBackend(t)
+
+		aeadRequest := make(map[string]interface{})
+
+		// set up some config
+		aeadRequest["test19-aead"] = "junktext"
+
+		_, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "createAEADkey",
+			Data:      aeadRequest,
+		})
+		if err != nil {
+			t.Fatal("create AEAD key", err)
+		}
+
+		daeadRequest := make(map[string]interface{})
+
+		// set up some config
+		daeadRequest["test19-daead"] = "junktext"
+
+		_, err = b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "createDAEADkey",
+			Data:      daeadRequest,
+		})
+		if err != nil {
+			t.Fatal("create DAEAD key", err)
+		}
+
+		configRequest := map[string]interface{}{
+			"test19-config": "someconfig",
+		}
+
+		saveConfig(b, storage, configRequest, false, t)
+
+		resp := readConfig(b, storage, t)
+
+		if resp == nil {
+			t.Fatal("read back storage", err)
+		}
+
+		baselineAeadValue, ok := resp.Data["test19-aead"]
+		if !ok {
+			t.Fatal("read back baselineAeadValue", err)
+		}
+		baselineDaeadValue, ok := resp.Data["test19-daead"]
+		if !ok {
+			t.Fatal("read back baselineDaeadValue", err)
+		}
+		baselineConfigValue, ok := resp.Data["test19-config"]
+		if !ok {
+			t.Fatal("read back baselineConfigValue", err)
+		}
+
+		// try to make new data - should not override
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, aeadRequest, false, t)
+		encryptDataDetermisticallyAndCreateKey(b, storage, daeadRequest, false, t)
+		configRequest2 := map[string]interface{}{
+			"test19-config": "someconfig2",
+		}
+
+		saveConfig(b, storage, configRequest2, false, t)
+
+		resp = readConfig(b, storage, t)
+
+		if resp == nil {
+			t.Fatal("read back storage", err)
+		}
+
+		newAeadValue, ok := resp.Data["test19-aead"]
+		if !ok {
+			t.Fatal("read back baselineAeadValue", err)
+		}
+		newDaeadValue, ok := resp.Data["test19-daead"]
+		if !ok {
+			t.Fatal("read back baselineDaeadValue", err)
+		}
+		newConfigValue, ok := resp.Data["test19-config"]
+		if !ok {
+			t.Fatal("read back baselineConfigValue", err)
+		}
+
+		if fmt.Sprintf("%s", baselineAeadValue) != fmt.Sprintf("%s", newAeadValue) ||
+			fmt.Sprintf("%s", baselineDaeadValue) != fmt.Sprintf("%s", newDaeadValue) ||
+			fmt.Sprintf("%s", baselineConfigValue) != fmt.Sprintf("%s", newConfigValue) {
+			t.Fatal("read back config values and they are different", err)
+		}
+
+		// try to make new data - should not override
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, aeadRequest, true, t)
+		encryptDataDetermisticallyAndCreateKey(b, storage, daeadRequest, true, t)
+		configRequest3 := map[string]interface{}{
+			"test19-config": "someconfig3",
+		}
+		saveConfig(b, storage, configRequest3, true, t)
+
+		resp = readConfig(b, storage, t)
+
+		if resp == nil {
+			t.Fatal("read back storage", err)
+		}
+
+		newAeadValue, ok = resp.Data["test19-aead"]
+		if !ok {
+			t.Fatal("read back baselineAeadValue", err)
+		}
+		newDaeadValue, ok = resp.Data["test19-daead"]
+		if !ok {
+			t.Fatal("read back baselineDaeadValue", err)
+		}
+		newConfigValue, ok = resp.Data["test19-config"]
+		if !ok {
+			t.Fatal("read back baselineConfigValue", err)
+		}
+
+		if fmt.Sprintf("%s", baselineAeadValue) == fmt.Sprintf("%s", newAeadValue) ||
+			fmt.Sprintf("%s", baselineDaeadValue) == fmt.Sprintf("%s", newDaeadValue) ||
+			fmt.Sprintf("%s", baselineConfigValue) == fmt.Sprintf("%s", newConfigValue) {
+			t.Fatal("read back config values and they are NOT different", err)
+		}
+
+		// t.Run("test20 test config delete", func(t *testing.T) {
+		// // this is commented out as delete does not work
+		// 	// t.Parallel()
+		// 	b, storage := testBackend(t)
+
+		// 	configRequest := map[string]interface{}{
+		// 		"test20-config": "someconfig",
+		// 	}
+
+		// 	saveConfig(b, storage, configRequest, false, t)
+
+		// 	resp := readConfig(b, storage, t)
+
+		// 	if resp == nil {
+		// 		t.Fatal("read back storage", err)
+		// 	}
+
+		// 	_, ok := resp.Data["test20-config"]
+		// 	if !ok {
+		// 		t.Fatal("read back baselineConfigValue", err)
+		// 	}
+
+		// 	deleteConfig(b, storage, configRequest, t)
+
+		// 	resp = readConfig(b, storage, t)
+
+		// 	if resp == nil {
+		// 		t.Fatal("read back storage", err)
+		// 	}
+
+		// 	_, ok = resp.Data["test20-config"]
+		// 	if ok {
+		// 		t.Fatal("failed to delete config", err)
+		// 	}
+		// })
+
+	})
+
 }
 
 func rotateKeySet(fieldName string, rawKeyset string, b *backend, storage logical.Storage, t *testing.T, primaryKey string) {
@@ -639,7 +803,7 @@ func rotateKeySet(fieldName string, rawKeyset string, b *backend, storage logica
 		fieldName: rawKeyset,
 	}
 
-	saveConfig(b, storage, configData, t)
+	saveConfig(b, storage, configData, false, t)
 
 	rotateConfigKeys(b, storage, configData, t)
 
@@ -729,11 +893,17 @@ func encryptDataCol(b *backend, storage logical.Storage, data map[string]interfa
 	return resp
 }
 
-func encryptDataDetermisticallyAndCreateKey(b *backend, storage logical.Storage, data map[string]interface{}, t *testing.T) *logical.Response {
+func encryptDataDetermisticallyAndCreateKey(b *backend, storage logical.Storage, data map[string]interface{}, overwrite bool, t *testing.T) *logical.Response {
+
+	pathEndpoint := "createDAEADkey"
+	if overwrite {
+		pathEndpoint = "createDAEADkeyOverwrite"
+	}
+
 	resp, err := b.HandleRequest(context.Background(), &logical.Request{
 		Storage:   storage,
 		Operation: logical.UpdateOperation,
-		Path:      "createDAEADkey",
+		Path:      pathEndpoint,
 		Data:      data,
 	})
 
@@ -743,11 +913,17 @@ func encryptDataDetermisticallyAndCreateKey(b *backend, storage logical.Storage,
 	return resp
 }
 
-func encryptDataNonDetermisticallyAndCreateKey(b *backend, storage logical.Storage, data map[string]interface{}, t *testing.T) *logical.Response {
+func encryptDataNonDetermisticallyAndCreateKey(b *backend, storage logical.Storage, data map[string]interface{}, overwrite bool, t *testing.T) *logical.Response {
+
+	pathEndpoint := "createAEADkey"
+	if overwrite {
+		pathEndpoint = "createAEADkeyOverwrite"
+	}
+
 	resp, err := b.HandleRequest(context.Background(), &logical.Request{
 		Storage:   storage,
 		Operation: logical.UpdateOperation,
-		Path:      "createAEADkey",
+		Path:      pathEndpoint,
 		Data:      data,
 	})
 
@@ -781,15 +957,35 @@ func readKeyTypes(b *backend, storage logical.Storage, t *testing.T) *logical.Re
 	return resp
 }
 
-func saveConfig(b *backend, storage logical.Storage, data map[string]interface{}, t *testing.T) {
+func saveConfig(b *backend, storage logical.Storage, data map[string]interface{}, overwrite bool, t *testing.T) {
+
+	pathEndpoint := "config"
+	if overwrite {
+		pathEndpoint = "configOverwrite"
+	}
 	_, err := b.HandleRequest(context.Background(), &logical.Request{
 		Storage:   storage,
 		Operation: logical.UpdateOperation,
-		Path:      "config",
+		Path:      pathEndpoint,
 		Data:      data,
 	})
 	if err != nil {
 		t.Fatal("saveConfig", err)
+	}
+}
+
+func deleteConfig(b *backend, storage logical.Storage, data map[string]interface{}, t *testing.T) {
+
+	pathEndpoint := "configDelete"
+
+	_, err := b.HandleRequest(context.Background(), &logical.Request{
+		Storage:   storage,
+		Operation: logical.UpdateOperation,
+		Path:      pathEndpoint,
+		Data:      data,
+	})
+	if err != nil {
+		t.Fatal("deleteConfig", err)
 	}
 }
 
@@ -800,7 +996,7 @@ func storeKeyValue(secretKey string, secretValue string, t *testing.T) {
 
 	b, storage := testBackend(t)
 
-	saveConfig(b, storage, data, t)
+	saveConfig(b, storage, data, true, t)
 
 	resp := readConfig(b, storage, t)
 
