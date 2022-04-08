@@ -102,7 +102,7 @@ curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_URL}/v1/aead-se
 writes key : value to config
 note this could overwrite an existing key
 this can also be used to import a key
-TODO - wite a protected and unprotected endpoint
+TODO - write a protected and unprotected endpoint
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/config -H "Content-Type: application/json" -d '{"key":"value"}'
 ```
@@ -110,14 +110,14 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1
 ### /createAEADkey
 creates a non deterministic keyset with 1 key of type github.com/google/tink/go/aead.AES256GCMKeyTemplate() for field "fieldname-nondet" and saves it to config
 Note this will overwrite an existing keyset
-TODO - wite a protected and unprotected endpoint
+TODO - write a protected and unprotected endpoint
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/createAEADkey -H "Content-Type: application/json" -d '{"fieldname-nondet":"junktext"}'
 ```
 ### /createDAEADkey
 creates a deterministic keyset with 1 key of type github.com/google/tink/go/daead.AESSIVKeyTemplate() for field "fieldname-det" and saves it to config
 Note this will overwrite an existing keyset
-TODO - wite a protected and unprotected endpoint
+TODO - write a protected and unprotected endpoint
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/createDAEADkey -H "Content-Type: application/json" -d '{"fieldname-det":"junktext"}' 
 ```
