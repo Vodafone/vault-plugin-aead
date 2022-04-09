@@ -4,10 +4,9 @@ VAULT AEAD SECRETS PLUGIN
 - [QUICK START](#quick-start)
   - [API endpoints](#api-endpoints)
     - [/info](#info)
-    - [/config (write)](#config-write)
     - [/config (read)](#config-read)
-    - [/config (write)](#config-write-1)
-    - [/configOverwrite (write)](#configoverwrite-write)
+    - [/config (write)](#config-write)
+    - [/configOverwrite](#configoverwrite)
     - [/configDelete](#configdelete)
     - [/createAEADkey](#createaeadkey)
     - [/createAEADkeyOverwrite](#createaeadkeyoverwrite)
@@ -100,15 +99,6 @@ returns the plugin version number as json.
 ```
 curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_URL}/v1/aead-secrets/info
 ```
-### /config (write)
-writes key : value to config. Note this DOES NOT overwrite an existing key. Can also be used to import a key.
-
-```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/config -H "Content-Type: application/json" -d '{"key":"value"}'
-```
-
-
-
 ### /config (read)
 returns the config as json - mostly keys. This is intended to be a restricted endpoint as it is in clear text. See  section on "LIMITATIONS AND TODO's"
 ```
@@ -120,7 +110,7 @@ writes key : value to config. Note this DOES NOT overwrite an existing key. Can 
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/config -H "Content-Type: application/json" -d '{"key":"value"}'
 ```
-### /configOverwrite (write)
+### /configOverwrite
 writes key : value to config. Note this could overwrite an existing key. Can also be used to import a key
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/configOverwrite -H "Content-Type: application/json" -d '{"key":"value"}'
@@ -178,13 +168,13 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1
 ```
 
 ### /encryptcol
-Column based encryption or decryption. Intended for bulk data only. Pivots the bulk data into columns - then parellizes 1 row (aka field) ata  time, re-pivots before returning. Pivoting operations are transparent to to the client, So a file of 1000 rows and 6 fields is 6 parallel goroutines. This is 2x faster when running with a local vault, but only 20% faster in a containeriseed vault. Unexplained.
+Column based encryption or decryption. Intended for bulk data only. Pivots the bulk data into columns - then parellizes 1 row (aka field) at a time, re-pivots before returning. Pivoting operations are transparent to to the client, So a file of 1000 rows and 6 fields is 6 parallel goroutines. This is 2x faster when running with a local vault, but only 20% faster in a containeriseed vault. Unexplained.
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
 ```
 
 ### /decryptcol
-Column based encryption or decryption. Intended for bulk data only. Pivots the bulk data into columns - then parellizes 1 row (aka field) ata  time, re-pivots before returning. Pivoting operations are transparent to to the client, So a file of 1000 rows and 6 fields is 6 parallel goroutines. This is 2x faster when running with a local vault, but only 20% faster in a containeriseed vault. Unexplained.
+Column based encryption or decryption. Intended for bulk data only. Pivots the bulk data into columns - then parellizes 1 row (aka field) at a time, re-pivots before returning. Pivoting operations are transparent to to the client, So a file of 1000 rows and 6 fields is 6 parallel goroutines. This is 2x faster when running with a local vault, but only 20% faster in a containeriseed vault. Unexplained.
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/decrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
 ```
