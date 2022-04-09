@@ -71,6 +71,11 @@ And we need to do this at massive scale - just one of the typical data feeds
   
 
 # QUICK START
+Download and install a local vault from Hashicorp here:
+
+https://www.vaultproject.io/downloads
+
+
 ```
 git clone https://github.com/Vodafone/vault-plugin-aead.git
 cd vault-plugin-aead
