@@ -3,6 +3,7 @@ VAULT AEAD SECRETS PLUGIN
 - [HIGH LEVEL REQUIREMENTS](#high-level-requirements)
 - [QUICK START](#quick-start)
 - [API endpoints](#api-endpoints)
+  - [Data returned](#data-returned)
   - [/info](#info)
   - [/config (read)](#config-read)
   - [/config (write)](#config-write)
@@ -104,6 +105,37 @@ If running against the local developer vault as per the quickstart then set this
 export VAULT_URL=http://127.0.0.1:8200
 export VAULT_TOKEN=root
 ```
+
+## Data returned
+Data is returned as json in this form:
+```
+{
+  "request_id": "9554c944-c378-2999-e7de-f5b246634912",
+  "lease_id": "",
+  "renewable": false,
+  "lease_duration": 0,
+  "data": {
+    "key": "value"
+  },
+  "wrap_info": null,
+  "warnings": null,
+  "auth": null
+}
+```
+where key:value could be as below, depending on the endpoint and what it returns
+```
+"version":"0.0.1"
+```
+```
+"field0":"DETERMINISTIC"
+```
+```
+"field1":"cyphertext"
+```
+```
+{"0":{"field0":"value00","field1":"value01","field2":"value02"},"1":{"field0":"value10","field1":"value11","field2":"value12"},"2":{"field0":"value20","field1":"value21","field2":"value22"}}
+```
+
 ## /info
 returns the plugin version number as json.
 ```
