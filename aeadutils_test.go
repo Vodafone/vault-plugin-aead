@@ -2,15 +2,19 @@ package aeadplugin
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/google/tink/go/insecurecleartextkeyset"
+	"github.com/google/tink/go/keyset"
 )
 
 func TestAeadUtils(t *testing.T) {
 	t.Run("test aead", func(t *testing.T) {
-		t.Parallel()
+		// t.Parallel()
 
 		rawKeyset := `{"primaryKeyId":1416257722,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBa0wZ4ACjtW137qTVSY2ofQBCffdzkzhNkktlMtDFazA==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1416257722,"outputPrefixType":"TINK"}]}`
 		// jsonKeyset := `{
@@ -94,7 +98,7 @@ func TestAeadUtils(t *testing.T) {
 
 	})
 	t.Run("test daead", func(t *testing.T) {
-		t.Parallel()
+		// t.Parallel()
 		rawKeyset := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
 		// jsonKeyset := `{
 		// 	"primaryKeyId": 42267057,
@@ -167,7 +171,7 @@ func TestAeadUtils(t *testing.T) {
 	})
 
 	t.Run("create new daead", func(t *testing.T) {
-		t.Parallel()
+		// t.Parallel()
 
 		_, d, err := CreateNewDeterministicAead()
 		if err != nil {
@@ -209,7 +213,7 @@ func TestAeadUtils(t *testing.T) {
 	})
 
 	t.Run("create new aead", func(t *testing.T) {
-		t.Parallel()
+		// t.Parallel()
 
 		_, a, err := CreateNewAead()
 		if err != nil {
@@ -239,7 +243,7 @@ func TestAeadUtils(t *testing.T) {
 	})
 
 	t.Run("test map pivot", func(t *testing.T) {
-		t.Parallel()
+		// t.Parallel()
 
 		/*
 			set up a map that looks like this:
@@ -326,7 +330,7 @@ func TestAeadUtils(t *testing.T) {
 	})
 
 	t.Run("test map pivot interface{}", func(t *testing.T) {
-		t.Parallel()
+		// t.Parallel()
 
 		/*
 			set up a map that looks like this:
@@ -408,6 +412,100 @@ func TestAeadUtils(t *testing.T) {
 		}
 		if !reflect.DeepEqual(origMap, actualMap3) {
 			t.Errorf("3 maps are not the same \nexpected=%v \nactual=%v", origMap, actualMap3)
+		}
+
+	})
+
+	t.Run("test update status", func(t *testing.T) {
+		// t.Parallel()
+		rawKeyset := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
+		// jsonKeyset := `{
+		// 	"primaryKeyId": 42267057,
+		// 	"key": [
+		// 	  {
+		// 		"keyData": {
+		// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesSivKey",
+		// 		  "value": "EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS",
+		// 		  "keyMaterialType": "SYMMETRIC"
+		// 		},
+		// 		"status": "ENABLED",
+		// 		"keyId": 42267057,
+		// 		"outputPrefixType": "TINK"
+		// 	  }
+		// 	]
+		//   }`
+
+		// create a determinstic keyhandle from the provided json as string
+		kh, _, err := CreateInsecureHandleAndDeterministicAead(rawKeyset)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		newkh, err := UpdateKeyStatus(kh, "42267057", "DISABLED")
+
+		buf := new(bytes.Buffer)
+		jsonWriter := keyset.NewJSONWriter(buf)
+
+		insecurecleartextkeyset.Write(newkh, jsonWriter)
+
+		// unmarshall the keyset
+		str := buf.String()
+		fmt.Printf("STATUS CHANGE=%s", str)
+
+		if !strings.Contains(str, "DISABLED") && strings.Contains(str, "ENABLED") {
+			t.Errorf("key was not disabled %s", str)
+		}
+
+	})
+
+	t.Run("test update material", func(t *testing.T) {
+		// t.Parallel()
+		rawKeyset := `{"primaryKeyId":3987026049,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiB5m/rHV+xmMiRngaWWi6zel8IjlOPCdEpGnEsb8RfrMQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1456486908,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCRExtHflcWVUbmk0mwB5TzqSGc3GVMu6Hk+HbL4oH61A==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3987026049,"outputPrefixType":"TINK"}]}`
+		// {
+		// 	"primaryKeyId": 3987026049,
+		// 	"key": [
+		// 	  {
+		// 		"keyData": {
+		// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesGcmKey",
+		// 		  "value": "GiB5m/rHV+xmMiRngaWWi6zel8IjlOPCdEpGnEsb8RfrMQ==",
+		// 		  "keyMaterialType": "SYMMETRIC"
+		// 		},
+		// 		"status": "ENABLED",
+		// 		"keyId": 1456486908,
+		// 		"outputPrefixType": "TINK"
+		// 	  },
+		// 	  {
+		// 		"keyData": {
+		// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesGcmKey",
+		// 		  "value": "GiCRExtHflcWVUbmk0mwB5TzqSGc3GVMu6Hk+HbL4oH61A==",
+		// 		  "keyMaterialType": "SYMMETRIC"
+		// 		},
+		// 		"status": "ENABLED",
+		// 		"keyId": 3987026049,
+		// 		"outputPrefixType": "TINK"
+		// 	  }
+		// 	]
+		//   }
+
+		// create a determinstic keyhandle from the provided json as string
+		kh, _, err := CreateInsecureHandleAndDeterministicAead(rawKeyset)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		newkh, err := UpdateKeyMaterial(kh, "1456486908", "GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==")
+
+		buf := new(bytes.Buffer)
+		jsonWriter := keyset.NewJSONWriter(buf)
+
+		insecurecleartextkeyset.Write(newkh, jsonWriter)
+
+		// unmarshall the keyset
+		str := buf.String()
+		fmt.Printf("MATERIAL CHANGE=%s", str)
+
+		if !strings.Contains(str, "GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==") {
+			t.Errorf("key material was not changed %s", str)
 		}
 
 	})

@@ -2,7 +2,9 @@ package aeadplugin
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/google/tink/go/aead"
 	"github.com/google/tink/go/daead"
@@ -158,4 +160,116 @@ func PivotMapInt(mo map[string]interface{}, nmo map[string]interface{}) {
 			}
 		}
 	}
+}
+
+type KeySetStruct struct {
+	PrimaryKeyID int64 `json:"primaryKeyId"`
+	Key          []struct {
+		KeyData struct {
+			TypeURL         string `json:"typeUrl"`
+			Value           string `json:"value"`
+			KeyMaterialType string `json:"keyMaterialType"`
+		} `json:"keyData"`
+		Status           string `json:"status"`
+		KeyID            int    `json:"keyId"`
+		OutputPrefixType string `json:"outputPrefixType"`
+	} `json:"key"`
+}
+
+func (k *KeySetStruct) GetKeyID(keyId int) (int, error) {
+	for i, key := range k.Key {
+		if key.KeyID == keyId {
+			return i, nil
+		}
+	}
+	return -1, fmt.Errorf("could not find key based on KeyID")
+}
+func (k *KeySetStruct) UpdateExistingKeyStatus(keyID int, enabled string) {
+	index, err := k.GetKeyID(keyID)
+	if err != nil || index == -1 {
+		hclog.L().Error("no KeyID found")
+	}
+	k.Key[index].Status = enabled
+}
+
+func (k *KeySetStruct) UpdateExistingKeyMaterial(keyID int, keyMaterial string) {
+	index, err := k.GetKeyID(keyID)
+	if err != nil || index == -1 {
+		hclog.L().Error("no KeyID found")
+	}
+	k.Key[index].KeyData.Value = keyMaterial
+}
+
+func UpdateKeyStatus(kh *keyset.Handle, keyId string, status string) (*keyset.Handle, error) {
+	// extract the JSON key that could be stored
+	buf := new(bytes.Buffer)
+	jsonWriter := keyset.NewJSONWriter(buf)
+
+	insecurecleartextkeyset.Write(kh, jsonWriter)
+
+	// unmarshall the keyset
+	str := buf.String()
+	var keySetStruct KeySetStruct
+	err := json.Unmarshal([]byte(str), &keySetStruct)
+	if err != nil {
+		hclog.L().Error("failed to unmarshall the keyset")
+		return nil, err
+	}
+	// update the status
+	keyInt, _ := strconv.Atoi(keyId)
+	keySetStruct.UpdateExistingKeyStatus(keyInt, status)
+
+	// make the json again
+	data, err := json.Marshal(keySetStruct)
+	if err != nil {
+		hclog.L().Error("failed to marshall the keyset")
+		return nil, err
+	}
+
+	// make a key handle from the json, if it doesnt error, its still valid
+	r := keyset.NewJSONReader(bytes.NewBufferString(string(data)))
+	newkh, err := insecurecleartextkeyset.Read(r)
+	if err != nil {
+		hclog.L().Error("Failed to make a key handle from the json:  %v", err)
+		return nil, err
+	}
+
+	return newkh, nil
+}
+
+func UpdateKeyMaterial(kh *keyset.Handle, keyId string, material string) (*keyset.Handle, error) {
+	// extract the JSON key that could be stored
+	buf := new(bytes.Buffer)
+	jsonWriter := keyset.NewJSONWriter(buf)
+
+	insecurecleartextkeyset.Write(kh, jsonWriter)
+
+	// unmarshall the keyset
+	str := buf.String()
+	var keySetStruct KeySetStruct
+	err := json.Unmarshal([]byte(str), &keySetStruct)
+	if err != nil {
+		hclog.L().Error("failed to unmarshall the keyset")
+		return nil, err
+	}
+	// update the status
+	keyInt, _ := strconv.Atoi(keyId)
+	keySetStruct.UpdateExistingKeyMaterial(keyInt, material)
+
+	// make the json again
+	data, err := json.Marshal(keySetStruct)
+	if err != nil {
+		hclog.L().Error("failed to marshall the keyset")
+		return nil, err
+	}
+
+	// make a key handle from the json, if it doesnt error, its still valid
+	r := keyset.NewJSONReader(bytes.NewBufferString(string(data)))
+	newkh, err := insecurecleartextkeyset.Read(r)
+	if err != nil {
+		hclog.L().Error("Failed to make a key handle from the json:  %v", err)
+		return nil, err
+	}
+
+	return newkh, nil
 }
