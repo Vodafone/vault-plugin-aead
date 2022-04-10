@@ -487,7 +487,8 @@ func TestAeadUtils(t *testing.T) {
 		//   }
 
 		// create a determinstic keyhandle from the provided json as string
-		kh, _, err := CreateInsecureHandleAndDeterministicAead(rawKeyset)
+		kh, _, err := CreateInsecureHandleAndAead(rawKeyset)
+
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -539,7 +540,8 @@ func TestAeadUtils(t *testing.T) {
 		//   }
 
 		// create a determinstic keyhandle from the provided json as string
-		kh, _, err := CreateInsecureHandleAndDeterministicAead(rawKeyset)
+		kh, _, err := CreateInsecureHandleAndAead(rawKeyset)
+
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -595,7 +597,8 @@ func TestAeadUtils(t *testing.T) {
 		//   }
 
 		// create a determinstic keyhandle from the provided json as string
-		kh, _, err := CreateInsecureHandleAndDeterministicAead(rawKeyset)
+		kh, _, err := CreateInsecureHandleAndAead(rawKeyset)
+
 		if err != nil {
 			log.Fatal(err)
 		}

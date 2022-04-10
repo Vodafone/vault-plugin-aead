@@ -21,11 +21,11 @@ func CreateInsecureHandleAndAead(rawKeyset string) (*keyset.Handle, tink.AEAD, e
 	kh, err := insecurecleartextkeyset.Read(r)
 
 	if err != nil {
-		hclog.L().Error("Failed to get the keyset:  %v", err)
+		hclog.L().Error("CreateInsecureHandleAndAead: Failed to get the keyset:  %v", err)
 	}
 	a, err := aead.New(kh)
 	if err != nil {
-		hclog.L().Error("Failed to get the key:  %v", err)
+		hclog.L().Error("CreateInsecureHandleAndAead:Failed to get the key:  %v", err)
 	}
 	return kh, a, nil
 }
@@ -36,11 +36,11 @@ func CreateInsecureHandleAndDeterministicAead(rawKeyset string) (*keyset.Handle,
 	kh, err := insecurecleartextkeyset.Read(r)
 
 	if err != nil {
-		hclog.L().Error("Failed to get the keyset:  %v", err)
+		hclog.L().Error("CreateInsecureHandleAndDeterministicAead: Failed to get the keyset:  %v", err)
 	}
 	d, err := daead.New(kh)
 	if err != nil {
-		hclog.L().Error("Failed to get the key:  %v", err)
+		hclog.L().Error("CreateInsecureHandleAndDeterministicAead: Failed to get the key:  %v", err)
 	}
 	return kh, d, nil
 }

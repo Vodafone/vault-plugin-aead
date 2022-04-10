@@ -430,20 +430,22 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 
 			// update the status, get a new heyhandle
 			newKh, err := UpdateKeyStatus(kh, keyId, statusStr)
-			if err != nil {
+			if err != nil || newKh == nil {
 				hclog.L().Error("failed to update the status")
+				resp[fieldName] = "failed to update the status"
+			} else {
+
+				// save the keyhandle for the field
+				saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+
+				// extract the JSON from the new key
+				buf := new(bytes.Buffer)
+				jsonWriter := keyset.NewJSONWriter(buf)
+				insecurecleartextkeyset.Write(newKh, jsonWriter)
+				// unmarshall the keyset
+				str := buf.String()
+				resp[fieldName] = str
 			}
-
-			// save the keyhandle for the field
-			saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
-
-			// extract the JSON from the new key
-			buf := new(bytes.Buffer)
-			jsonWriter := keyset.NewJSONWriter(buf)
-			insecurecleartextkeyset.Write(newKh, jsonWriter)
-			// unmarshall the keyset
-			str := buf.String()
-			resp[fieldName] = str
 		}
 	}
 
@@ -480,18 +482,20 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 			newKh, err := UpdateKeyMaterial(kh, keyId, materialStr)
 			if err != nil {
 				hclog.L().Error("failed to update the material")
+				resp[fieldName] = "failed to update the material"
+			} else {
+
+				// save the keyhandle for the field
+				saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+
+				// extract the JSON from the new key
+				buf := new(bytes.Buffer)
+				jsonWriter := keyset.NewJSONWriter(buf)
+				insecurecleartextkeyset.Write(newKh, jsonWriter)
+				// unmarshall the keyset
+				str := buf.String()
+				resp[fieldName] = str
 			}
-
-			// save the keyhandle for the field
-			saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
-
-			// extract the JSON from the new key
-			buf := new(bytes.Buffer)
-			jsonWriter := keyset.NewJSONWriter(buf)
-			insecurecleartextkeyset.Write(newKh, jsonWriter)
-			// unmarshall the keyset
-			str := buf.String()
-			resp[fieldName] = str
 		}
 	}
 
@@ -526,18 +530,20 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 		newKh, err := UpdatePrimaryKeyID(kh, newPrimaryKeyStr)
 		if err != nil {
 			hclog.L().Error("failed to update the keyID")
+			resp[fieldName] = "failed to update the keyID"
+		} else {
+
+			// save the keyhandle for the field
+			saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+
+			// extract the JSON from the new key
+			buf := new(bytes.Buffer)
+			jsonWriter := keyset.NewJSONWriter(buf)
+			insecurecleartextkeyset.Write(newKh, jsonWriter)
+			// unmarshall the keyset
+			str := buf.String()
+			resp[fieldName] = str
 		}
-
-		// save the keyhandle for the field
-		saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
-
-		// extract the JSON from the new key
-		buf := new(bytes.Buffer)
-		jsonWriter := keyset.NewJSONWriter(buf)
-		insecurecleartextkeyset.Write(newKh, jsonWriter)
-		// unmarshall the keyset
-		str := buf.String()
-		resp[fieldName] = str
 
 	}
 
@@ -574,18 +580,20 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 			newKh, err := UpdateKeyID(kh, keyId, newKeyStr)
 			if err != nil {
 				hclog.L().Error("failed to update the keyid")
+				resp[fieldName] = "failed to update the keyid"
+			} else {
+
+				// save the keyhandle for the field
+				saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+
+				// extract the JSON from the new key
+				buf := new(bytes.Buffer)
+				jsonWriter := keyset.NewJSONWriter(buf)
+				insecurecleartextkeyset.Write(newKh, jsonWriter)
+				// unmarshall the keyset
+				str := buf.String()
+				resp[fieldName] = str
 			}
-
-			// save the keyhandle for the field
-			saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
-
-			// extract the JSON from the new key
-			buf := new(bytes.Buffer)
-			jsonWriter := keyset.NewJSONWriter(buf)
-			insecurecleartextkeyset.Write(newKh, jsonWriter)
-			// unmarshall the keyset
-			str := buf.String()
-			resp[fieldName] = str
 		}
 	}
 
