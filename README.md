@@ -171,13 +171,13 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1
 ```
 
 ### /encryptcol
-Column based encryption or decryption. Intended for bulk data only. Pivots the bulk data into columns - then parellizes 1 row (aka field) at a time, re-pivots before returning. Pivoting operations are transparent to to the client, So a file of 1000 rows and 6 fields is 6 parallel goroutines. This is 2x faster when running with a local vault, but only 20% faster in a containeriseed vault. Unexplained.
+Column based encryption or decryption. Intended for bulk data only. Pivots the bulk data into columns - then parellizes 1 row (aka field) at a time, re-pivots before returning. Pivoting operations are transparent to to the client, So a file of 1000 rows and 6 fields is 6 parallel goroutines. This is 2x faster when running with a local vault, but only 20% faster in a containerised vault. Unexplained.
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
 ```
 
 ### /decryptcol
-Column based encryption or decryption. Intended for bulk data only. Pivots the bulk data into columns - then parellizes 1 row (aka field) at a time, re-pivots before returning. Pivoting operations are transparent to to the client, So a file of 1000 rows and 6 fields is 6 parallel goroutines. This is 2x faster when running with a local vault, but only 20% faster in a containeriseed vault. Unexplained.
+Column based encryption or decryption. Intended for bulk data only. Pivots the bulk data into columns - then parellizes 1 row (aka field) at a time, re-pivots before returning. Pivoting operations are transparent to to the client, So a file of 1000 rows and 6 fields is 6 parallel goroutines. This is 2x faster when running with a local vault, but only 20% faster in a containerised vault. Unexplained.
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/decrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
 ```
@@ -260,7 +260,7 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1
 ```
 
 ### /updateKeyStatus
-updates the status of a specific key within a specific keyset as ENABLED or DISABLED
+updates the status of a specific key within a specific keyset as ENABLED or DISABLED. New key is checked for validity before updating.
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/updateKeyStatus -H "Content-Type: application/json" -d  '{"field1":{"4138735456":"DISABLED"}}'
 ```
@@ -274,19 +274,19 @@ updates the key material of a specific key within a specific keyset as ENABLED o
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/updateKeyMaterial -H "Content-Type: application/json" -d  '{"field2":{"3233050044":"GiBNxwpdhnnTsrdKF/05N0h1cqO9o1awaR3nNDZOfy/Kaw=="}}'
 ```
 ### /updateKeyID
-updates the keyID  of a specific key within a specific keyset to a new number. If the key ID is also the primary it updates the primary too
+updates the keyID  of a specific key within a specific keyset to a new number. If the key ID is also the primary it updates the primary too.  New key is checked for validity before updating.
 
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/updateKeyID -H "Content-Type: application/json" -d  '{"field2":{"3233050044":"3233050045"}}'
 ```
 ### /updatePrimaryKeyID
-updates the primary keyID  of a specific keyset to a new number. Does not (yet) validate that is is a real key
+updates the primary keyID  of a specific keyset to a new number.  New key is checked for validity before updating.
 
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/updatePrimaryKeyID -H "Content-Type: application/json" -d  '{"field2":"2817739672"}'
 ```
 ### /importKey
-Imports a key as json to a field - in the example below importing a keyset of 3 keys
+Imports a key as json to a field - in the example below importing a keyset of 3 keys.  New key is checked for validity before importing.
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/importKey -H "Content-Type: application/json" -d  '{"field3":"{\"primaryKeyId\":1513996195,\"key\":[{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiD2rBnfl5oi1tMfHwcFcyqS+JpQpWUcAj8zzd8D3q3IQA==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":2480583041,\"outputPrefixType\":\"TINK\"},{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiBQUDTlxVawIr3T1/dRvuF5CzBhTZtnnpuVsNZayxv1LQ==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":133713585,\"outputPrefixType\":\"TINK\"},{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiBs9EEVquF+igDsDI+FskdsDjVOf6vxLZQHkbJrrIoQLQ==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":1513996195,\"outputPrefixType\":\"TINK\"}]}"}'
 ```
