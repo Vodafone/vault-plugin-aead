@@ -151,15 +151,80 @@ Lots of parallelisation. Splits bulk data into 1 goroutine per data row, and the
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d '{"fieldname":"plaintext"}'
 ```
+Returns
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d '{"fieldname1":"plaintext","fieldname2":"plaintext",...}'
+{
+  "request_id": "b4486405-9451-f979-d047-7d4d12614d29",
+  "lease_id": "",
+  "renewable": false,
+  "lease_duration": 0,
+  "data": {
+    "fieldname": "AfM7qawtjvuEMCudKjVl4lOA0ouLIMJqYrp4CMJQXHrjSN6beq6J/eff"
+  },
+  "wrap_info": null,
+  "warnings": null,
+  "auth": null
+}
+```
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d '{"fieldname1":"plaintext","fieldname2":"plaintext"}'
+```
+Returns:
+```
+{
+  "request_id": "498186d2-e674-aa28-c9c6-2d97ce438f89",
+  "lease_id": "",
+  "renewable": false,
+  "lease_duration": 0,
+  "data": {
+    "fieldname1": "AYnf2wLLJYxZdo/1PSLqYSFVuOSeiLsQzYuzf4CXvS8LKNoZyD4BfMi2",
+    "fieldname2": "AeRVe0SnFMGnPSbHgUOwnMD/eACeAcA7788EOnwQNlv33MKRRsyo35cC"
+  },
+  "wrap_info": null,
+  "warnings": null,
+  "auth": null
+}
 ```
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
 ```
-
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d '{"0":{"field0":"value00","field1":"value01","field2":"value02"},"1":{"field0":"value10","field1":"value11","field2":"value12"},"2":{"field0":"value20","field1":"value21","field2":"value22"}}'
+```
+Returns:
+```
+{
+  "request_id": "218407fe-7c07-7c06-196b-26255b5d2c4e",
+  "lease_id": "",
+  "renewable": false,
+  "lease_duration": 0,
+  "data": {
+    "0": {
+      "field0": "AXgd5oA9weobN1Y0fcITNV7iKEtjJDjvFLybLckfWPllk6Qu0LCvOw==",
+      "field1": "AVo9v6O75dxQ/UMhmm1LR/m/9WsaZnzDoOdkBBqgOpmtvD303fyd+Q==",
+      "field2": "AafzS5gTxaaLRbWYGUMqWpqo/cDCdHzD86Bd7OC4MvZ7srQIPr8H8g=="
+    },
+    "1": {
+      "field0": "AXgd5oDVZUaMQkh2IANsjo4gwOtWYpL8PqqM/+Mn43z3RWr8mQSlww==",
+      "field1": "AVo9v6Newmp6NIPhVfE4FXQp/FHTELEmdduVthEqfCOzXn+pbxZyjw==",
+      "field2": "AafzS5hbUC2yn/b5LXHClg/LdTfBF8HL9sgMAZ7+sNjv6QmmawtEiw=="
+    },
+    "2": {
+      "field0": "AXgd5oC93Hod69p9dsCsi2K7K9yqGgjQ8WevujGl19hFsMnO0DTbdg==",
+      "field1": "AVo9v6MrW7+ak2IVdzkSiCj9T5rTppdikPskVGj6djWiPUKLttG0RQ==",
+      "field2": "AafzS5gdCC3FeZWk0tsKSxKnm3yuI0EzWq8VW34Jy9IUbAeo+rNcaQ=="
+    }
+  },
+  "wrap_info": null,
+  "warnings": null,
+  "auth": null
+}
+```
 ### /decrypt
 Lots of parallelisation. Splits bulk data into 1 goroutine per data row, and then every key:value pair is also a goroutine. So a file of 1000 rows and 6 fields is 6000 parallel goroutines. Unanswered questions about whether this is really executed in parallel for bulk data when in a container. Fields that do not have an encryption key are returned as-is, and not errored. Note there is a 32Mb json restriction on http message size - the client is expected to handle this
+
+See equivalent encrypt for return json format
+
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/decrypt -H "Content-Type: application/json" -d {"fieldname":"cyphertext"}'
 ```
@@ -175,9 +240,45 @@ Column based encryption or decryption. Intended for bulk data only. Pivots the b
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
 ```
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/encryptcol -H "Content-Type: application/json" -d '{"0":{"field0":"value00","field1":"value01","field2":"value02"},"1":{"field0":"value10","field1":"value11","field2":"value12"},"2":{"field0":"value20","field1":"value21","field2":"value22"}}'
+```
+Returns:
+```
+{
+  "request_id": "73531055-42f3-5e82-789b-d479818ebb18",
+  "lease_id": "",
+  "renewable": false,
+  "lease_duration": 0,
+  "data": {
+    "0": {
+      "field0": "AXgd5oC2hRgUTL1wApiU7WQ9UfVFOpRe07rl3Tp8EA7cH1AvTScB/w==",
+      "field1": "AVo9v6OMQktkfU98vU6jacQLFavDDTEz57dAYrXZjaaC56ke9hVYLg==",
+      "field2": "AafzS5i+/pdLYNvDB5rrAJH/nZcy36iPPDEuzmKI0cAOigAQG6wWpA=="
+    },
+    "1": {
+      "field0": "AXgd5oBzPyo4CR/mOcjyDfpHnEX5yzdc7At5F0afg5VvRmzPiLaVPg==",
+      "field1": "AVo9v6Os7L5COkcF1BJNDZ4fVmijIGWtivyoc4Bngk1bdsQqBRraMg==",
+      "field2": "AafzS5hCp9vguVwzhm+XXZzd7khCGiB7oJs+A83x5o1GyzqytCoBbw=="
+    },
+    "2": {
+      "field0": "AXgd5oBa9Bl6oukmxo/LxgeH5DJgRBgcgKD4ViRSnmkWTKYzqb0Zfg==",
+      "field1": "AVo9v6MRQHBzG01AA5Fokfy8KZ/t4lJKjB2SI/2Clb+QCa+TXD9fkg==",
+      "field2": "AafzS5hR0plC1/wy8CQpvdac2QGbOfHq4GLrMM1sgHTZ058A9nbyUw=="
+    }
+  },
+  "wrap_info": null,
+  "warnings": null,
+  "auth": null
+}
+```
 
 ### /decryptcol
 Column based encryption or decryption. Intended for bulk data only. Pivots the bulk data into columns - then parellizes 1 row (aka field) at a time, re-pivots before returning. Pivoting operations are transparent to to the client, So a file of 1000 rows and 6 fields is 6 parallel goroutines. This is 2x faster when running with a local vault, but only 20% faster in a containerised vault. Unexplained.
+
+See equivalent encryptcol for return json format
+
+
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/decrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
 ```
