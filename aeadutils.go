@@ -95,7 +95,7 @@ func RotateKeys(kh *keyset.Handle, deterministic bool) {
 	}
 }
 
-func IsKeyDeterministic(kh *keyset.Handle) bool {
+func IsKeyHandleDeterministic(kh *keyset.Handle) bool {
 	// the alt to this is to convert the key info tom json and trawl through it
 	// i hate this, but i don't see an alternative atm
 
@@ -163,7 +163,7 @@ func PivotMapInt(mo map[string]interface{}, nmo map[string]interface{}) {
 }
 
 type KeySetStruct struct {
-	PrimaryKeyID int64 `json:"primaryKeyId"`
+	PrimaryKeyID int `json:"primaryKeyId"`
 	Key          []struct {
 		KeyData struct {
 			TypeURL         string `json:"typeUrl"`
@@ -188,6 +188,7 @@ func (k *KeySetStruct) UpdateExistingKeyStatus(keyID int, enabled string) {
 	index, err := k.GetKeyID(keyID)
 	if err != nil || index == -1 {
 		hclog.L().Error("no KeyID found")
+		return
 	}
 	k.Key[index].Status = enabled
 }
@@ -196,8 +197,32 @@ func (k *KeySetStruct) UpdateExistingKeyMaterial(keyID int, keyMaterial string) 
 	index, err := k.GetKeyID(keyID)
 	if err != nil || index == -1 {
 		hclog.L().Error("no KeyID found")
+		return
 	}
 	k.Key[index].KeyData.Value = keyMaterial
+}
+
+func (k *KeySetStruct) UpdateExistingKeyID(keyID int, newkeyID int) {
+	index, err := k.GetKeyID(keyID)
+	if err != nil || index == -1 {
+		hclog.L().Error("no KeyID found")
+		return
+	}
+	k.Key[index].KeyID = newkeyID
+	if k.PrimaryKeyID == keyID {
+		k.PrimaryKeyID = newkeyID
+	}
+}
+
+func (k *KeySetStruct) UpdateExistingPrimaryKeyID(keyID int) {
+	index, err := k.GetKeyID(keyID)
+	if err != nil || index == -1 {
+		hclog.L().Error("no KeyID found")
+		return
+	}
+	// we found a key so its valid
+	k.PrimaryKeyID = keyID
+
 }
 
 func UpdateKeyStatus(kh *keyset.Handle, keyId string, status string) (*keyset.Handle, error) {
@@ -272,4 +297,90 @@ func UpdateKeyMaterial(kh *keyset.Handle, keyId string, material string) (*keyse
 	}
 
 	return newkh, nil
+}
+
+func UpdateKeyID(kh *keyset.Handle, keyId string, newKeyId string) (*keyset.Handle, error) {
+	// extract the JSON key that could be stored
+	buf := new(bytes.Buffer)
+	jsonWriter := keyset.NewJSONWriter(buf)
+
+	insecurecleartextkeyset.Write(kh, jsonWriter)
+
+	// unmarshall the keyset
+	str := buf.String()
+	var keySetStruct KeySetStruct
+	err := json.Unmarshal([]byte(str), &keySetStruct)
+	if err != nil {
+		hclog.L().Error("failed to unmarshall the keyset")
+		return nil, err
+	}
+	// update the status
+	keyInt, _ := strconv.Atoi(keyId)
+	newKeyInt, _ := strconv.Atoi(newKeyId)
+	keySetStruct.UpdateExistingKeyID(keyInt, newKeyInt)
+
+	// make the json again
+	data, err := json.Marshal(keySetStruct)
+	if err != nil {
+		hclog.L().Error("failed to marshall the keyset")
+		return nil, err
+	}
+
+	// make a key handle from the json, if it doesnt error, its still valid
+	r := keyset.NewJSONReader(bytes.NewBufferString(string(data)))
+	newkh, err := insecurecleartextkeyset.Read(r)
+	if err != nil {
+		hclog.L().Error("Failed to make a key handle from the json:  %v", err)
+		return nil, err
+	}
+
+	return newkh, nil
+
+}
+
+func UpdatePrimaryKeyID(kh *keyset.Handle, keyId string) (*keyset.Handle, error) {
+	// extract the JSON key that could be stored
+	buf := new(bytes.Buffer)
+	jsonWriter := keyset.NewJSONWriter(buf)
+
+	insecurecleartextkeyset.Write(kh, jsonWriter)
+
+	// unmarshall the keyset
+	str := buf.String()
+	var keySetStruct KeySetStruct
+	err := json.Unmarshal([]byte(str), &keySetStruct)
+	if err != nil {
+		hclog.L().Error("failed to unmarshall the keyset")
+		return nil, err
+	}
+	// update the status
+	keyInt, _ := strconv.Atoi(keyId)
+	keySetStruct.UpdateExistingPrimaryKeyID(keyInt)
+
+	// make the json again
+	data, err := json.Marshal(keySetStruct)
+	if err != nil {
+		hclog.L().Error("failed to marshall the keyset")
+		return nil, err
+	}
+
+	// make a key handle from the json, if it doesnt error, its still valid
+	r := keyset.NewJSONReader(bytes.NewBufferString(string(data)))
+	newkh, err := insecurecleartextkeyset.Read(r)
+	if err != nil {
+		hclog.L().Error("Failed to make a key handle from the json:  %v", err)
+		return nil, err
+	}
+
+	return newkh, nil
+}
+
+func ValidateKeySetJson(keySetJson string) error {
+	r := keyset.NewJSONReader(bytes.NewBufferString(string(keySetJson)))
+	_, err := insecurecleartextkeyset.Read(r)
+	if err != nil {
+		hclog.L().Error("Failed to make a key handle from the json:  %v", err)
+		return err
+	}
+	return nil
 }

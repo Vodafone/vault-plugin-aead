@@ -332,6 +332,91 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
+			// aead/updateKeyStatus
+			&framework.Path{
+				Pattern:         "updateKeyStatus",
+				HelpSynopsis:    "Update Key Status.",
+				HelpDescription: "Update Key Status.",
+				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathConfigRead,
+					},
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathUpdateKeyStatus,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+				},
+			},
+			// aead/updateKeyMaterial
+			&framework.Path{
+				Pattern:         "updateKeyMaterial",
+				HelpSynopsis:    "Update Key Material.",
+				HelpDescription: "Update Key Material.",
+				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathConfigRead,
+					},
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathUpdateKeyMaterial,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+				},
+			},
+			// aead/updateKeyID
+			&framework.Path{
+				Pattern:         "updateKeyID",
+				HelpSynopsis:    "Update Key ID.",
+				HelpDescription: "Update Key ID.",
+				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathConfigRead,
+					},
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathUpdateKeyID,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+				},
+			},
+			// aead/updatePrimaryKeyID
+			&framework.Path{
+				Pattern:         "updatePrimaryKeyID",
+				HelpSynopsis:    "Update Primary Key ID.",
+				HelpDescription: "Update Primary Key ID.",
+				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathConfigRead,
+					},
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathUpdatePrimaryKeyID,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+				},
+			},
+			// aead/pathImportKey
+			&framework.Path{
+				Pattern:         "importKey",
+				HelpSynopsis:    "Import a key.",
+				HelpDescription: "Import a key.",
+				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathConfigRead,
+					},
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathImportKey,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+				},
+			},
 		},
 	}
 	return &b

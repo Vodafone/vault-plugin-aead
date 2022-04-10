@@ -796,6 +796,345 @@ func TestBackend(t *testing.T) {
 
 	})
 
+	// for the key ops below we will use
+	// NON-DETERMINISTIC:
+	// {"primaryKeyId":3192631270,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBf14hIKBzJYUGjc4LXzaG3dT3aVsvv0vpyZJVZNh02MQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2832419897,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCW0m5ElDr8RznAl4ef3bXqgHgu9PL/js7K6NAZIjkDJw==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2233686170,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiChGSKGi7odjL3mdwhQ03X5SGiVXTarRSKPZUn+xCUYyQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1532149397,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3192631270,"outputPrefixType":"TINK"}]}
+	// {
+	// 	"primaryKeyId": 3192631270,
+	// 	"key": [
+	// 	  {
+	// 		"keyData": {
+	// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesGcmKey",
+	// 		  "value": "GiBf14hIKBzJYUGjc4LXzaG3dT3aVsvv0vpyZJVZNh02MQ==",
+	// 		  "keyMaterialType": "SYMMETRIC"
+	// 		},
+	// 		"status": "ENABLED",
+	// 		"keyId": 2832419897,
+	// 		"outputPrefixType": "TINK"
+	// 	  },
+	// 	  {
+	// 		"keyData": {
+	// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesGcmKey",
+	// 		  "value": "GiCW0m5ElDr8RznAl4ef3bXqgHgu9PL/js7K6NAZIjkDJw==",
+	// 		  "keyMaterialType": "SYMMETRIC"
+	// 		},
+	// 		"status": "ENABLED",
+	// 		"keyId": 2233686170,
+	// 		"outputPrefixType": "TINK"
+	// 	  },
+	// 	  {
+	// 		"keyData": {
+	// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesGcmKey",
+	// 		  "value": "GiChGSKGi7odjL3mdwhQ03X5SGiVXTarRSKPZUn+xCUYyQ==",
+	// 		  "keyMaterialType": "SYMMETRIC"
+	// 		},
+	// 		"status": "ENABLED",
+	// 		"keyId": 1532149397,
+	// 		"outputPrefixType": "TINK"
+	// 	  },
+	// 	  {
+	// 		"keyData": {
+	// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesGcmKey",
+	// 		  "value": "GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==",
+	// 		  "keyMaterialType": "SYMMETRIC"
+	// 		},
+	// 		"status": "ENABLED",
+	// 		"keyId": 3192631270,
+	// 		"outputPrefixType": "TINK"
+	// 	  }
+	// 	]
+	//   }
+	// or
+	// DETERMINISTIC
+	// {"primaryKeyId":97978150,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkCXhcXHvfUMj8DWgWjfnxyWFz3GcOw8G1xB2PTcfPdbl93idxHTcmANzYLYW3KmsU0putTRfi3vxySALhSHaHl0","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3647454112,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDeUHhnPioOIETPIbKfEcifAjnhxaeUJbRwT/TB6AurJG/qmhsbpGaHKFdhDHn6VtJ7I/tMWX7gFZTr1Db9f/3v","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":4039363563,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkAqIqBlB7q0W/bhp9RtivX770+nAYkEWxBkYjfPzbWiBWJZbM7YypfHbkOyyWPtkBc0yVK0YTUmqbWD0JpEJ63u","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3167099089,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDfF2JLaeZPvRwMncPw8ZKhsoGDMvFDriu7RtdF1pgHvRefGKbAa56pU7IFQCzA+UWy+dBNtsLW2H5rbHsxM2FC","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2568362933,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkC9CVw73BjO+OSjo3SFvUV7SUszpJnuKGnLWMbmD7cO3WFCIy2unxoyNPCHFDlzle1zU35vTZtoecnlsWScQUVl","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":97978150,"outputPrefixType":"TINK"}]}
+	// {
+	// 	"primaryKeyId": 97978150,
+	// 	"key": [
+	// 	  {
+	// 		"keyData": {
+	// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesSivKey",
+	// 		  "value": "EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD",
+	// 		  "keyMaterialType": "SYMMETRIC"
+	// 		},
+	// 		"status": "ENABLED",
+	// 		"keyId": 1481824018,
+	// 		"outputPrefixType": "TINK"
+	// 	  },
+	// 	  {
+	// 		"keyData": {
+	// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesSivKey",
+	// 		  "value": "EkCXhcXHvfUMj8DWgWjfnxyWFz3GcOw8G1xB2PTcfPdbl93idxHTcmANzYLYW3KmsU0putTRfi3vxySALhSHaHl0",
+	// 		  "keyMaterialType": "SYMMETRIC"
+	// 		},
+	// 		"status": "ENABLED",
+	// 		"keyId": 3647454112,
+	// 		"outputPrefixType": "TINK"
+	// 	  },
+	// 	  {
+	// 		"keyData": {
+	// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesSivKey",
+	// 		  "value": "EkDeUHhnPioOIETPIbKfEcifAjnhxaeUJbRwT/TB6AurJG/qmhsbpGaHKFdhDHn6VtJ7I/tMWX7gFZTr1Db9f/3v",
+	// 		  "keyMaterialType": "SYMMETRIC"
+	// 		},
+	// 		"status": "ENABLED",
+	// 		"keyId": 4039363563,
+	// 		"outputPrefixType": "TINK"
+	// 	  },
+	// 	  {
+	// 		"keyData": {
+	// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesSivKey",
+	// 		  "value": "EkAqIqBlB7q0W/bhp9RtivX770+nAYkEWxBkYjfPzbWiBWJZbM7YypfHbkOyyWPtkBc0yVK0YTUmqbWD0JpEJ63u",
+	// 		  "keyMaterialType": "SYMMETRIC"
+	// 		},
+	// 		"status": "ENABLED",
+	// 		"keyId": 3167099089,
+	// 		"outputPrefixType": "TINK"
+	// 	  },
+	// 	  {
+	// 		"keyData": {
+	// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesSivKey",
+	// 		  "value": "EkDfF2JLaeZPvRwMncPw8ZKhsoGDMvFDriu7RtdF1pgHvRefGKbAa56pU7IFQCzA+UWy+dBNtsLW2H5rbHsxM2FC",
+	// 		  "keyMaterialType": "SYMMETRIC"
+	// 		},
+	// 		"status": "ENABLED",
+	// 		"keyId": 2568362933,
+	// 		"outputPrefixType": "TINK"
+	// 	  },
+	// 	  {
+	// 		"keyData": {
+	// 		  "typeUrl": "type.googleapis.com/google.crypto.tink.AesSivKey",
+	// 		  "value": "EkC9CVw73BjO+OSjo3SFvUV7SUszpJnuKGnLWMbmD7cO3WFCIy2unxoyNPCHFDlzle1zU35vTZtoecnlsWScQUVl",
+	// 		  "keyMaterialType": "SYMMETRIC"
+	// 		},
+	// 		"status": "ENABLED",
+	// 		"keyId": 97978150,
+	// 		"outputPrefixType": "TINK"
+	// 	  }
+	// 	]
+	//   }
+
+	const DeterministicKeyset = `{"primaryKeyId":97978150,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkCXhcXHvfUMj8DWgWjfnxyWFz3GcOw8G1xB2PTcfPdbl93idxHTcmANzYLYW3KmsU0putTRfi3vxySALhSHaHl0","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3647454112,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDeUHhnPioOIETPIbKfEcifAjnhxaeUJbRwT/TB6AurJG/qmhsbpGaHKFdhDHn6VtJ7I/tMWX7gFZTr1Db9f/3v","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":4039363563,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkAqIqBlB7q0W/bhp9RtivX770+nAYkEWxBkYjfPzbWiBWJZbM7YypfHbkOyyWPtkBc0yVK0YTUmqbWD0JpEJ63u","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3167099089,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDfF2JLaeZPvRwMncPw8ZKhsoGDMvFDriu7RtdF1pgHvRefGKbAa56pU7IFQCzA+UWy+dBNtsLW2H5rbHsxM2FC","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2568362933,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkC9CVw73BjO+OSjo3SFvUV7SUszpJnuKGnLWMbmD7cO3WFCIy2unxoyNPCHFDlzle1zU35vTZtoecnlsWScQUVl","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":97978150,"outputPrefixType":"TINK"}]}`
+	const NonDeterministicKeyset = `{"primaryKeyId":3192631270,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBf14hIKBzJYUGjc4LXzaG3dT3aVsvv0vpyZJVZNh02MQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2832419897,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCW0m5ElDr8RznAl4ef3bXqgHgu9PL/js7K6NAZIjkDJw==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2233686170,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiChGSKGi7odjL3mdwhQ03X5SGiVXTarRSKPZUn+xCUYyQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1532149397,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3192631270,"outputPrefixType":"TINK"}]}`
+
+	t.Run("test21 pathUpdateKeyStatus deterministic", func(t *testing.T) {
+		// t.Parallel()
+		b, storage := testBackend(t)
+
+		keyData := make(map[string]interface{})
+		keyData["test21-key"] = DeterministicKeyset
+
+		keyResp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "importKey",
+			Data:      keyData,
+		})
+
+		if err != nil {
+			t.Fatal("importKey", err)
+		}
+
+		if len(keyResp.Data) == 0 {
+			t.Fatal("importKey - no data returned")
+
+		}
+
+		updData := make(map[string]interface{})
+		upDataInner := make(map[string]interface{})
+		upDataInner["1481824018"] = "DISABLED"
+		updData["test21-key"] = upDataInner
+
+		resp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "updateKeyStatus",
+			Data:      updData,
+		})
+
+		if err != nil {
+			t.Fatal("updateKeyStatus", err)
+		}
+
+		if len(resp.Data) == 0 {
+			t.Fatal("updateKeyStatus - no data returned")
+		}
+
+		str := fmt.Sprintf("%s", resp.Data)
+		if !strings.Contains(str, "\"status\":\"DISABLED\",\"keyId\":1481824018") {
+			t.Errorf("statuswas not changed %s", str)
+		}
+
+	})
+
+	t.Run("test22 pathUpdateKeyMaterial non-deterministic", func(t *testing.T) {
+		// t.Parallel()
+		b, storage := testBackend(t)
+		keyData := make(map[string]interface{})
+		keyData["test22-key"] = NonDeterministicKeyset
+
+		keyResp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "importKey",
+			Data:      keyData,
+		})
+
+		if err != nil {
+			t.Fatal("importKey", err)
+		}
+
+		if len(keyResp.Data) == 0 {
+			t.Fatal("importKey - no data returned")
+
+		}
+
+		updData := make(map[string]interface{})
+		upDataInner := make(map[string]interface{})
+		upDataInner["1532149397"] = "GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ=="
+		updData["test22-key"] = upDataInner
+
+		resp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "updateKeyMaterial",
+			Data:      updData,
+		})
+
+		if err != nil {
+			t.Fatal("updateKeyMaterial", err)
+		}
+
+		if len(resp.Data) == 0 {
+			t.Fatal("updateKeyMaterial - no data returned")
+		}
+
+		str := fmt.Sprintf("%s", resp.Data)
+		if strings.Count(str, "GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==") != 2 {
+			t.Errorf("material was not changed %s", str)
+		}
+
+	})
+
+	t.Run("test23 pathUpdateKeyID non-deterministic", func(t *testing.T) {
+		// t.Parallel()
+		b, storage := testBackend(t)
+		keyData := make(map[string]interface{})
+		keyData["test23-key"] = NonDeterministicKeyset
+
+		keyResp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "importKey",
+			Data:      keyData,
+		})
+
+		if err != nil {
+			t.Fatal("importKey", err)
+		}
+
+		if len(keyResp.Data) == 0 {
+			t.Fatal("importKey - no data returned")
+
+		}
+
+		updData := make(map[string]interface{})
+		upDataInner := make(map[string]interface{})
+		upDataInner["3192631270"] = "3192631271"
+		updData["test23-key"] = upDataInner
+
+		resp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "updateKeyID",
+			Data:      updData,
+		})
+
+		if err != nil {
+			t.Fatal("updateKeyID", err)
+		}
+
+		if len(resp.Data) == 0 {
+			t.Fatal("updateKeyID - no data returned")
+		}
+
+		str := fmt.Sprintf("%s", resp.Data)
+		if !strings.Contains(str, "primaryKeyId\":3192631271") {
+			t.Errorf("primary id  not changed %s", str)
+		}
+
+		if strings.Contains(str, "3192631270") {
+			t.Errorf("original id  not changed %s", str)
+		}
+	})
+
+	t.Run("test24 pathUpdatePrimaryKeyID deterministic", func(t *testing.T) {
+		// t.Parallel()
+		b, storage := testBackend(t)
+		keyData := make(map[string]interface{})
+		keyData["test24-key"] = DeterministicKeyset
+
+		keyResp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "importKey",
+			Data:      keyData,
+		})
+
+		if err != nil {
+			t.Fatal("importKey", err)
+		}
+
+		if len(keyResp.Data) == 0 {
+			t.Fatal("importKey - no data returned")
+		}
+
+		updData := make(map[string]interface{})
+		updData["test24-key"] = "2568362933"
+
+		resp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "updatePrimaryKeyID",
+			Data:      updData,
+		})
+
+		if err != nil {
+			t.Fatal("updateKeyID", err)
+		}
+
+		if len(resp.Data) == 0 {
+			t.Fatal("updateKeyID - no data returned")
+		}
+
+		str := fmt.Sprintf("%s", resp.Data)
+		if !strings.Contains(str, "primaryKeyId\":2568362933") {
+			t.Errorf("primary id  not changed %s", str)
+		}
+
+	})
+
+	t.Run("test25 pathImportKey", func(t *testing.T) {
+		b, storage := testBackend(t)
+		keyData := make(map[string]interface{})
+		keyData["test25-key"] = DeterministicKeyset
+
+		keyResp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "importKey",
+			Data:      keyData,
+		})
+
+		if err != nil {
+			t.Fatal("importKey", err)
+		}
+
+		if len(keyResp.Data) == 0 {
+			t.Fatal("importKey - no data returned")
+		}
+
+	})
+
 }
 
 func rotateKeySet(fieldName string, rawKeyset string, b *backend, storage logical.Storage, t *testing.T, primaryKey string) {

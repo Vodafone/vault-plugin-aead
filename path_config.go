@@ -92,7 +92,7 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 	m := map[string]interface{}{}
 	for k, v := range aeadConfig.Items() {
 		str := ""
-		_, determinstic := isKeyDeterministic(v)
+		_, determinstic := isKeyJsonDeterministic(v)
 		if determinstic {
 			str = "DETERMINISTIC"
 		} else {
@@ -137,7 +137,7 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 			// aeadConfig.Set(keyFieldStr, encryptionKey)
 			continue
 		} else {
-			encryptionKeyStr, deterministic := isKeyDeterministic(encryptionKey)
+			encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionKey)
 			if deterministic {
 				kh, _, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 				if err != nil {
@@ -187,7 +187,7 @@ func (b *backend) pathKeySync(ctx context.Context, req *logical.Request, data *f
 		if !strings.Contains(keyStr, "primaryKeyId") {
 			continue
 		} else {
-			encryptionKeyStr, deterministic := isKeyDeterministic(encryptionKey)
+			encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionKey)
 			if deterministic {
 				kh, _, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 				if err != nil {
@@ -401,4 +401,224 @@ func doBQRoutineCreateOrUpdate(ctx context.Context, options Options, escapedWrap
 		}
 		hclog.L().Info("Decrypt Routine successfully updated!", "info", nil)
 	}
+}
+
+func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	// data.Raw is map[string]map[string]string
+	// map['field0':map['key':'status']]
+
+	resp := make(map[string]interface{})
+
+	for fieldName, v := range data.Raw {
+		// GET THE KEY
+		encryptionkey, ok := aeadConfig.Get(fieldName)
+		if !ok {
+			hclog.L().Error("failed to get an existing key")
+		}
+		rawKeyset := fmt.Sprintf("%s", encryptionkey)
+		r := keyset.NewJSONReader(bytes.NewBufferString(rawKeyset))
+		kh, err := insecurecleartextkeyset.Read(r)
+		if err != nil {
+			hclog.L().Error("failed to get an existing key handle")
+		}
+
+		//assert
+		vMap := v.(map[string]interface{})
+		for keyId, status := range vMap {
+			statusStr := fmt.Sprintf("%s", status)
+
+			// update the status, get a new heyhandle
+			newKh, err := UpdateKeyStatus(kh, keyId, statusStr)
+			if err != nil {
+				hclog.L().Error("failed to update the status")
+			}
+
+			// save the keyhandle for the field
+			saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+
+			// extract the JSON from the new key
+			buf := new(bytes.Buffer)
+			jsonWriter := keyset.NewJSONWriter(buf)
+			insecurecleartextkeyset.Write(newKh, jsonWriter)
+			// unmarshall the keyset
+			str := buf.String()
+			resp[fieldName] = str
+		}
+	}
+
+	return &logical.Response{
+		Data: resp,
+	}, nil
+}
+func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	// data.Raw is map[string]map[string]string
+	// map['field0':map['key':'material']]
+
+	resp := make(map[string]interface{})
+
+	for fieldName, v := range data.Raw {
+		// GET THE KEY
+		encryptionkey, ok := aeadConfig.Get(fieldName)
+		if !ok {
+			hclog.L().Error("failed to get an existing key")
+		}
+		rawKeyset := fmt.Sprintf("%s", encryptionkey)
+		r := keyset.NewJSONReader(bytes.NewBufferString(rawKeyset))
+		kh, err := insecurecleartextkeyset.Read(r)
+		if err != nil {
+			hclog.L().Error("failed to get an existing key handle")
+		}
+
+		//assert
+		vMap := v.(map[string]interface{})
+		for keyId, material := range vMap {
+			materialStr := fmt.Sprintf("%s", material)
+
+			// update the status, get a new heyhandle
+			newKh, err := UpdateKeyMaterial(kh, keyId, materialStr)
+			if err != nil {
+				hclog.L().Error("failed to update the material")
+			}
+
+			// save the keyhandle for the field
+			saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+
+			// extract the JSON from the new key
+			buf := new(bytes.Buffer)
+			jsonWriter := keyset.NewJSONWriter(buf)
+			insecurecleartextkeyset.Write(newKh, jsonWriter)
+			// unmarshall the keyset
+			str := buf.String()
+			resp[fieldName] = str
+		}
+	}
+
+	return &logical.Response{
+		Data: resp,
+	}, nil
+}
+func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	// data.Raw is map[string]string
+	// map['field0':'primaryKey']]
+
+	resp := make(map[string]interface{})
+
+	for fieldName, v := range data.Raw {
+		// GET THE KEY
+		encryptionkey, ok := aeadConfig.Get(fieldName)
+		if !ok {
+			hclog.L().Error("failed to get an existing key")
+		}
+		rawKeyset := fmt.Sprintf("%s", encryptionkey)
+		r := keyset.NewJSONReader(bytes.NewBufferString(rawKeyset))
+		kh, err := insecurecleartextkeyset.Read(r)
+		if err != nil {
+			hclog.L().Error("failed to get an existing key handle")
+		}
+
+		//assert
+		newPrimaryKeyStr := fmt.Sprintf("%s", v)
+
+		// update the status, get a new heyhandle
+		newKh, err := UpdatePrimaryKeyID(kh, newPrimaryKeyStr)
+		if err != nil {
+			hclog.L().Error("failed to update the keyID")
+		}
+
+		// save the keyhandle for the field
+		saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+
+		// extract the JSON from the new key
+		buf := new(bytes.Buffer)
+		jsonWriter := keyset.NewJSONWriter(buf)
+		insecurecleartextkeyset.Write(newKh, jsonWriter)
+		// unmarshall the keyset
+		str := buf.String()
+		resp[fieldName] = str
+
+	}
+
+	return &logical.Response{
+		Data: resp,
+	}, nil
+}
+func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	// data.Raw is map[string]map[string]string
+	// map['field0':map['key':'newkey']]
+
+	resp := make(map[string]interface{})
+
+	for fieldName, v := range data.Raw {
+		// GET THE KEY
+		encryptionkey, ok := aeadConfig.Get(fieldName)
+		if !ok {
+			hclog.L().Error("failed to get an existing key")
+		}
+		rawKeyset := fmt.Sprintf("%s", encryptionkey)
+		r := keyset.NewJSONReader(bytes.NewBufferString(rawKeyset))
+		kh, err := insecurecleartextkeyset.Read(r)
+		if err != nil {
+			hclog.L().Error("failed to get an existing key handle")
+		}
+
+		//assert
+		vMap := v.(map[string]interface{})
+		for keyId, newKey := range vMap {
+			newKeyStr := fmt.Sprintf("%s", newKey)
+
+			// update the status, get a new heyhandle
+			newKh, err := UpdateKeyID(kh, keyId, newKeyStr)
+			if err != nil {
+				hclog.L().Error("failed to update the keyid")
+			}
+
+			// save the keyhandle for the field
+			saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+
+			// extract the JSON from the new key
+			buf := new(bytes.Buffer)
+			jsonWriter := keyset.NewJSONWriter(buf)
+			insecurecleartextkeyset.Write(newKh, jsonWriter)
+			// unmarshall the keyset
+			str := buf.String()
+			resp[fieldName] = str
+		}
+	}
+
+	return &logical.Response{
+		Data: resp,
+	}, nil
+}
+func (b *backend) pathImportKey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	// data.Raw should be map[string]interface{}
+	for _, v := range data.Raw {
+		// k is the field of the key
+		// v is the json representation of a string
+		jSonKeyset := fmt.Sprintf("%s", v)
+
+		// is the json a valid key
+		err := ValidateKeySetJson(jSonKeyset)
+		if err != nil {
+			hclog.L().Error("pathImportKey Invaid Json as key", err.Error())
+			return &logical.Response{
+				Data: make(map[string]interface{}),
+			}, err
+		}
+	}
+	// ok, its ALL valid, save it
+	_, err := b.pathConfigWriteOverwriteCheck(ctx, req, data, true)
+	if err != nil {
+		hclog.L().Error("save key failed", err.Error())
+		return &logical.Response{
+			Data: make(map[string]interface{}),
+		}, err
+	}
+	return &logical.Response{
+		Data: data.Raw,
+	}, nil
 }

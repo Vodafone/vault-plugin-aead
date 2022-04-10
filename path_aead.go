@@ -305,7 +305,7 @@ func doEncryptionChan(fieldName string, unencryptedData interface{}, data *frame
 	// do we have a key already in config
 	if ok {
 		// is the key we have retrived deterministic?
-		encryptionKeyStr, deterministic := isKeyDeterministic(encryptionkey)
+		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
 
 		if deterministic {
 			// SUPPORT FOR DETERMINISTIC AEAD
@@ -478,7 +478,7 @@ func (b *backend) pathAeadDecryptRow(ctx context.Context, req *logical.Request, 
 	}, nil
 }
 
-func isKeyDeterministic(encryptionkey interface{}) (string, bool) {
+func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
 	deterministic := false
 	if strings.Contains(encryptionKeyStr, "AesSivKey") {
@@ -493,7 +493,7 @@ func doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, ch chan
 	// do we have a key already in config
 	if ok {
 		// is the key deterministig or non deterministic
-		encryptionKeyStr, deterministic := isKeyDeterministic(encryptionkey)
+		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
 
 		if deterministic {
 			// SUPPORT FOR DETERMINISTIC AEAD
@@ -644,7 +644,7 @@ func (b *backend) pathAeadEncryptCol(ctx context.Context, req *logical.Request, 
 
 	encryptionkey, keyFound := aeadConfig.Get(fieldName)
 	// is the key we have retrived deterministic?
-	encryptionKeyStr, deterministic := isKeyDeterministic(encryptionkey)
+	encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
 
 	var tinkDetAead tink.DeterministicAEAD
 	var tinkAead tink.AEAD
@@ -813,7 +813,7 @@ func (b *backend) pathAeadDecryptCol(ctx context.Context, req *logical.Request, 
 
 	encryptionkey, keyFound := aeadConfig.Get(fieldName)
 	// is the key we have retrived deterministic?
-	encryptionKeyStr, deterministic := isKeyDeterministic(encryptionkey)
+	encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
 
 	var tinkDetAead tink.DeterministicAEAD
 	var tinkAead tink.AEAD
