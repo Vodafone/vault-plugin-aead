@@ -644,9 +644,10 @@ deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back ag
 # LIMITATIONS AND TODO's
 * Choose between Autoscaling on AutoPilot or a fixed GKE cluster with a CUD. If autopilot chosen we need to fully understand the behaviour of the horizonal autoscaler. For example when a vault container is routed bulk data it can be near 100% cpu. But if 3/10 pods are at 100% does it scale up as 3 pods are max, or will it say on average it is 30% so we are fine - and what is the impact of this on performance and 'warm-up' time.
 * Choose between a seperate vault per market (urghh) or a seperate engine per market (hurrah). Confirm configs are seperate.
-* Test the mechanism such the config (ie Keys) are not destroyed when a new version of the plugin is created
+* DONE - Test the mechanism such the config (ie Keys) are not destroyed when a new version of the plugin is created
 * Consider KMS encrypting the keys in consul. The downside to this is that unless column level batch ops are used, or some clever key caching and TTL is employed, every encryption or decryption operation will have to be retrieve the key (this is fine its in memory) but will also have to use KMS - billions of ops
-* Implement a keyset delete, and key disable endpoint
+* Implement a keyset delete endpoint 
+* DONE - Implement a key disable endpoint
 * Go tests do not work in parallel - I know why - its the saveconfig endpoint conflicting with the createkey endpoints. I don't think this would occur for real as config and keys will be an admin function, but its annoying and I should be able to get this to work
 * How to restrict who can execute the BQ routine - current soln has more fine grained control than just who has access to the kms keys. Strategy for deciding which BQ encrypt/decrypt routine is created in which BQ dataset
 * More parameterisation and more hardening (and maybe some actual design!) on the performance harness
@@ -660,4 +661,4 @@ deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back ag
 * Decide on where to keep the config for target BQ routines
 * Determine the impact on performance of having the Vault audit logs enabled
 * Figure out where the logging is going
-* KMS becomes critical to keepng the keys a secret. Decide on a stragety for where this is and who has access (hint - the right answer is: a) in its own isolated projects and b) almost no-one)
+* KMS becomes critical to keepng the keys a secret. Decide on a strategy for where this is and who has access (hint - the right answer is: a) in its own isolated projects and b) almost no-one)
