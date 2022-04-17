@@ -469,17 +469,27 @@ func encryptOrDecryptData(url string, inputMap map[string]interface{}, options *
 	// I absolutely hate that you can only wrap a function with no args that returns an error "func() error" here
 	// so I have to rely on variable scope, but life is too short
 	operation := func() error {
-		if i > 0 {
-			fmt.Printf("Retry=%v encryptOrDecryptData\n", i)
-		}
+		// if i > 0 {
+		// 	fmt.Printf("Retry=%v encryptOrDecryptData\n", i)
+		// }
 		i++
 		err := goDoHttp(inputMap, url, response, options)
 		if err != nil {
+			fmt.Printf("Try=%v Error after goDoHttp=%v\n", i, err)
 			return err
 		}
 		data, ok = response["data"].(map[string]interface{})
 		if !ok {
-			return fmt.Errorf("error converting response to map[string]interface{}")
+			errors, ok := response["errors"].([]interface{})
+			if ok {
+				// we have errors from vault
+				fmt.Printf("Try=%v Vault Response=%v\n", i, errors)
+				return fmt.Errorf("error response from vault %v", errors)
+			} else {
+				// we have errors but no idea why
+				fmt.Printf("Try=%v Vault Response - no idea\n", i)
+				return fmt.Errorf("error converting response to map[string]interface{}")
+			}
 		}
 		return nil // or an error
 	}
