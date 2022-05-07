@@ -3,146 +3,15 @@ package aeadplugin
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	hclog "github.com/hashicorp/go-hclog"
 
 	b64 "encoding/base64"
 
-	"github.com/google/tink/go/keyset"
 	"github.com/google/tink/go/tink"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 )
-
-func (b *backend) pathAeadCreateDeterministicKeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.pathAeadCreateDeterministicKeysOverwriteCheck(ctx, req, data, false)
-}
-
-func (b *backend) pathAeadCreateDeterministicKeysOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.pathAeadCreateDeterministicKeysOverwriteCheck(ctx, req, data, true)
-}
-
-func (b *backend) pathAeadCreateDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
-
-	// retrive the config from  storage
-	err := b.getAeadConfig(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := make(map[string]interface{})
-
-	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
-	for fieldName, unencryptedData := range data.Raw {
-
-		if !overwrite {
-			// don't do this if we already have a key in the config - prevents overwrite
-			_, ok := aeadConfig.Get(fieldName)
-			if ok {
-				resp[fieldName] = fieldName + " key exists"
-				continue
-			}
-		}
-
-		// create new DAEAD key
-		keysetHandle, tinkDetAead, err := CreateNewDeterministicAead()
-		if err != nil {
-			hclog.L().Error("Failed to create a new key", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
-		}
-		// set additionalDataBytes as field name of the right type
-		additionalDataBytes := []byte(fieldName)
-
-		// set the unencrypted data to be the right type
-		unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
-
-		// encrypt the data into cypherText (cyphertext)
-		cypherText, err := tinkDetAead.EncryptDeterministically(unencryptedDataBytes, additionalDataBytes)
-		if err != nil {
-			hclog.L().Error("Failed to encrypt with a new key", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
-		}
-
-		// set the response as the base64 encrypted data
-		resp[fieldName] = b64.StdEncoding.EncodeToString(cypherText)
-
-		// extract the key that could be stored, do not overwrite
-		saveKeyToConfig(keysetHandle, fieldName, b, ctx, req, true)
-	}
-
-	return &logical.Response{
-		Data: resp,
-	}, nil
-}
-func (b *backend) pathAeadCreateNonDeterministicKeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx, req, data, false)
-}
-
-func (b *backend) pathAeadCreateNonDeterministicKeysOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx, req, data, true)
-}
-
-func (b *backend) pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
-
-	// retrive the config from  storage
-	err := b.getAeadConfig(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := make(map[string]interface{})
-
-	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
-	for fieldName, unencryptedData := range data.Raw {
-
-		if !overwrite {
-			// don't do this if we already have a key in the config - prevents overwrite
-			_, ok := aeadConfig.Get(fieldName)
-			if ok {
-				resp[fieldName] = fieldName + " key exists"
-				continue
-			}
-		}
-
-		// create new DAEAD key
-		keysetHandle, tinkAead, err := CreateNewAead()
-		if err != nil {
-			hclog.L().Error("Failed to create a new key", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
-		}
-		// set additionalDataBytes as field name of the right type
-		additionalDataBytes := []byte(fieldName)
-
-		// set the unencrypted data to be the right type
-		unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
-
-		// encrypt the data into cypherText (cyphertext)
-		cypherText, err := tinkAead.Encrypt(unencryptedDataBytes, additionalDataBytes)
-		if err != nil {
-			hclog.L().Error("Failed to encrypt with a new key", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
-		}
-
-		// set the response as the base64 encrypted data
-		resp[fieldName] = b64.StdEncoding.EncodeToString(cypherText)
-
-		// extract the key that could be stored, do not overwrite
-		saveKeyToConfig(keysetHandle, fieldName, b, ctx, req, true)
-	}
-
-	return &logical.Response{
-		Data: resp,
-	}, nil
-}
 
 func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
@@ -188,7 +57,7 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 
 			// data.Raw = rowDataMapAsMapStrInt
 			//localResp, err := b.pathAeadEncryptRowChan(ctx, req, data)
-			go b.pathAeadEncryptRowChan(ctx, req, &dn, rowKey, channel)
+			go b.encryptRowChan(ctx, req, &dn, rowKey, channel)
 		}
 
 		resp.Data = make(map[string]interface{})
@@ -203,7 +72,7 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 	} else {
 
 		// process a ringle row
-		localResp, err := b.pathAeadEncryptRow(ctx, req, data)
+		localResp, err := b.encryptRow(ctx, req, data)
 		if err != nil {
 			panic(err)
 		}
@@ -212,10 +81,10 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 	return resp, nil
 }
 
-func (b *backend) pathAeadEncryptRowChan(ctx context.Context, req *logical.Request, data *framework.FieldData, row string, ch chan map[string]interface{}) {
+func (b *backend) encryptRowChan(ctx context.Context, req *logical.Request, data *framework.FieldData, row string, ch chan map[string]interface{}) {
 
 	// this is just a wrapper around the pathAeadEncryptRow methos so that it can be used concurrently in a channel
-	resp, err := b.pathAeadEncryptRow(ctx, req, data)
+	resp, err := b.encryptRow(ctx, req, data)
 	if err != nil {
 		panic(err)
 	}
@@ -227,7 +96,7 @@ func (b *backend) pathAeadEncryptRowChan(ctx context.Context, req *logical.Reque
 
 }
 
-func (b *backend) pathAeadDecryptRowChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
+func (b *backend) decryptRowChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
 	// this is just a wrapper around the pathAeadDecryptRow methos so that it can be used concurrently in a channel
 	resp, err := b.pathAeadDecrypt(ctx, req, data)
@@ -258,7 +127,7 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 	return nil
 }
 
-func (b *backend) pathAeadEncryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+func (b *backend) encryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
 	// retrive the config fro  storage
 
@@ -284,7 +153,7 @@ func (b *backend) pathAeadEncryptRow(ctx context.Context, req *logical.Request, 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for fieldName, unencryptedData := range data.Raw {
 		// doEncryption(fieldName, unencryptedData, resp, data, b, ctx, req)
-		go doEncryptionChan(fieldName, unencryptedData, data, b, ctx, req, channel)
+		go b.doEncryptionChan(fieldName, unencryptedData, data, ctx, req, channel)
 	}
 
 	for i := 0; i < channelCap; i++ {
@@ -299,7 +168,7 @@ func (b *backend) pathAeadEncryptRow(ctx context.Context, req *logical.Request, 
 	}, nil
 }
 
-func doEncryptionChan(fieldName string, unencryptedData interface{}, data *framework.FieldData, b *backend, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
+func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}, data *framework.FieldData, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
 	resp := make(map[string]interface{})
 	encryptionkey, ok := aeadConfig.Get(fieldName)
 	// do we have a key already in config
@@ -359,41 +228,6 @@ func doEncryptionChan(fieldName string, unencryptedData interface{}, data *frame
 	ch <- resp
 }
 
-func saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string, b *backend, ctx context.Context, req *logical.Request, overwrite bool) {
-
-	if !overwrite {
-		// don't do this if we already have a key in the config - prevents overwrite
-		_, ok := aeadConfig.Get(fieldName)
-		if ok {
-			hclog.L().Error("saveKeyToConfig - key already exists " + fieldName)
-			return
-		}
-	}
-	// extract the key that could be stored
-	// save the new key into config
-	keyAsJson, err := ExtractInsecureKeySetFromKeyhandle(keysetHandle)
-	if err != nil {
-		hclog.L().Error("Failed to save to config", err)
-	}
-
-	aeadConfig.Set(fieldName, keyAsJson)
-
-	m1 := make(map[string]interface{})
-	m1[fieldName] = keyAsJson
-
-	// prior to this there were race conditions as multiple goroutines access data
-	dn := framework.FieldData{
-		//		Raw:    aeadConfig.Items(),
-		Raw:    m1,
-		Schema: nil,
-	}
-	if overwrite {
-		b.pathConfigOverwrite(ctx, req, &dn)
-	} else {
-		b.pathConfigWrite(ctx, req, &dn)
-	}
-}
-
 func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
 	// what is data.Raw
@@ -427,7 +261,7 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 			}
 
 			// data.Raw = rowDataMapAsMapStrInt
-			go b.pathAeadDecryptRowChan(ctx, req, &dn, rowKey, channel)
+			go b.decryptRowChan(ctx, req, &dn, rowKey, channel)
 		}
 
 		resp.Data = make(map[string]interface{})
@@ -440,7 +274,7 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 		}
 
 	} else {
-		localResp, err := b.pathAeadDecryptRow(ctx, req, data)
+		localResp, err := b.decryptRow(ctx, req, data)
 		if err != nil {
 			panic(err)
 		}
@@ -449,7 +283,7 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 	return resp, nil
 }
 
-func (b *backend) pathAeadDecryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
@@ -462,7 +296,7 @@ func (b *backend) pathAeadDecryptRow(ctx context.Context, req *logical.Request, 
 	// iterate through the key=value supplied (ie field1=sdfvbbvwrbwr field2=advwefvwfvbwrfvb)
 	for field, encryptedDataBase64 := range data.Raw {
 		// doDecryption(field, encryptedDataBase64, resp)
-		go doDecryptionChan(field, encryptedDataBase64, channel)
+		go b.doDecryptionChan(field, encryptedDataBase64, channel)
 	}
 
 	for i := 0; i < len(data.Raw); i++ {
@@ -478,16 +312,7 @@ func (b *backend) pathAeadDecryptRow(ctx context.Context, req *logical.Request, 
 	}, nil
 }
 
-func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
-	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
-	deterministic := false
-	if strings.Contains(encryptionKeyStr, "AesSivKey") {
-		deterministic = true
-	}
-	return encryptionKeyStr, deterministic
-}
-
-func doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, ch chan map[string]interface{}) {
+func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, ch chan map[string]interface{}) {
 	resp := make(map[string]interface{})
 	encryptionkey, ok := aeadConfig.Get(fieldName)
 	// do we have a key already in config
@@ -593,7 +418,7 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 
 			// data.Raw = rowDataMapAsMapStrInt
 			//localResp, err := b.pathAeadEncryptRowChan(ctx, req, data)
-			go b.pathAeadEncryptColChan(ctx, req, &dn, fieldName, channel)
+			go b.encryptColChan(ctx, req, &dn, fieldName, channel)
 		}
 
 		resp.Data = make(map[string]interface{})
@@ -617,10 +442,10 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 	return resp, nil
 }
 
-func (b *backend) pathAeadEncryptColChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
+func (b *backend) encryptColChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
 	// this is just a wrapper around the pathAeadEncryptRow methos so that it can be used concurrently in a channel
-	resp, err := b.pathAeadEncryptCol(ctx, req, data, fieldName)
+	resp, err := b.encryptCol(ctx, req, data, fieldName)
 	if err != nil {
 		panic(err)
 	}
@@ -632,7 +457,7 @@ func (b *backend) pathAeadEncryptColChan(ctx context.Context, req *logical.Reque
 
 }
 
-func (b *backend) pathAeadEncryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
+func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
 
 	// retrive the config fro  storage
 
@@ -765,7 +590,7 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 			}
 
 			// data.Raw = rowDataMapAsMapStrInt
-			go b.pathAeadDecryptColChan(ctx, req, &dn, fieldName, channel)
+			go b.decryptColChan(ctx, req, &dn, fieldName, channel)
 		}
 
 		resp.Data = make(map[string]interface{})
@@ -788,10 +613,10 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 	return resp, nil
 }
 
-func (b *backend) pathAeadDecryptColChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
+func (b *backend) decryptColChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
 	// this is just a wrapper around the pathAeadDecryptRow methos so that it can be used concurrently in a channel
-	resp, err := b.pathAeadDecryptCol(ctx, req, data, fieldName)
+	resp, err := b.decryptCol(ctx, req, data, fieldName)
 	if err != nil {
 		panic(err)
 	}
@@ -803,7 +628,7 @@ func (b *backend) pathAeadDecryptColChan(ctx context.Context, req *logical.Reque
 
 }
 
-func (b *backend) pathAeadDecryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
+func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {

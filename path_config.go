@@ -3,6 +3,7 @@ package aeadplugin
 import (
 	"bytes"
 	"context"
+	b64 "encoding/base64"
 	"fmt"
 	"strings"
 
@@ -147,7 +148,7 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 					}, nil
 				}
 				RotateKeys(kh, true)
-				saveKeyToConfig(kh, fieldName, b, ctx, req, true)
+				b.saveKeyToConfig(kh, fieldName, ctx, req, true)
 			} else {
 				kh, _, err := CreateInsecureHandleAndAead(encryptionKeyStr)
 				if err != nil {
@@ -157,7 +158,7 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 					}, nil
 				}
 				RotateKeys(kh, false)
-				saveKeyToConfig(kh, fieldName, b, ctx, req, true)
+				b.saveKeyToConfig(kh, fieldName, ctx, req, true)
 			}
 		}
 	}
@@ -436,7 +437,7 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 			} else {
 
 				// save the keyhandle for the field
-				saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+				b.saveKeyToConfig(newKh, fieldName, ctx, req, true)
 
 				// extract the JSON from the new key
 				buf := new(bytes.Buffer)
@@ -486,7 +487,7 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 			} else {
 
 				// save the keyhandle for the field
-				saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+				b.saveKeyToConfig(newKh, fieldName, ctx, req, true)
 
 				// extract the JSON from the new key
 				buf := new(bytes.Buffer)
@@ -534,7 +535,7 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 		} else {
 
 			// save the keyhandle for the field
-			saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+			b.saveKeyToConfig(newKh, fieldName, ctx, req, true)
 
 			// extract the JSON from the new key
 			buf := new(bytes.Buffer)
@@ -584,7 +585,7 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 			} else {
 
 				// save the keyhandle for the field
-				saveKeyToConfig(newKh, fieldName, b, ctx, req, true)
+				b.saveKeyToConfig(newKh, fieldName, ctx, req, true)
 
 				// extract the JSON from the new key
 				buf := new(bytes.Buffer)
@@ -629,4 +630,177 @@ func (b *backend) pathImportKey(ctx context.Context, req *logical.Request, data 
 	return &logical.Response{
 		Data: data.Raw,
 	}, nil
+}
+
+func (b *backend) pathAeadCreateDeterministicKeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	return b.pathAeadCreateDeterministicKeysOverwriteCheck(ctx, req, data, false)
+}
+
+func (b *backend) pathAeadCreateDeterministicKeysOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	return b.pathAeadCreateDeterministicKeysOverwriteCheck(ctx, req, data, true)
+}
+
+func (b *backend) pathAeadCreateDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
+
+	// retrive the config from  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := make(map[string]interface{})
+
+	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
+	for fieldName, unencryptedData := range data.Raw {
+
+		if !overwrite {
+			// don't do this if we already have a key in the config - prevents overwrite
+			_, ok := aeadConfig.Get(fieldName)
+			if ok {
+				resp[fieldName] = fieldName + " key exists"
+				continue
+			}
+		}
+
+		// create new DAEAD key
+		keysetHandle, tinkDetAead, err := CreateNewDeterministicAead()
+		if err != nil {
+			hclog.L().Error("Failed to create a new key", err)
+			return &logical.Response{
+				Data: resp,
+			}, err
+		}
+		// set additionalDataBytes as field name of the right type
+		additionalDataBytes := []byte(fieldName)
+
+		// set the unencrypted data to be the right type
+		unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
+
+		// encrypt the data into cypherText (cyphertext)
+		cypherText, err := tinkDetAead.EncryptDeterministically(unencryptedDataBytes, additionalDataBytes)
+		if err != nil {
+			hclog.L().Error("Failed to encrypt with a new key", err)
+			return &logical.Response{
+				Data: resp,
+			}, err
+		}
+
+		// set the response as the base64 encrypted data
+		resp[fieldName] = b64.StdEncoding.EncodeToString(cypherText)
+
+		// extract the key that could be stored, do not overwrite
+		b.saveKeyToConfig(keysetHandle, fieldName, ctx, req, true)
+	}
+
+	return &logical.Response{
+		Data: resp,
+	}, nil
+}
+func (b *backend) pathAeadCreateNonDeterministicKeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	return b.pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx, req, data, false)
+}
+
+func (b *backend) pathAeadCreateNonDeterministicKeysOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	return b.pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx, req, data, true)
+}
+
+func (b *backend) pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
+
+	// retrive the config from  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := make(map[string]interface{})
+
+	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
+	for fieldName, unencryptedData := range data.Raw {
+
+		if !overwrite {
+			// don't do this if we already have a key in the config - prevents overwrite
+			_, ok := aeadConfig.Get(fieldName)
+			if ok {
+				resp[fieldName] = fieldName + " key exists"
+				continue
+			}
+		}
+
+		// create new DAEAD key
+		keysetHandle, tinkAead, err := CreateNewAead()
+		if err != nil {
+			hclog.L().Error("Failed to create a new key", err)
+			return &logical.Response{
+				Data: resp,
+			}, err
+		}
+		// set additionalDataBytes as field name of the right type
+		additionalDataBytes := []byte(fieldName)
+
+		// set the unencrypted data to be the right type
+		unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
+
+		// encrypt the data into cypherText (cyphertext)
+		cypherText, err := tinkAead.Encrypt(unencryptedDataBytes, additionalDataBytes)
+		if err != nil {
+			hclog.L().Error("Failed to encrypt with a new key", err)
+			return &logical.Response{
+				Data: resp,
+			}, err
+		}
+
+		// set the response as the base64 encrypted data
+		resp[fieldName] = b64.StdEncoding.EncodeToString(cypherText)
+
+		// extract the key that could be stored, do not overwrite
+		b.saveKeyToConfig(keysetHandle, fieldName, ctx, req, true)
+	}
+
+	return &logical.Response{
+		Data: resp,
+	}, nil
+}
+
+func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string, ctx context.Context, req *logical.Request, overwrite bool) {
+
+	if !overwrite {
+		// don't do this if we already have a key in the config - prevents overwrite
+		_, ok := aeadConfig.Get(fieldName)
+		if ok {
+			hclog.L().Error("saveKeyToConfig - key already exists " + fieldName)
+			return
+		}
+	}
+	// extract the key that could be stored
+	// save the new key into config
+	keyAsJson, err := ExtractInsecureKeySetFromKeyhandle(keysetHandle)
+	if err != nil {
+		hclog.L().Error("Failed to save to config", err)
+	}
+
+	aeadConfig.Set(fieldName, keyAsJson)
+
+	m1 := make(map[string]interface{})
+	m1[fieldName] = keyAsJson
+
+	// prior to this there were race conditions as multiple goroutines access data
+	dn := framework.FieldData{
+		//		Raw:    aeadConfig.Items(),
+		Raw:    m1,
+		Schema: nil,
+	}
+	if overwrite {
+		b.pathConfigOverwrite(ctx, req, &dn)
+	} else {
+		b.pathConfigWrite(ctx, req, &dn)
+	}
+}
+
+func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
+	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
+	deterministic := false
+	if strings.Contains(encryptionKeyStr, "AesSivKey") {
+		deterministic = true
+	}
+	return encryptionKeyStr, deterministic
 }
