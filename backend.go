@@ -126,7 +126,7 @@ func Backend(c *logical.BackendConfig) *backend {
 					logical.ReadOperation: &framework.PathOperation{
 						Callback: b.pathConfigRead,
 					},
-					logical.UpdateOperation: &framework.PathOperation{
+					logical.DeleteOperation: &framework.PathOperation{
 						Callback:                    b.pathConfigDelete,
 						ForwardPerformanceStandby:   true,
 						ForwardPerformanceSecondary: true,
@@ -289,7 +289,7 @@ func Backend(c *logical.BackendConfig) *backend {
 				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
-						Callback:                    b.pathKeySync,
+						Callback:                    b.pathBQKeySync,
 						ForwardPerformanceStandby:   true,
 						ForwardPerformanceSecondary: true,
 					},
