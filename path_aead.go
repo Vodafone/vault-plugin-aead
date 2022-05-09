@@ -175,6 +175,8 @@ func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}
 	if ok {
 		// is the key we have retrived deterministic?
 		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
+		// set additionalDataBytes as field name of the right type
+		additionalDataBytes := b.getAdditionalData(fieldName, aeadConfig)
 
 		if deterministic {
 			// SUPPORT FOR DETERMINISTIC AEAD
@@ -183,10 +185,6 @@ func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}
 			if err != nil {
 				hclog.L().Error("Failed to create a keyhandle", err)
 			}
-
-			// set additionalDataBytes as field name of the right type
-			additionalDataBytes := []byte(fieldName)
-
 			// set the unencrypted data to be the right type
 			unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
 
@@ -204,10 +202,6 @@ func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}
 			if err != nil {
 				hclog.L().Error("Failed to create a keyhandle", err)
 			}
-
-			// set additionalDataBytes as field name of the right type
-			additionalDataBytes := []byte(fieldName)
-
 			// set the unencrypted data to be the right type
 			unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
 
@@ -320,6 +314,9 @@ func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interfa
 		// is the key deterministig or non deterministic
 		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
 
+		// set additionalDataBytes as field name of the right type
+		additionalDataBytes := b.getAdditionalData(fieldName, aeadConfig)
+
 		if deterministic {
 			// SUPPORT FOR DETERMINISTIC AEAD
 			// we don't need the key handle which is returned first
@@ -327,9 +324,6 @@ func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interfa
 			if err != nil {
 				hclog.L().Error("Failed to create a  key handle", err)
 			}
-
-			// set additionalDataBytes as field name of the right type
-			additionalDataBytes := []byte(fieldName)
 
 			// set the unencrypted data to be the right type
 			encryptedDataBytes, _ := b64.StdEncoding.DecodeString(fmt.Sprintf("%v", encryptedDataBase64))
@@ -347,9 +341,6 @@ func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interfa
 			if err != nil {
 				hclog.L().Error("Failed to create tinkAead", err)
 			}
-
-			// set additionalDataBytes as field name of the right type
-			additionalDataBytes := []byte(fieldName)
 
 			// set the unencrypted data to be the right type
 
@@ -495,7 +486,7 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 		}
 	}
 	// set additionalDataBytes as field name of the right type
-	additionalDataBytes := []byte(fieldName)
+	additionalDataBytes := b.getAdditionalData(fieldName, aeadConfig)
 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for rowNum, unencryptedData := range data.Raw {
@@ -520,9 +511,6 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 				// set the response as the base64 encrypted data
 				resp[rowNum] = b64.StdEncoding.EncodeToString(cypherText)
 			} else {
-
-				// set additionalDataBytes as field name of the right type
-				additionalDataBytes := []byte(fieldName)
 
 				// set the unencrypted data to be the right type
 				unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
@@ -664,7 +652,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 		}
 	}
 	// set additionalDataBytes as field name of the right type
-	additionalDataBytes := []byte(fieldName)
+	additionalDataBytes := b.getAdditionalData(fieldName, aeadConfig)
 
 	// iterate through the key=value supplied (ie field1=sdfvbbvwrbwr field2=advwefvwfvbwrfvb)
 	for rowNumber, encryptedDataBase64 := range data.Raw {

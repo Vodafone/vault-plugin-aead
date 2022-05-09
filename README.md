@@ -5,6 +5,7 @@ VAULT AEAD SECRETS PLUGIN
 - [API endpoints](#api-endpoints)
   - [Data returned](#data-returned)
   - [Client APIS](#client-apis)
+    - [General note an Additional Data](#general-note-an-additional-data)
     - [/encrypt](#encrypt)
     - [/decrypt](#decrypt)
     - [/encryptcol](#encryptcol)
@@ -144,6 +145,22 @@ where key:value could be as below, depending on the endpoint and what it returns
 ```
 
 ## Client APIS
+
+### General note an Additional Data
+AD is set to the same as the field, ie a key called field0 (think table column) will have 'field0' as its Additional Data
+
+This may not always be desirable as perhaps in one table the same field is called different things - address-line1 in table a but address-l1 in table b
+
+To cater for this the AD can be overridden for particular fields
+
+In my example the following can be set up by an admin using the config endpoint
+
+```
+    ADDITIONAL_DATA_address_line1 : ad-for-address-l1
+    ADDITIONAL_DATA_address_l1 : ad-for-address-l1
+```
+
+This would mean that both address-line1 and address-l1 columns would be encrypted or decrypted with the same additional-data = ad-for-address-l1
 
 ### /encrypt
 Lots of parallelisation. Splits bulk data into 1 goroutine per data row, and then every key:value pair is also a goroutine. So a file of 1000 rows and 6 fields is 6000 parallel goroutines. Unanswered questions about whether this is really executed in parallel for bulk data when in a container. Fields that do not have an encryption key are returned as-is and not errored. Note there is a 32Mb json restriction on http message size - the client is expected to handle this
@@ -350,15 +367,34 @@ curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_URL}/v1/aead-se
 ### /bqsync
 Sync keysets to a defined BQ dataset so the same key can be wholey used in BQ.
 
-Consider this a draft endpoint for now. It functionally works fine, but...
 
-1. It hard-codes the project and BQ dataset to place the routines in and the KMS to use - consider using config for this too
-2. The Determinstic BQ stuff is not GA from Google - you have to have the projects(s) whitelisted
+Consider this a draft endpoint for now. It functionally works fine, but the Determinstic BQ stuff is not GA from Google - you have to have the projects(s) whitelisted
 
 
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/bqsync
 ```
+
+
+This default to the following, which can be set using the config endpoint
+
+```
+	BQ_KMSKEY : my-kmskey (default "projects/vf-grp-shared-services-poc2/locations/europe/keyRings/tink-keyring/cryptoKeys/key1")
+    note that the vault service account must have encryptor-by-delegation role on this KMS
+    note also that the kms key must be inthe same region as the datasets to which the routines will be attached
+	BQ_PROJECT : my-project  (default "vf-pf1-ca-live")
+	BQ_DEFAULT_ENCRYPT_DATASET : a-dataset (default "pii_dataset_eu")
+	BQ_DEFAULT_DECRYPT_DATASET : a-dataset (default "pii_dataset_eu")
+	BQ_ROUTINE_DET_PREFIX : a prefix for deterministic routines (default "pii_daead_")
+	BQ_ROUTINE_NONDET_PREFIX : a preficxfor non-deterministic routines (default "pii_aead_")
+```
+  If you want to send a specific routine to a specific dataset you have to know the name of the routine it will try to create and set the following config eg:
+```
+  pii_aead_andy_nd4_encrypt : another-dataset
+```  
+
+
+
 
 ### /updateKeyStatus
 updates the status of a specific key within a specific keyset as ENABLED or DISABLED. New key is checked for validity before updating.

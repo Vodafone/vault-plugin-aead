@@ -757,44 +757,43 @@ func TestBackend(t *testing.T) {
 			fmt.Sprintf("%s", baselineConfigValue) == fmt.Sprintf("%s", newConfigValue) {
 			t.Fatal("read back config values and they are NOT different", err)
 		}
-
-		// t.Run("test20 test config delete", func(t *testing.T) {
-		// // this is commented out as delete does not work
-		// 	// t.Parallel()
-		// 	b, storage := testBackend(t)
-
-		// 	configRequest := map[string]interface{}{
-		// 		"test20-config": "someconfig",
-		// 	}
-
-		// 	saveConfig(b, storage, configRequest, false, t)
-
-		// 	resp := readConfig(b, storage, t)
-
-		// 	if resp == nil {
-		// 		t.Fatal("read back storage", err)
-		// 	}
-
-		// 	_, ok := resp.Data["test20-config"]
-		// 	if !ok {
-		// 		t.Fatal("read back baselineConfigValue", err)
-		// 	}
-
-		// 	deleteConfig(b, storage, configRequest, t)
-
-		// 	resp = readConfig(b, storage, t)
-
-		// 	if resp == nil {
-		// 		t.Fatal("read back storage", err)
-		// 	}
-
-		// 	_, ok = resp.Data["test20-config"]
-		// 	if ok {
-		// 		t.Fatal("failed to delete config", err)
-		// 	}
-		// })
-
 	})
+
+	// t.Run("test20 test config delete", func(t *testing.T) {
+	// 	// this is commented out as delete does not work
+	// 	// t.Parallel()
+	// 	b, storage := testBackend(t)
+
+	// 	configRequest := map[string]interface{}{
+	// 		"test20-config": "someconfig",
+	// 	}
+
+	// 	saveConfig(b, storage, configRequest, false, t)
+
+	// 	resp := readConfig(b, storage, t)
+
+	// 	if resp == nil {
+	// 		t.Fatal("read back storage")
+	// 	}
+
+	// 	_, ok := resp.Data["test20-config"]
+	// 	if !ok {
+	// 		t.Fatal("read back baselineConfigValue")
+	// 	}
+
+	// 	deleteConfig(b, storage, configRequest, t)
+
+	// 	resp = readConfig(b, storage, t)
+
+	// 	if resp == nil {
+	// 		t.Fatal("read back storage")
+	// 	}
+
+	// 	_, ok = resp.Data["test20-config"]
+	// 	if ok {
+	// 		t.Fatal("failed to delete config")
+	// 	}
+	// })
 
 	// for the key ops below we will use
 	// NON-DETERMINISTIC:
@@ -1135,6 +1134,53 @@ func TestBackend(t *testing.T) {
 
 	})
 
+	t.Run("test26 set AD", func(t *testing.T) {
+		b, storage := testBackend(t)
+
+		// create a key
+		keyData := make(map[string]interface{})
+		keyData["test26-key"] = DeterministicKeyset
+
+		keyResp, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "importKey",
+			Data:      keyData,
+		})
+
+		if err != nil {
+			t.Fatal("importKey", err)
+		}
+
+		if len(keyResp.Data) == 0 {
+			t.Fatal("importKey - no data returned")
+		}
+
+		// encrypt something, save the encrypted value
+		dataForEncryption := map[string]interface{}{
+			"test26-key": "something",
+		}
+		// encrypt the data
+		respEncrpt1 := encryptData(b, storage, dataForEncryption, t)
+		respEncrpt2 := encryptData(b, storage, dataForEncryption, t)
+
+		// set an AD for test26-key
+		configADData := map[string]interface{}{
+			"ADDITIONAL_DATA_test26-key": "newadditionaldata",
+		}
+
+		saveConfig(b, storage, configADData, false, t)
+
+		respEncrpt3 := encryptData(b, storage, dataForEncryption, t)
+
+		if fmt.Sprintf("%s", respEncrpt1.Data["test26-key"]) != fmt.Sprintf("%s", respEncrpt2.Data["test26-key"]) {
+			t.Error("the first 2 encrypted values should be the same as additional data did not change")
+		}
+		if fmt.Sprintf("%s", respEncrpt1.Data["test26-key"]) == fmt.Sprintf("%s", respEncrpt3.Data["test26-key"]) {
+			t.Error("the third 2 encrypted values should be different as additional data did change")
+		}
+	})
+
 }
 
 func rotateKeySet(fieldName string, rawKeyset string, b *backend, storage logical.Storage, t *testing.T, primaryKey string) {
@@ -1319,7 +1365,7 @@ func deleteConfig(b *backend, storage logical.Storage, data map[string]interface
 
 	_, err := b.HandleRequest(context.Background(), &logical.Request{
 		Storage:   storage,
-		Operation: logical.UpdateOperation,
+		Operation: logical.DeleteOperation,
 		Path:      pathEndpoint,
 		Data:      data,
 	})

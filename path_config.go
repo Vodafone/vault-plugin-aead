@@ -18,13 +18,13 @@ import (
 var aeadConfig = cmap.New()
 
 func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.pathConfigWriteOverwriteCheck(ctx, req, data, false)
+	return b.configWriteOverwriteCheck(ctx, req, data, false)
 }
 func (b *backend) pathConfigOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.pathConfigWriteOverwriteCheck(ctx, req, data, true)
+	return b.configWriteOverwriteCheck(ctx, req, data, true)
 
 }
-func (b *backend) pathConfigWriteOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
+func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
 
 	if err := data.Validate(); err != nil {
 		return nil, logical.CodedError(422, err.Error())
@@ -388,7 +388,7 @@ func (b *backend) pathImportKey(ctx context.Context, req *logical.Request, data 
 		}
 	}
 	// ok, its ALL valid, save it
-	_, err := b.pathConfigWriteOverwriteCheck(ctx, req, data, true)
+	_, err := b.configWriteOverwriteCheck(ctx, req, data, true)
 	if err != nil {
 		hclog.L().Error("save key failed", err.Error())
 		return &logical.Response{
@@ -401,14 +401,14 @@ func (b *backend) pathImportKey(ctx context.Context, req *logical.Request, data 
 }
 
 func (b *backend) pathAeadCreateDeterministicKeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.pathAeadCreateDeterministicKeysOverwriteCheck(ctx, req, data, false)
+	return b.createDeterministicKeysOverwriteCheck(ctx, req, data, false)
 }
 
 func (b *backend) pathAeadCreateDeterministicKeysOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.pathAeadCreateDeterministicKeysOverwriteCheck(ctx, req, data, true)
+	return b.createDeterministicKeysOverwriteCheck(ctx, req, data, true)
 }
 
-func (b *backend) pathAeadCreateDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
+func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
 
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
@@ -465,14 +465,14 @@ func (b *backend) pathAeadCreateDeterministicKeysOverwriteCheck(ctx context.Cont
 	}, nil
 }
 func (b *backend) pathAeadCreateNonDeterministicKeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx, req, data, false)
+	return b.createNonDeterministicKeysOverwriteCheck(ctx, req, data, false)
 }
 
 func (b *backend) pathAeadCreateNonDeterministicKeysOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx, req, data, true)
+	return b.createNonDeterministicKeysOverwriteCheck(ctx, req, data, true)
 }
 
-func (b *backend) pathAeadCreateNonDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
+func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
 
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
@@ -571,4 +571,16 @@ func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 		deterministic = true
 	}
 	return encryptionKeyStr, deterministic
+}
+
+func (b *backend) getAdditionalData(fieldName string, config cmap.ConcurrentMap) []byte {
+
+	// set additionalDataBytes as field name of the right type
+	aad, ok := aeadConfig.Get("ADDITIONAL_DATA_" + fieldName)
+	if ok {
+		aadStr := fmt.Sprintf("%s", aad)
+		return []byte(aadStr)
+	}
+
+	return []byte(fieldName)
 }
