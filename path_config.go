@@ -58,9 +58,30 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 
 func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
+	// retrive the config from  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
 	// iterate through the supplied map, deleting from the store
 	for k, _ := range data.Raw {
-		req.Storage.Delete(ctx, k)
+		aeadConfig.Remove(k)
+		// err := req.Storage.Delete(ctx, k)
+		// if err != nil {
+		// 	hclog.L().Error("failed to delete config")
+		// 	return nil, fmt.Errorf("failed to delete config: %w", err)
+		// }
+	}
+
+	entry, err := logical.StorageEntryJSON("config", aeadConfig)
+	// entry, err := logical.StorageEntryJSON("config", data.Raw)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := req.Storage.Put(ctx, entry); err != nil {
+		return nil, err
 	}
 
 	return nil, nil

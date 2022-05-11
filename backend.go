@@ -126,7 +126,7 @@ func Backend(c *logical.BackendConfig) *backend {
 					logical.ReadOperation: &framework.PathOperation{
 						Callback: b.pathConfigRead,
 					},
-					logical.DeleteOperation: &framework.PathOperation{
+					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathConfigDelete,
 						ForwardPerformanceStandby:   true,
 						ForwardPerformanceSecondary: true,

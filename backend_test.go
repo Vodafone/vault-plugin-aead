@@ -758,43 +758,41 @@ func TestBackend(t *testing.T) {
 			t.Fatal("read back config values and they are NOT different", err)
 		}
 	})
+	t.Run("test20 test config delete", func(t *testing.T) {
+		// this is commented out as delete does not work
+		// t.Parallel()
+		b, storage := testBackend(t)
 
-	// t.Run("test20 test config delete", func(t *testing.T) {
-	// 	// this is commented out as delete does not work
-	// 	// t.Parallel()
-	// 	b, storage := testBackend(t)
+		configRequest := map[string]interface{}{
+			"test20-config": "someconfig",
+		}
 
-	// 	configRequest := map[string]interface{}{
-	// 		"test20-config": "someconfig",
-	// 	}
+		saveConfig(b, storage, configRequest, false, t)
 
-	// 	saveConfig(b, storage, configRequest, false, t)
+		resp := readConfig(b, storage, t)
 
-	// 	resp := readConfig(b, storage, t)
+		if resp == nil {
+			t.Fatal("read back storage")
+		}
 
-	// 	if resp == nil {
-	// 		t.Fatal("read back storage")
-	// 	}
+		_, ok := resp.Data["test20-config"]
+		if !ok {
+			t.Fatal("read back baselineConfigValue")
+		}
 
-	// 	_, ok := resp.Data["test20-config"]
-	// 	if !ok {
-	// 		t.Fatal("read back baselineConfigValue")
-	// 	}
+		deleteConfig(b, storage, configRequest, t)
 
-	// 	deleteConfig(b, storage, configRequest, t)
+		resp2 := readConfig(b, storage, t)
 
-	// 	resp = readConfig(b, storage, t)
+		if resp2 == nil {
+			t.Fatal("read back storage")
+		}
 
-	// 	if resp == nil {
-	// 		t.Fatal("read back storage")
-	// 	}
-
-	// 	_, ok = resp.Data["test20-config"]
-	// 	if ok {
-	// 		t.Fatal("failed to delete config")
-	// 	}
-	// })
-
+		_, ok = resp2.Data["test20-config"]
+		if ok {
+			t.Fatal("failed to delete config")
+		}
+	})
 	// for the key ops below we will use
 	// NON-DETERMINISTIC:
 	// {"primaryKeyId":3192631270,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBf14hIKBzJYUGjc4LXzaG3dT3aVsvv0vpyZJVZNh02MQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2832419897,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCW0m5ElDr8RznAl4ef3bXqgHgu9PL/js7K6NAZIjkDJw==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2233686170,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiChGSKGi7odjL3mdwhQ03X5SGiVXTarRSKPZUn+xCUYyQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1532149397,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3192631270,"outputPrefixType":"TINK"}]}
@@ -1365,7 +1363,7 @@ func deleteConfig(b *backend, storage logical.Storage, data map[string]interface
 
 	_, err := b.HandleRequest(context.Background(), &logical.Request{
 		Storage:   storage,
-		Operation: logical.DeleteOperation,
+		Operation: logical.UpdateOperation,
 		Path:      pathEndpoint,
 		Data:      data,
 	})
