@@ -1,5 +1,6 @@
 steps:
 - name: 'gcr.io/cloud-builders/docker'
+  dir: docker
   args: [ 'build', '-t', '${_TARGET}', '.' ]
 images: ['${_TARGET}']
 options:
