@@ -1,0 +1,7 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: [ 'build', '-t', '${_TARGET}', '.' ]
+images: ['${_TARGET}']
+options:
+  workerPool: 'projects/vf-grp-clouddmz-lab/locations/europe-west1/workerPools/worker-pool2'
+logsBucket: 'gs://vf-grp-clouddmz-lab-logging'
