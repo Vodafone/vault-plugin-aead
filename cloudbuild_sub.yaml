@@ -15,9 +15,9 @@ steps:
     args:
       - '-c'
       - |
-        # go get -u github.com/Vodafone/vault-plugin-aead
-        # cd vault-plugin-aead
-        # export GOPRIVATE=github.com/pierrec,google.golang.org
+        go get -u github.com/Vodafone/vault-plugin-aead
+        cd vault-plugin-aead
+        export GOPRIVATE=github.com/pierrec,google.golang.org
         go env
         make build
         ls -ltr vault/plugins
