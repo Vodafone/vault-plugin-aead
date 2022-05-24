@@ -20,6 +20,7 @@ steps:
         make build
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
         echo `cat version/version.go | grep const | awk -F'"' '{print $2}'` > /workspace/version.txt
+        cat /workspace/version.txt
     entrypoint: /bin/bash
   - name: gcr.io/cloud-builders/docker
     id: 'container-builder'
