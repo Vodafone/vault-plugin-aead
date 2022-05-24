@@ -699,3 +699,4 @@ deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back ag
 * TODO - Determine the impact on performance of having the Vault audit logs enabled
 * TODO - Figure out where the logging is going
 * DONE - KMS becomes critical to keepng the keys a secret. Decide on a strategy for where this is and who has access (hint - the right answer is: a) in its own isolated projects and b) almost no-one)
+* TODO - Create an abstraction over field so that 2 fields can have the same key
