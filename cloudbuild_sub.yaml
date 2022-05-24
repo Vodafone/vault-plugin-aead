@@ -18,9 +18,8 @@ steps:
         export GOPRIVATE=github.com/pierrec,google.golang.org
         go env
         make build
-        ls -ltr vault/plugins
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
-        ls -ltr docker
+        echo `cat version/version.go | grep const | awk -F'"' '{print $2}'` > /workspace/version.txt
     entrypoint: /bin/bash
   - name: gcr.io/cloud-builders/docker
     id: 'container-builder'
@@ -28,11 +27,11 @@ steps:
     args:
       - build
       - '-t'
-      - '${_TARGET}:${SHORT_SHA}'
+      - '${_TARGET}:${SHORT_SHA}$(cat /workspace/version.txt)'
       - .
     dir: docker
-images:
-  - '${_TARGET}:${SHORT_SHA}'
+# images:
+#   - '${_TARGET}:${SHORT_SHA}'
 logsBucket: 'gs://vf-grp-clouddmz-lab-logging'
 options:
   workerPool: projects/vf-grp-clouddmz-lab/locations/europe-west1/workerPools/worker-pool2
