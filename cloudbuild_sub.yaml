@@ -1,8 +1,29 @@
 steps:
-- name: 'gcr.io/cloud-builders/docker'
-  dir: docker
-  args: [ 'build', '-t', '${_TARGET}', '.' ]
-images: ['${_TARGET}']
-options:
-  workerPool: 'projects/vf-grp-clouddmz-lab/locations/europe-west1/workerPools/worker-pool2'
+  - name: 'golang:1.17'
+    id: 'go-build'
+    args:
+      - '-c'
+      - |
+        go get -u github.com/Vodafone/vault-plugin-aead
+        cd vault-plugin-aead
+        export GOPRIVATE=github.com/pierrec,google.golang.org
+        go env
+        make build
+        ls -ltr vault/plugins
+        cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
+        ls -ltr docker
+    entrypoint: /bin/bash
+  - name: gcr.io/cloud-builders/docker
+    id: 'container-build'
+    waitfor: ['go-build']
+    args:
+      - build
+      - '-t'
+      - '${_TARGET}'
+      - .
+    dir: docker
+images:
+  - '${_TARGET}'
 logsBucket: 'gs://vf-grp-clouddmz-lab-logging'
+options:
+  workerPool: projects/vf-grp-clouddmz-lab/locations/europe-west1/workerPools/worker-pool2
