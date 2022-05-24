@@ -23,7 +23,7 @@ steps:
         ls -ltr docker
     entrypoint: /bin/bash
   - name: gcr.io/cloud-builders/docker
-    id: 'container-build'
+    id: 'container-builder'
     waitFor: ['go-build']
     args:
       - build
