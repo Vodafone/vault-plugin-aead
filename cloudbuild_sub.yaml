@@ -28,7 +28,7 @@ steps:
     args:
       - build
       - '-t'
-      - '${_TARGET}'
+      - '${_TARGET}:${SHORT_SHA}'
       - .
     dir: docker
 images:
