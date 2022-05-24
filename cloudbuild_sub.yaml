@@ -5,7 +5,6 @@ steps:
       - '-c'
       - |
         go get -u github.com/Vodafone/vault-plugin-aead
-        cd vault-plugin-aead
         export GOPRIVATE=github.com/pierrec,google.golang.org
         go test -v -race
     entrypoint: /bin/bash
@@ -16,7 +15,6 @@ steps:
       - '-c'
       - |
         go get -u github.com/Vodafone/vault-plugin-aead
-        cd vault-plugin-aead
         export GOPRIVATE=github.com/pierrec,google.golang.org
         go env
         make build
@@ -34,7 +32,7 @@ steps:
       - .
     dir: docker
 images:
-  - '${_TARGET}'
+  - '${_TARGET}:${SHORT_SHA}'
 logsBucket: 'gs://vf-grp-clouddmz-lab-logging'
 options:
   workerPool: projects/vf-grp-clouddmz-lab/locations/europe-west1/workerPools/worker-pool2
