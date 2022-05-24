@@ -15,7 +15,7 @@ steps:
     entrypoint: /bin/bash
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
-    waitfor: ['go-build']
+    waitFor: ['go-build']
     args:
       - build
       - '-t'
