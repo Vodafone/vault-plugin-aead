@@ -19,8 +19,8 @@ steps:
         go env
         make build
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
-        echo `cat version/version.go | grep const | awk -F'"' '{print $2}'` > /workspace/version.txt
-        cat /workspace/version.txt
+        # echo `cat version/version.go | grep const | awk -F'"' '{print $2}'` > /workspace/version.txt
+        # cat /workspace/version.txt
     entrypoint: /bin/bash
   - name: gcr.io/cloud-builders/docker
     id: 'container-builder'
@@ -28,11 +28,11 @@ steps:
     args:
       - build
       - '-t'
-      - '${_TARGET}:${SHORT_SHA}$(cat /workspace/version.txt)'
+      - '${_TARGET}:${SHORT_SHA}'
       - .
     dir: docker
-# images:
-#   - '${_TARGET}:${SHORT_SHA}'
+images:
+  - '${_TARGET}:${SHORT_SHA}'
 logsBucket: 'gs://vf-grp-clouddmz-lab-logging'
 options:
   workerPool: projects/vf-grp-clouddmz-lab/locations/europe-west1/workerPools/worker-pool2
