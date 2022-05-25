@@ -23,7 +23,7 @@ steps:
         # cat /workspace/version.txt
     entrypoint: /bin/bash
   - name: gcr.io/cloud-builders/docker
-    id: 'container-builder'
+    id: 'container-build'
     waitFor: ['go-build']
     args:
       - build
