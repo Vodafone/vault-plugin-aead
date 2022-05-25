@@ -10,8 +10,9 @@ ifndef OS
 	endif
 endif
 
-# OS = linux
-# env GOOS=linux GOARCH=amd64 go build
+# uncomment these 2 lines if you are building locally
+OS = linux
+env GOOS=linux GOARCH=amd64 go build
 
 .DEFAULT_GOAL := all
 
