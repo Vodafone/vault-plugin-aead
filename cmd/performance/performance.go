@@ -360,6 +360,8 @@ func createHttpClient(options *Options) *retryablehttp.Client {
 	httpClient := &http.Client{Transport: tr}
 	client := retryablehttp.NewClient()
 	client.HTTPClient = httpClient
+	client.RetryMax = 10                    // max 10 retries
+	client.RetryWaitMax = 300 * time.Second // max 5 mins between retries
 	return client
 }
 
@@ -494,7 +496,7 @@ func encryptOrDecryptData(url string, inputMap map[string]interface{}, options *
 		return nil // or an error
 	}
 	xbo := backoff.NewExponentialBackOff()
-	xbo.MaxElapsedTime = 1 * time.Minute
+	xbo.MaxElapsedTime = 15 * time.Minute
 	err := backoff.Retry(operation, xbo)
 	if err != nil {
 		// Handle error.
