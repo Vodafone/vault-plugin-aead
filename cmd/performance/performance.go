@@ -477,7 +477,7 @@ func encryptOrDecryptData(url string, inputMap map[string]interface{}, options *
 		i++
 		err := goDoHttp(inputMap, url, response, options)
 		if err != nil {
-			fmt.Printf("Try=%v Error after goDoHttp=%v\n", i, err)
+			fmt.Printf("encryptOrDecryptData Try=%v Error after goDoHttp=%v\n", i, err)
 			return err
 		}
 		data, ok = response["data"].(map[string]interface{})
@@ -485,11 +485,11 @@ func encryptOrDecryptData(url string, inputMap map[string]interface{}, options *
 			errors, ok := response["errors"].([]interface{})
 			if ok {
 				// we have errors from vault
-				fmt.Printf("Try=%v Vault Response=%v\n", i, errors)
+				fmt.Printf("encryptOrDecryptData Try=%v Vault Response=%v\n", i, errors)
 				return fmt.Errorf("error response from vault %v", errors)
 			} else {
 				// we have errors but no idea why
-				fmt.Printf("Try=%v Vault Response - no idea\n", i)
+				fmt.Printf("encryptOrDecryptData Try=%v Vault Response - no idea\n", i)
 				return fmt.Errorf("error converting response to map[string]interface{}")
 			}
 		}
@@ -545,14 +545,14 @@ func goDoHttp(inputData map[string]interface{}, url string, bodyMap map[string]i
 
 	payloadBytes, err := json.Marshal(inputData)
 	if err != nil {
-		fmt.Printf("json.Marshal Error=%v", err)
+		fmt.Printf("goDoHttp json.Marshal Error=%v\n", err)
 		return err
 	}
 	inputBody := bytes.NewReader(payloadBytes)
 
 	req, err := retryablehttp.NewRequest("POST", url, inputBody)
 	if err != nil {
-		fmt.Printf("http.NewRequest Error=%v", err)
+		fmt.Printf("goDoHttp http.NewRequest Error=%v\n", err)
 		return err
 	}
 	req.Header.Set("X-Vault-Token", options.token)
@@ -560,17 +560,21 @@ func goDoHttp(inputData map[string]interface{}, url string, bodyMap map[string]i
 
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Printf("client.Do Error=%v", err)
+		fmt.Printf("goDoHttp client.Do Error=%v\n", err)
 		return err
 	}
 
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("goDoHttp io.ReadAll Error=%v\n", err)
+		return err
+	}
 
 	err = json.Unmarshal([]byte(body), &bodyMap)
 	if err != nil {
-		fmt.Printf("Unmarshall Error=%v", err)
+		fmt.Printf("goDoHttp Unmarshall Error=%v\n", err)
 		return err
 	}
 	return nil
