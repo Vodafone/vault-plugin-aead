@@ -1,27 +1,25 @@
 steps:
-  - name: 'golang:1.17'
+  - name: 'gcr.io/cloud-builders/go'
     id: 'go-test'
     args:
       - '-c'
       - |
         go get -u github.com/Vodafone/vault-plugin-aead
-        export GOPRIVATE=github.com/pierrec,google.golang.org
         go test -v -race
-    entrypoint: /bin/bash
-  - name: 'golang:1.17'
+    entrypoint: /bin/sh
+  - name: 'gcr.io/cloud-builders/go'
     id: 'go-build'
     waitFor: ['go-test']
     args:
       - '-c'
       - |
         go get -u github.com/Vodafone/vault-plugin-aead
-        export GOPRIVATE=github.com/pierrec,google.golang.org
         go env
         make build
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
         # echo `cat version/version.go | grep const | awk -F'"' '{print $2}'` > /workspace/version.txt
         # cat /workspace/version.txt
-    entrypoint: /bin/bash
+    entrypoint: /bin/sh
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
     waitFor: ['go-build']
@@ -31,8 +29,14 @@ steps:
       - '${_TARGET}:${SHORT_SHA}'
       - .
     dir: docker
+timeout: 1200s
 images:
   - '${_TARGET}:${SHORT_SHA}'
 logsBucket: 'gs://vf-grp-clouddmz-lab-logging'
 options:
   workerPool: projects/vf-grp-clouddmz-lab/locations/europe-west1/workerPools/worker-pool2
+  env:
+    - 'GOPROXY=direct'
+    - 'GOPRIVATE=github.com/pierrec,google.golang.org'
+    - 'GOOS=linux'
+    - 'GOARCH=amd64'
