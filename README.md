@@ -44,6 +44,9 @@ VAULT AEAD SECRETS PLUGIN
 - [INFRASTRUCTURE](#infrastructure)
   - [Consul](#consul)
   - [Vault](#vault)
+- [TELEMETRY](#telemetry)
+  - [Config example](#config-example)
+  - [Message](#message)
 - [LIMITATIONS AND TODO's](#limitations-and-todos)
 
 
@@ -672,13 +675,41 @@ deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back ag
 ![alt text](jpg-files/vault-statefulset-limits.jpg "Vault Statefulset limits")
 
 
+# TELEMETRY
+As of v0.1.3 telemetry can be published for each call to encryption or decryption. This is published to a PubSub topic in the form of a JSON message.
 
+This is used to:
 
+a) confirm the performance claims
+
+b) provide a mechanism to determine usage per market for chargeback purposes
+
+Dataflow can be configured to consume this and save to a BigQuery for analysis
+
+## Config example
+```
+TELEMETRY_LM : TEST
+TELEMETRY_PROJECTID : vf-grp-shared-services-poc2
+TELEMETRY_TOPICID : eaas-telemetry
+```
+
+## Message
+```
+{
+  "uuid": "1c8c910a-0781-4065-8dec-f3b1a1fab338",
+  "market": "TEST",
+  "pubDate": "2022-06-04 18:46:35.587133 +0000 UTC",
+  "encryptOrDecrypt": "encrypt",
+  "reqSize": 8,
+  "reqRows": 1,
+  "reqFields": 1
+}
+```
 
 
 
 # LIMITATIONS AND TODO's
-* IN-PROGRESS - Ticket with Google on HPA behaviour - Choose between Autoscaling on AutoPilot or a fixed GKE cluster with a CUD. If autopilot chosen we need to fully understand the behaviour of the horizonal autoscaler. For example when a vault container is routed bulk data it can be near 100% cpu. But if 3/10 pods are at 100% does it scale up as 3 pods are max, or will it say on average it is 30% so we are fine - and what is the impact of this on performance and 'warm-up' time.
+* DONE - Ticket with Google on HPA behaviour - Choose between Autoscaling on AutoPilot or a fixed GKE cluster with a CUD. If autopilot chosen we need to fully understand the behaviour of the horizonal autoscaler. For example when a vault container is routed bulk data it can be near 100% cpu. But if 3/10 pods are at 100% does it scale up as 3 pods are max, or will it say on average it is 30% so we are fine - and what is the impact of this on performance and 'warm-up' time.
 * DONE - Choose between a seperate vault per market (urghh) or a seperate engine per market (hurrah). Confirm configs are seperate.
 * DONE - Test the mechanism such the config (ie Keys) are not destroyed when a new version of the plugin is created
 * DONE - discarded - Consider KMS encrypting the keys in consul. The downside to this is that unless column level batch ops are used, or some clever key caching and TTL is employed, every encryption or decryption operation will have to be retrieve the key (this is fine its in memory) but will also have to use KMS - billions of ops
@@ -692,8 +723,8 @@ deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back ag
 * To-BE-TESTED - Consider how to manage the policies for endpoint and secret engine access
 * TODO - Consider an on-prem replication, so have a farm on prem and cloud with the same keys, and what technical, cost, and license implications there might be
 * DONE - in config - Settle on the 'Additional Data' - right now i have used the name of the field, i think this is industry practice, but what is VF's strategy
-* TODO - Test behaviour and performance for different data shapes
-* TODO - Write another test framework. Right now the author of the plugin also authored the performance test framework - so if I missed, or mis-calculated something - I probably did it in both places
+* IN-PROGRESS - Test behaviour and performance for different data shapes
+* DONE - Write another test framework. Right now the author of the plugin also authored the performance test framework - so if I missed, or mis-calculated something - I probably did it in both places
 * DONE - Confirm that it is impossible to decode the plaintext-binary-kms-encrypted keyset that is stored in the BQ routine on bq sync
 * DONE - Decide on where to keep the config for target BQ routines
 * TODO - Determine the impact on performance of having the Vault audit logs enabled

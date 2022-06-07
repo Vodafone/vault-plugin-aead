@@ -3,12 +3,19 @@ package aeadplugin
 import (
 	"context"
 	"fmt"
+	"log"
+	"sync"
+	"time"
+	"unsafe"
 
+	"cloud.google.com/go/pubsub"
 	hclog "github.com/hashicorp/go-hclog"
 
 	b64 "encoding/base64"
+	"encoding/json"
 
 	"github.com/google/tink/go/tink"
+	"github.com/google/uuid"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 )
@@ -31,6 +38,12 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 		{"field0":"fieldvalue0","field1":"fieldvalue1","field2":"fieldvalue2"}
 
 	*/
+
+	// fire and forget the telemetry
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go b.publishTelemetry(&wg, ctx, req, "encrypt", data.Raw)
+
 	var respStruct = logical.Response{}
 	var resp = &respStruct
 
@@ -78,6 +91,8 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 		}
 		resp = localResp
 	}
+	wg.Wait()
+
 	return resp, nil
 }
 
@@ -231,6 +246,12 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 	//
 	// or a single row of key value pairs to be encrypted map[string]interface{}
 	// {"bulkfield0":"fgbsrhbrgbr","bulkfield1":"sfgbsfbrnegnehtfngb","bulkfield2":"srbgwrgbwrgbwrg"}
+
+	// fire and forget the telemetry
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go b.publishTelemetry(&wg, ctx, req, "decrypt", data.Raw)
+
 	var respStruct = logical.Response{}
 	var resp = &respStruct
 
@@ -274,6 +295,7 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 		}
 		resp = localResp
 	}
+	wg.Wait()
 	return resp, nil
 }
 
@@ -380,6 +402,12 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 		{"field0":"fieldvalue0","field1":"fieldvalue1","field2":"fieldvalue2"}
 
 	*/
+
+	// fire and forget the telemetry
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go b.publishTelemetry(&wg, ctx, req, "encrypt", data.Raw)
+
 	var respStruct = logical.Response{}
 	var resp = &respStruct
 
@@ -430,6 +458,8 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 		hclog.L().Info("can only do column ops on bulk data")
 
 	}
+	wg.Wait()
+
 	return resp, nil
 }
 
@@ -547,6 +577,12 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 	//
 	// or a single row of key value pairs to be encrypted map[string]interface{}
 	// {"bulkfield0":"fgbsrhbrgbr","bulkfield1":"sfgbsfbrnegnehtfngb","bulkfield2":"srbgwrgbwrgbwrg"}
+
+	// fire and forget the telemetry
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go b.publishTelemetry(&wg, ctx, req, "decrypt", data.Raw)
+
 	var respStruct = logical.Response{}
 	var resp = &respStruct
 
@@ -598,6 +634,8 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 	} else {
 		hclog.L().Info("can only do column ops on bulk data")
 	}
+	wg.Wait()
+
 	return resp, nil
 }
 
@@ -714,4 +752,100 @@ func isBulkData(data map[string]interface{}) (bool, error) {
 	}
 	// this should never be reached
 	return false, nil
+}
+
+func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req *logical.Request, encryptOrDecrypt string, data map[string]interface{}) {
+
+	defer wg.Done()
+
+	// retrive the config from  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return
+	}
+
+	var market string
+	telemetryLMIntf, ok := aeadConfig.Get("TELEMETRY_LM")
+	if !ok {
+		return
+		//market = "test"
+	} else {
+		market = fmt.Sprintf("%s", telemetryLMIntf)
+	}
+
+	// it is bulk data if it is a nested map
+	// map[string]map[string]interface{}
+	// else it is not bulk data because it is
+	// map[string]interface{}
+
+	rows := len(data)
+	fields := 1
+
+	for _, v := range data {
+		// is the value of the outer map another mnap
+		mi, ok := v.(map[string]interface{})
+		if ok {
+			fields = len(mi)
+		}
+	}
+
+	// Sets your Google Cloud Platform project ID.
+	var projectID string
+	telemetryProjectIDIntf, ok := aeadConfig.Get("TELEMETRY_PROJECTID")
+	if !ok {
+		projectID = "vf-grp-shared-services-poc2"
+	} else {
+		projectID = fmt.Sprintf("%s", telemetryProjectIDIntf)
+	}
+
+	// Sets the id for the new topic.
+	var topicID string
+	telemetryTopicIDIntf, ok := aeadConfig.Get("TELEMETRY_TOPICID")
+	if !ok {
+		topicID = "eaas-telemetry"
+	} else {
+		topicID = fmt.Sprintf("%s", telemetryTopicIDIntf)
+	}
+
+	// Creates a client.
+	client, err := pubsub.NewClient(ctx, projectID)
+	if err != nil {
+		hclog.L().Error("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Creates the new topic.
+
+	type Message struct {
+		Uuid             string `json:"uuid"`
+		Market           string `json:"market"`
+		PubDate          string `json:"pubDate"`
+		EncryptOrDecrypt string `json:"encryptOrDecrypt"`
+		ReqSize          int    `json:"reqSize"`
+		ReqRows          int    `json:"reqRows"`
+		ReqFields        int    `json:"reqFields"`
+	}
+
+	tn := time.Now().UTC().String()
+	newUuid := uuid.New()
+	sz := unsafe.Sizeof(data)
+
+	msg := Message{newUuid.String(), market, tn, encryptOrDecrypt, int(sz), rows, fields}
+	payload, err := json.Marshal(msg)
+
+	if err != nil {
+		log.Fatalf("pubsub: json.Marshal: %v", err)
+	}
+
+	t := client.Topic(topicID)
+	result := t.Publish(ctx, &pubsub.Message{
+		Data: payload,
+	})
+
+	// Block until the result is returned and a server-generated
+	// ID is returned for the published message.
+	_, err = result.Get(ctx)
+	if err != nil {
+		hclog.L().Error("pubsub: result.Get: %v", err)
+	}
 }
