@@ -1,24 +1,14 @@
 steps:
   - name: 'gcr.io/cloud-builders/go'
-    id: 'go-test'
-    args:
-      - '-c'
-      - |
-        go get -u github.com/Vodafone/vault-plugin-aead
-        go test -v -race
-    entrypoint: /bin/sh
-  - name: 'gcr.io/cloud-builders/go'
     id: 'go-build'
-    waitFor: ['go-test']
     args:
       - '-c'
       - |
         go get -u github.com/Vodafone/vault-plugin-aead
         go env
+        cd /workspace
         make build
-        cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
-        # echo `cat version/version.go | grep const | awk -F'"' '{print $2}'` > /workspace/version.txt
-        # cat /workspace/version.txt
+        cp /workspace/vault/plugins/vault-plugin-aead /workspace/docker/vault-plugin-aead
     entrypoint: /bin/sh
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
