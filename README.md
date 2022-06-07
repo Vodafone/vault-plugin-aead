@@ -1,4 +1,5 @@
 VAULT AEAD SECRETS PLUGIN
+- [WHAT IS IT](#what-is-it)
 - [INSPIRATION](#inspiration)
 - [HIGH LEVEL REQUIREMENTS](#high-level-requirements)
 - [QUICK START](#quick-start)
@@ -48,6 +49,9 @@ VAULT AEAD SECRETS PLUGIN
   - [Config example](#config-example)
   - [Message](#message)
 - [LIMITATIONS AND TODO's](#limitations-and-todos)
+
+# WHAT IS IT
+A custom secret engine plugin to Hashicorp Vault that enables data to be encrypted/decrypted with Google Tink AEAD keysets for anonymisation purposes. Functionality includes server side anonymisation, key lifecycle management, synchronisation with Big Query. Data is encrypted or decrypted transiently (no state), only the config and keys are held securely in vault.
 
 
 
