@@ -1,14 +1,16 @@
 steps:
   - name: 'gcr.io/cloud-builders/go:1.17'
+    id: 'go-test'
     args:
       - '-c'
       - |
         cd /workspace
         go get -u github.com/Vodafone/vault-plugin-aead
         go test -v -race
-    id: go-test
     entrypoint: /bin/sh
   - name: 'gcr.io/cloud-builders/go:1.17'
+    id: 'go-build'
+    waitFor: ['go-test']
     args:
       - '-c'
       - |
@@ -16,13 +18,10 @@ steps:
         go env
         make build
         cp /workspace/vault/plugins/vault-plugin-aead /workspace/docker/
-    id: go-build
-    waitFor:
-      - go-test
     entrypoint: /bin/sh
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
-    waitFor: go-build
+    waitFor: ['go-build']
     args:
       - build
       - '-t'
