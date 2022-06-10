@@ -17,6 +17,7 @@ require (
 	github.com/orcaman/concurrent-map v1.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil v3.21.11+incompatible
+	github.com/stretchr/testify v1.7.0
 	google.golang.org/genproto v0.0.0-20210402141018-6c239bbf2bb1
 	k8s.io/apimachinery v0.23.4
 	k8s.io/client-go v0.23.4
@@ -70,6 +71,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/oklog/run v1.0.0 // indirect
 	github.com/pierrec/lz4 v2.5.2+incompatible // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
