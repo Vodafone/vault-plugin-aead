@@ -42,6 +42,10 @@ VAULT AEAD SECRETS PLUGIN
       - [medium test](#medium-test)
       - [large test](#large-test)
   - [Options](#options)
+- [BENCHMARKING](#benchmarking)
+  - [Intro](#intro)
+  - [Usage](#usage)
+  - [Analyzing the Results](#analyzing-the-results)
 - [INFRASTRUCTURE](#infrastructure)
   - [Consul](#consul)
   - [Vault](#vault)
@@ -584,7 +588,7 @@ select "value1" as ORIGINAL,
 **5 Million encryptions/decryptions per second have been achieved with a large performance test rig and pods of 300 x 8 CPU**
 - this claim needs to be independently verified
 
-![alt text](jpg-files/EaaS-PerformanceTesting.jpg "Perormance Testing")
+![alt text](jpg-files/EaaS-PerformanceTesting.jpg "Performance Testing")
 
 ## Notes
 I can't honestly say this was designed from the ground up, it sort of evolved into a bit of a swiss army knife. It's almost certainly not a reference implementation of a test framework, it assumes happy path, and I wouldn't dream of using it in production. But it is enough for now.
@@ -660,9 +664,29 @@ Usage of ./performance:
   -w string
     	UTC datetime in the format of 2022-03-28 11:05 YYYY-MM-DD HH24:MM to delay until - useful to set up a large scale run. Starts immediately if this time is in the past.
 ```
+# BENCHMARKING
+
+## Intro
+Benchmarks in Go are done with the testing package, much like regular unit tests. Just like unit tests, benchmarks are triggered with the same Go test tooling. By adding benchmarks, we can leverage these metrics to see about time consumed, number of iteration/request(i.e. execution of function) and inform us about how to improve code.
+
+## Usage 
+To run a benchmark, we need append the -bench flag to the go test command. The argument to -bench is a regular expression that specifies which benchmarks should be run, which is helpful when you want to run a subset of your benchmark functions.
+
+`go test -benchmem -run=^$  -bench ^BenchmarkPathAead`
+
+## Analyzing the Results
+The benchmark will be outputted with the name of the function that was running, which we can use to identify the different ones. 
+goos, goarch, pkg, and cpu describe the operating system, architecture, package, and CPU specifications, respectively.
+
+On the right side of the function name we have iteration column. This number represents the number of time the for loop has run to obtain the statistics. Then we have Nanoseconds per operation and Number of bytes allocated per operation. The former indicates you an idea of how fast on average your solver run, while the latter give you an idea about the memory consumption.
+
+last column of this stat speaks for itself. This is the average number of memory allocations per run. 
+
+![image info](benchmark_results.jpg)
+
 
 # INFRASTRUCTURE
-For proper deployment, not local testing, we use Vault Enterprise v1.9 and Consol v1.10
+For proper deployment, not local testing, we use Vault Enterprise v1.9 and Consul v1.10
 This is deployed on GCP's GKE
 
 
@@ -735,3 +759,6 @@ TELEMETRY_TOPICID : eaas-telemetry
 * TODO - Figure out where the logging is going
 * DONE - KMS becomes critical to keepng the keys a secret. Decide on a strategy for where this is and who has access (hint - the right answer is: a) in its own isolated projects and b) almost no-one)
 * TODO - Create an abstraction over field so that 2 fields can have the same key
+* TODO - use some test framework such as `assert` package which will provide some helpful built-in methods for printing friendly, easy to read failure descriptions, readable code or annotate each assertion with a message
+
+* TODO - implement HTTP(S) benchmark tools for benchmarking encryption/decryption process on remote Vault instances (ddosify,baloo or cassowary)
