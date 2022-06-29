@@ -4,24 +4,26 @@ steps:
     args:
       - '-c'
       - |
+        cd /workspace
+        ls -lastr
         go get -u github.com/Vodafone/vault-plugin-aead
-        export GOPRIVATE=github.com/pierrec,google.golang.org
         go test -v -race
-    entrypoint: /bin/bash
+    entrypoint: /bin/sh
   - name: 'golang:1.17'
     id: 'go-build'
     waitFor: ['go-test']
     args:
       - '-c'
       - |
-        go get -u github.com/Vodafone/vault-plugin-aead
-        export GOPRIVATE=github.com/pierrec,google.golang.org
+        cd /workspace
+        ls -lastr
         go env
         make build
-        cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
-        # echo `cat version/version.go | grep const | awk -F'"' '{print $2}'` > /workspace/version.txt
-        # cat /workspace/version.txt
-    entrypoint: /bin/bash
+        ls -lastr
+        cp /workspace/vault/plugins/vault-plugin-aead /workspace/docker/
+        cd /workspace/docker
+        ls -lastr
+    entrypoint: /bin/sh
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
     waitFor: ['go-build']
