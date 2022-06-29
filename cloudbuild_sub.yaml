@@ -1,6 +1,10 @@
 steps:
   - name: 'gcr.io/cloud-builders/go:1.17'
     id: 'go-test'
+    env:
+      - 'GOPRIVATE=github.com/pierrec,google.golang.org'
+      - GOOS=linux
+      - GOARCH=amd64
     args:
       - '-c'
       - |
@@ -11,6 +15,10 @@ steps:
   - name: 'gcr.io/cloud-builders/go:1.17'
     id: 'go-build'
     waitFor: ['go-test']
+    env:
+      - 'GOPRIVATE=github.com/pierrec,google.golang.org'
+      - GOOS=linux
+      - GOARCH=amd64
     args:
       - '-c'
       - |
@@ -28,6 +36,10 @@ steps:
       - '${_TARGET}:${SHORT_SHA}'
       - .
     dir: docker
+    env:
+      - 'GOPRIVATE=github.com/pierrec,google.golang.org'
+      - GOOS=linux
+      - GOARCH=amd64
 timeout: 1200s
 images:
   - '${_TARGET}:${SHORT_SHA}'
