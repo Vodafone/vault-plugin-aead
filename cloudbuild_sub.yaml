@@ -5,6 +5,7 @@ steps:
       - '-c'
       - |
         cd /workspace
+        ls -lastr
         go get -u github.com/Vodafone/vault-plugin-aead
         go test -v -race
     entrypoint: /bin/sh
@@ -15,6 +16,7 @@ steps:
       - '-c'
       - |
         cd /workspace
+        ls -lastr
         go env
         make build
         cp /workspace/vault/plugins/vault-plugin-aead /workspace/docker/
