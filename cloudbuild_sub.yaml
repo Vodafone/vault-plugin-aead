@@ -1,13 +1,19 @@
 steps:
-  - name: 'gcr.io/cloud-builders/go:1.18'
-    id: 'go-build'
+  - name: 'gcr.io/cloud-builders/go:1.17'
+    id: 'go-test'
     args:
       - '-c'
       - |
-        cd /workspace
-        go env
-        GOOS=linux GOARCH=amd64 make build
-        cp /workspace/vault/plugins/vault-plugin-aead /workspace/docker/
+        go test -v -race
+    entrypoint: /bin/sh
+  - name: 'gcr.io/cloud-builders/go:1.17'
+    id: 'go-build'
+    waitFor: ['go-test']
+    args:
+      - '-c'
+      - |
+        make build
+        cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
     entrypoint: /bin/sh
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
@@ -26,5 +32,5 @@ options:
   workerPool: projects/vf-grp-clouddmz-lab/locations/europe-west1/workerPools/worker-pool2
   env:
     - 'GOPRIVATE=github.com/pierrec,google.golang.org'
-    - GOOS=linux
-    - GOARCH=amd64
+    - 'GOOS=linux'
+    - 'GOARCH=amd64'
