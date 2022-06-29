@@ -7,6 +7,7 @@ steps:
         cd /workspace
         ls -lastr
         go get -u github.com/Vodafone/vault-plugin-aead
+        export GOPRIVATE=github.com/pierrec,google.golang.org
         go test -v -race
     entrypoint: /bin/sh
   - name: 'golang:1.17'
@@ -17,12 +18,11 @@ steps:
       - |
         cd /workspace
         ls -lastr
+        export GOPRIVATE=github.com/pierrec,google.golang.org
         go env
-        make build
+        make build VERBOSE=1
         ls -lastr
         cp /workspace/vault/plugins/vault-plugin-aead /workspace/docker/
-        cd /workspace/docker
-        ls -lastr
     entrypoint: /bin/sh
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
