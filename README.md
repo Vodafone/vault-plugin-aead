@@ -716,11 +716,11 @@ deployed in a fixed cluster (because it does not support autopilot yet), and a s
 
 
 ## Vault
-deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back again quickly and also vary the pod specs without worrying about node servers. Also the pods have a high spec of 8CPU's
+deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back again quickly and also vary the pod specs without worrying about node servers. Also the pods have a spec of 2CPU, 4G RAM
 
 ![alt text](jpg-files/vault-on-GKE-Autopilot.jpg "Vault on GKE Autopilot")
 
-![alt text](jpg-files/vault-statefulset-limits.jpg "Vault Statefulset limits")
+![alt text](jpg-files/vault-statefulset-resources-current.jpg "Vault Statefulset limits")
 
 ## HPA
 
@@ -781,21 +781,26 @@ Dataflow Job has been built on Dataflow template gs://dataflow-templates-europe-
 * DONE - Implement a keyset delete endpoint 
 * DONE - Implement a key disable endpoint
 * DONE - These tests will never work in parallel - Go tests do not work in parallel - I know why - its the saveconfig endpoint conflicting with the createkey endpoints. I don't think this would occur for real as config and keys will be an admin function, but its annoying and I should be able to get this to work
-* IN-PROGRESS w/SOLN ENG - How to restrict who can execute the BQ routine - current soln has more fine grained control than just who has access to the kms keys. 
+* DONE - How to restrict who can execute the BQ routine - current soln has more fine grained control than just who has access to the kms keys. 
 * DONE - in config - Strategy for deciding which BQ encrypt/decrypt routine is created in which BQ dataset
 * WILL NOT DO - NICE TO HAVE - More parameterisation and more hardening (and maybe some actual design!) on the performance harness
 * DONE - Full scale testing consistently has only 6/10 tests completing (actually even starting properly) in project a and b instance groups. Suspect this is to do with NAT overload, or NAT scale-up - to be investigated. Always 10/10 complete from on prem
-* To-BE-TESTED - Consider how to manage the policies for endpoint and secret engine access
+* DONE - Consider how to manage the policies for endpoint and secret engine access
 * TODO - Consider an on-prem replication, so have a farm on prem and cloud with the same keys, and what technical, cost, and license implications there might be
 * DONE - in config - Settle on the 'Additional Data' - right now i have used the name of the field, i think this is industry practice, but what is VF's strategy
-* IN-PROGRESS - Test behaviour and performance for different data shapes
+* DONE - Test behaviour and performance for different data shapes
 * DONE - Write another test framework. Right now the author of the plugin also authored the performance test framework - so if I missed, or mis-calculated something - I probably did it in both places
 * DONE - Confirm that it is impossible to decode the plaintext-binary-kms-encrypted keyset that is stored in the BQ routine on bq sync
 * DONE - Decide on where to keep the config for target BQ routines
 * TODO - Determine the impact on performance of having the Vault audit logs enabled
 * TODO - Figure out where the logging is going
 * DONE - KMS becomes critical to keepng the keys a secret. Decide on a strategy for where this is and who has access (hint - the right answer is: a) in its own isolated projects and b) almost no-one)
-* TODO - Create an abstraction over field so that 2 fields can have the same key
+* TODO - [Piotr] Create an abstraction over field so that 2 fields can have the same key category
 * TODO - use some test framework such as `assert` package which will provide some helpful built-in methods for printing friendly, easy to read failure descriptions, readable code or annotate each assertion with a message
 
 * TODO - implement HTTP(S) benchmark tools for benchmarking encryption/decryption process on remote Vault instances (ddosify,baloo or cassowary)
+* TODO - [Piotr]- review the ADDITIONAL_DATA config strategy
+* TODO - [Piotr]- review the use of aeadConfig map - is this OK, or should it be passed to each method or function
+* TODO - [Piotr]- amend the performance tool to optionally do a proper handshake w/Vault rather than using the token explicitly
+* TODO - [Piotr]- mask the key material from any command line user except a super-admin (2 end-points?)
+* TODO - [Piotr]- review the config strategy associated with bqsync end point wrt how we name routines and which routines are created in which dataset
