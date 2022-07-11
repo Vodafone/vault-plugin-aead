@@ -46,12 +46,16 @@ VAULT AEAD SECRETS PLUGIN
   - [Intro](#intro)
   - [Usage](#usage)
   - [Analyzing the Results](#analyzing-the-results)
+    - [Decrypt/Encrypt tests based on bechmarks](#decryptencrypt-tests-based-on-bechmarks)
 - [INFRASTRUCTURE](#infrastructure)
   - [Consul](#consul)
   - [Vault](#vault)
+  - [HPA](#hpa)
+  - [KMS](#kms)
 - [TELEMETRY](#telemetry)
   - [Config example](#config-example)
   - [Message](#message)
+  - [Workflow diagram](#workflow-diagram)
 - [LIMITATIONS AND TODO's](#limitations-and-todos)
 
 # WHAT IS IT
@@ -682,12 +686,28 @@ On the right side of the function name we have iteration column. This number rep
 
 last column of this stat speaks for itself. This is the average number of memory allocations per run. 
 
-![image info](benchmark_results.jpg)
+![benchmark_results](jpg-files/benchmark_results.jpg)
+
+### Decrypt/Encrypt tests based on bechmarks
+
+![benchmark_decrypt_encrypt tests](jpg-files/decrypt_encrypt_tests.jpg)
 
 
 # INFRASTRUCTURE
 For proper deployment, not local testing, we use Vault Enterprise v1.9 and Consul v1.10
 This is deployed on GCP's GKE
+
+Components: 
+* Cloud DNS is providing high-availability of domain and pointing to the correct external load balancer 
+* Cloud Armor offer in-built support against DDoS attacks and allows for protection with default Cloud Armor config 
+* External Load Balancing uses HTTPS with SSL certificate
+* Vault Enterprise License is stored in Secret which is used by Helm Chart of Helm Deployment to configure proper Vault Enterprise which is used in this project
+In this proposed infrastructure there are prepared two Kubernetes Cluster: GKE Standard and GKE Autopilot. Vault is installed on the former one  while consul is installed on the latter.
+
+The proposed infrastructure shows two clusters (Consul, Vault) which are connected and can communicate with each other by an internal load balancer pointing to vault-consul-lb which handles distribute traffic between consuls servers
+
+![infrastructure diagram](jpg-files/infrastructure_diagram.jpg "infrastructure diagram")
+
 
 
 ## Consul
@@ -701,6 +721,15 @@ deployed in a GKE Autpilot cluster so we can scale from 3 - 300 pods and back ag
 ![alt text](jpg-files/vault-on-GKE-Autopilot.jpg "Vault on GKE Autopilot")
 
 ![alt text](jpg-files/vault-statefulset-limits.jpg "Vault Statefulset limits")
+
+## HPA
+
+HPA (Horizontal Pod Autoscaling) Scales pods depends on the CPU usage from Metrics Server API, if CPU usage is more than 40% than new replicas pods are created. 
+
+## KMS
+
+Additional GCP Project is used to store Vault key which is used for storing KMS key. Vault supports opt-in automatic unsealing via KMS from GCP. This feature enables operator to delegate the unsealing process to trusted keys in the event of partial failure and to aid in the creation of new or ephemeral clusters. Hardware security modules (HSMs) are intrusion-resistant hardware components that we use to protect and store cryptographic keys while still making them available for use by authorized users. The purpose is to control access and limit risk to sensitive private keys. More information: https://www.vaultproject.io/docs/enterprise/hsm
+
 
 
 # TELEMETRY
@@ -733,6 +762,14 @@ TELEMETRY_TOPICID : eaas-telemetry
   "reqFields": 1
 }
 ```
+
+## Workflow diagram
+
+Dataflow Job has been built on Dataflow template gs://dataflow-templates-europe-west1/latest/PubSub_Subscription_to_BigQuery which allows for pushing data (encryption or decryption) from Vault cluster to the specific Pub/Sub Topic. Pub/Sub delivers the events from Vault and then output the transformed data (JSON) to BigQuery table.
+
+![workflow_diagram](jpg-files/telemetry_diagram.jpg)
+
+
 
 
 
