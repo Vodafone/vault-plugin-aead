@@ -1179,6 +1179,80 @@ func TestBackend(t *testing.T) {
 		}
 	})
 
+	t.Run("test27 set key family", func(t *testing.T) {
+		// t.Parallel()
+		b, storage := testBackend(t)
+
+		_, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "config",
+			Data:      map[string]interface{}{"test27-address": "ADDRESS_FAMILY", "test27-phone": "ADDRESS_FAMILY"},
+		})
+		if err != nil {
+			t.Fatal("saveConfig", err)
+		}
+		// set some data to be encrypted using the keys
+		familySetup := map[string]interface{}{
+			"ADDRESS_FAMILY": DeterministicKeyset,
+		}
+
+		_, err = b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "importKey",
+			Data:      familySetup,
+		})
+		if err != nil {
+			t.Fatal("saveConfig", err)
+		}
+		// storeKeyValue("test27-address2", "ADDRESS_FAMILY", t)
+		// storeKeyValue("test27-phone2", "ADDRESS_FAMILY", t)
+		// saveConfig(b, storage, , false, t)
+
+		// retreive the encrypted data for field address
+		// actualEncryptedValue := fmt.Sprintf("%v", resp.Data["ADDRESS_FAMILY"]) // convert the cyphertext (=interface{}) received to a string
+
+		// // get the actual Json key used from teh config for address
+		// actualJSonKey4Phone := configResp.Data["test27-address2"].(string)
+		// actualJSonKey4Address := configResp.Data["test27-address2"].(string)
+		// actualJSonKey4Family := configResp.Data["ADDRESS_FAMILY"].(string)
+
+		// // re-encrypt the data using the same key
+		_, d, err := CreateInsecureHandleAndDeterministicAead(DeterministicKeyset)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// expected
+		data := map[string]interface{}{
+			"test27-address": "my address",
+			"test27-phone":   "my phone",
+			"ADDRESS_FAMILY": "This will encrypt as well",
+		}
+		for k, v := range data {
+			// fmt.Printf("\n ---\n ^^^\n %s %s", k, v.(string))
+			ct, err := d.EncryptDeterministically([]byte(v.(string)), []byte(k))
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			// fmt.Printf("\n ---\n ^^^\n ")
+			expectedEncryptedValue := b64.StdEncoding.EncodeToString(ct)
+			// fmt.Printf("\n ---\n ^^^\n   %s\n   %s\n   %s\n", k, v.(string), expectedEncryptedValue)
+			actualEncryptedValue := encryptData(b, storage, map[string]interface{}{k: v}, t)
+
+			assertEqual(actualEncryptedValue.Data[k].(string), expectedEncryptedValue, t)
+
+		}
+
+	})
+}
+
+func assertEqual(str1 string, str2 string, t *testing.T) {
+	if !(str1 == str2) {
+		t.Errorf("expected %q to be %q", str1, str2)
+	}
 }
 
 func rotateKeySet(fieldName string, rawKeyset string, b *backend, storage logical.Storage, t *testing.T, primaryKey string) {
