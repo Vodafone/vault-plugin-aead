@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/google/tink/go/aead"
 	"github.com/google/tink/go/daead"
@@ -383,4 +384,32 @@ func ValidateKeySetJson(keySetJson string) error {
 		return err
 	}
 	return nil
+}
+
+func isEncryptionJsonKey(keyStr string) bool {
+	//TODO find better way to check this
+	return strings.Contains(keyStr, "primaryKeyId")
+}
+
+func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
+	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
+	deterministic := false
+	if strings.Contains(encryptionKeyStr, "AesSivKey") {
+		deterministic = true
+	}
+	return encryptionKeyStr, deterministic
+}
+
+func getEncryptionKey(fieldName string) (interface{}, bool) {
+
+	possiblyEncryptionKey, ok := aeadConfig.Get(fieldName)
+	if !ok {
+		return possiblyEncryptionKey, ok
+	}
+
+	possiblyEncryptionKeyStr := possiblyEncryptionKey.(string)
+	if !isEncryptionJsonKey(possiblyEncryptionKeyStr) {
+		possiblyEncryptionKey, ok = aeadConfig.Get(possiblyEncryptionKeyStr)
+	}
+	return possiblyEncryptionKey, ok
 }

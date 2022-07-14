@@ -185,7 +185,7 @@ func (b *backend) encryptRow(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}, data *framework.FieldData, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
 	resp := make(map[string]interface{})
-	encryptionkey, ok := aeadConfig.Get(fieldName)
+	encryptionkey, ok := getEncryptionKey(fieldName)
 	// do we have a key already in config
 	if ok {
 		// is the key we have retrived deterministic?
@@ -330,7 +330,7 @@ func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, ch chan map[string]interface{}) {
 	resp := make(map[string]interface{})
-	encryptionkey, ok := aeadConfig.Get(fieldName)
+	encryptionkey, ok := getEncryptionKey(fieldName)
 	// do we have a key already in config
 	if ok {
 		// is the key deterministig or non deterministic
@@ -488,7 +488,7 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 	}
 	resp := make(map[string]interface{})
 
-	encryptionkey, keyFound := aeadConfig.Get(fieldName)
+	encryptionkey, keyFound := getEncryptionKey(fieldName)
 	// is the key we have retrived deterministic?
 	encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
 
@@ -662,7 +662,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 	}
 	resp := make(map[string]interface{})
 
-	encryptionkey, keyFound := aeadConfig.Get(fieldName)
+	encryptionkey, keyFound := getEncryptionKey(fieldName)
 	// is the key we have retrived deterministic?
 	encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
 
