@@ -5,7 +5,6 @@ import (
 	"context"
 	b64 "encoding/base64"
 	"fmt"
-	"strings"
 
 	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
@@ -152,7 +151,7 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 	for keyField, encryptionKey := range aeadConfig.Items() {
 		fieldName := fmt.Sprintf("%v", keyField)
 		keyStr := fmt.Sprintf("%v", encryptionKey)
-		if !strings.Contains(keyStr, "primaryKeyId") {
+		if !isEncryptionJsonKey(keyStr) {
 			// aeadConfig.Set(keyFieldStr, encryptionKey)
 			continue
 		} else {
@@ -583,15 +582,6 @@ func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string,
 	} else {
 		b.pathConfigWrite(ctx, req, &dn)
 	}
-}
-
-func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
-	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
-	deterministic := false
-	if strings.Contains(encryptionKeyStr, "AesSivKey") {
-		deterministic = true
-	}
-	return encryptionKeyStr, deterministic
 }
 
 func (b *backend) getAdditionalData(fieldName string, config cmap.ConcurrentMap) []byte {
