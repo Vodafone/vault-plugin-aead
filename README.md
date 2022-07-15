@@ -795,7 +795,7 @@ Dataflow Job has been built on Dataflow template gs://dataflow-templates-europe-
 * TODO - Determine the impact on performance of having the Vault audit logs enabled
 * TODO - Figure out where the logging is going
 * DONE - KMS becomes critical to keepng the keys a secret. Decide on a strategy for where this is and who has access (hint - the right answer is: a) in its own isolated projects and b) almost no-one)
-* TODO - [Piotr] Create an abstraction over field so that 2 fields can have the same key category
+* DONE - Create an abstraction over field so that 2 fields can have the same key category
 * TODO - use some test framework such as `assert` package which will provide some helpful built-in methods for printing friendly, easy to read failure descriptions, readable code or annotate each assertion with a message
 
 * TODO - implement HTTP(S) benchmark tools for benchmarking encryption/decryption process on remote Vault instances (ddosify,baloo or cassowary)
