@@ -93,9 +93,15 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 	if err != nil {
 		return nil, err
 	}
-
+	result := make(map[string]interface{}, len(aeadConfig.Items()))
+	for k, v := range aeadConfig.Items() {
+		if isEncryptionJsonKey(v.(string)) {
+			v = muteKeyMaterial(v.(string))
+		}
+		result[k] = v
+	}
 	return &logical.Response{
-		Data: aeadConfig.Items(),
+		Data: result,
 	}, nil
 }
 

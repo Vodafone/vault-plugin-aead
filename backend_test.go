@@ -3,6 +3,7 @@ package aeadplugin
 import (
 	"context"
 	b64 "encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"reflect"
@@ -118,6 +119,15 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		// Since we now mask material from the response, we will use existing key to make sure string is encrypted correctly
+		encryptionJsonKey := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
+		// set up some encryption keys to be used
+		encryptionMap := map[string]interface{}{
+			"test5-address2": encryptionJsonKey,
+		}
+		// store the config
+		saveConfig(b, storage, encryptionMap, false, t)
+
 		// set some data to be encrypted using the keys
 		data := map[string]interface{}{
 			"test5-address2": "my address",
@@ -128,15 +138,38 @@ func TestBackend(t *testing.T) {
 
 		// retreive the encrypted data for field address
 		actualEncryptedValue := fmt.Sprintf("%v", resp.Data["test5-address2"]) // convert the cyphertext (=interface{}) received to a string
+		keyAlreadyExistsMsg := "test5-address2 key exists"
+		if keyAlreadyExistsMsg != actualEncryptedValue {
+			t.Errorf("expected %q to be %q", actualEncryptedValue, keyAlreadyExistsMsg)
+		}
+		resp = encryptData(b, storage, data, t)
+		actualEncryptedValue = fmt.Sprintf("%v", resp.Data["test5-address2"])
 
 		// now read the config
 		configResp := readConfig(b, storage, t)
 
 		// get the actual Json key used from teh config for address
 		actualJSonKey := configResp.Data["test5-address2"].(string)
+		type jsonKey struct {
+			Key []struct {
+				KeyData struct {
+					Value string `json:"value"`
+				} `json:"keyData"`
+			} `json:"key"`
+		}
+		var result jsonKey
+		err := json.Unmarshal([]byte(actualJSonKey), &result)
+		if err != nil {
+			panic(err)
+		}
+		// make sure the material response is masked
+		maskString := "***"
+		if result.Key[0].KeyData.Value != maskString {
+			t.Errorf("expected %q to be %q", result.Key[0].KeyData.Value, maskString)
+		}
 
-		// re-encrypt the data using the same key
-		_, d, err := CreateInsecureHandleAndDeterministicAead(actualJSonKey)
+		// re-encrypt the data using our known key
+		_, d, err := CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
 		if err != nil {
 			log.Fatal(err)
 		}

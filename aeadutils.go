@@ -413,3 +413,23 @@ func getEncryptionKey(fieldName string) (interface{}, bool) {
 	}
 	return possiblyEncryptionKey, ok
 }
+
+func muteKeyMaterial(theKey string) string {
+	type jsonKey struct {
+		Key []struct {
+			KeyData struct {
+				Value string `json:"value"`
+			} `json:"keyData"`
+		} `json:"key"`
+	}
+	var resp jsonKey
+	err := json.Unmarshal([]byte(theKey), &resp)
+	if err != nil {
+		panic(err)
+	}
+	var mutedMaterial string
+	for _, key := range resp.Key {
+		mutedMaterial = strings.Replace(theKey, key.KeyData.Value, "***", -1)
+	}
+	return mutedMaterial
+}
