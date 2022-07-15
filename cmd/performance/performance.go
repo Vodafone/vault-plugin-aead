@@ -578,9 +578,7 @@ func goDoHttp(inputData map[string]interface{}, url string, bodyMap map[string]i
 	req.Header.Set("X-Vault-Token", options.token)
 	req.Header.Set("Content-Type", "application/json")
 
-	debug(httputil.DumpRequestOut(req.Request, true))
 	resp, err := client.Do(req)
-	debug(httputil.DumpResponse(resp, true))
 	if err != nil {
 		fmt.Printf("goDoHttp client.Do Error=%v\n", err)
 		return err
@@ -942,7 +940,6 @@ func makeJWTRequest(signedJWT, role string, url string, options *Options) (strin
 }
 
 // debug(httputil.DumpRequestOut(req, true))
-
 // debug(httputil.DumpResponse(response, true))
 
 func debug(data []byte, err error) {
