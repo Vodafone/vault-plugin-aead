@@ -802,5 +802,5 @@ Dataflow Job has been built on Dataflow template gs://dataflow-templates-europe-
 * TODO - [Piotr]- review the ADDITIONAL_DATA config strategy
 * TODO - [Piotr]- review the use of aeadConfig map - is this OK, or should it be passed to each method or function
 * DONE - amend the performance tool to optionally do a proper handshake w/Vault rather than using the token explicitly
-* TODO - [Piotr]- mask the key material from any command line user except a super-admin (2 end-points?)
+* DONE - mask the key material from any command line user except a super-admin (2 end-points?)
 * TODO - [Piotr]- review the config strategy associated with bqsync end point wrt how we name routines and which routines are created in which dataset
