@@ -244,8 +244,16 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 		}
 	}
 
+	mutedResult := make(map[string]interface{}, len(resp))
+	for k, v := range resp {
+		if isEncryptionJsonKey(v.(string)) {
+			v = muteKeyMaterial(v.(string))
+		}
+		mutedResult[k] = v
+	}
+
 	return &logical.Response{
-		Data: resp,
+		Data: mutedResult,
 	}, nil
 }
 func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -350,8 +358,16 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 
 	}
 
+	mutedResult := make(map[string]interface{}, len(resp))
+	for k, v := range resp {
+		if isEncryptionJsonKey(v.(string)) {
+			v = muteKeyMaterial(v.(string))
+		}
+		mutedResult[k] = v
+	}
+
 	return &logical.Response{
-		Data: resp,
+		Data: mutedResult,
 	}, nil
 }
 func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -400,8 +416,16 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 		}
 	}
 
+	mutedResult := make(map[string]interface{}, len(resp))
+	for k, v := range resp {
+		if isEncryptionJsonKey(v.(string)) {
+			v = muteKeyMaterial(v.(string))
+		}
+		mutedResult[k] = v
+	}
+
 	return &logical.Response{
-		Data: resp,
+		Data: mutedResult,
 	}, nil
 }
 func (b *backend) pathImportKey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
