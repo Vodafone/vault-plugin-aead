@@ -427,9 +427,9 @@ func muteKeyMaterial(theKey string) string {
 	if err != nil {
 		panic(err)
 	}
-	var mutedMaterial string
+	mutedMaterial := theKey
 	for _, key := range resp.Key {
-		mutedMaterial = strings.Replace(theKey, key.KeyData.Value, "***", -1)
+		mutedMaterial = strings.Replace(mutedMaterial, key.KeyData.Value, "***", -1)
 	}
 	return mutedMaterial
 }

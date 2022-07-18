@@ -294,8 +294,16 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 		}
 	}
 
+	mutedResult := make(map[string]interface{}, len(resp))
+	for k, v := range resp {
+		if isEncryptionJsonKey(v.(string)) {
+			v = muteKeyMaterial(v.(string))
+		}
+		mutedResult[k] = v
+	}
+
 	return &logical.Response{
-		Data: resp,
+		Data: mutedResult,
 	}, nil
 }
 func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
