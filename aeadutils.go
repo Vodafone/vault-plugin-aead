@@ -402,14 +402,14 @@ func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 
 func getEncryptionKey(fieldName string) (interface{}, bool) {
 
-	possiblyEncryptionKey, ok := aeadConfig.Get(fieldName)
+	possiblyEncryptionKey, ok := AEAD_CONFIG.Get(fieldName)
 	if !ok {
 		return possiblyEncryptionKey, ok
 	}
 
 	possiblyEncryptionKeyStr := possiblyEncryptionKey.(string)
 	if !isEncryptionJsonKey(possiblyEncryptionKeyStr) {
-		possiblyEncryptionKey, ok = aeadConfig.Get(possiblyEncryptionKeyStr)
+		possiblyEncryptionKey, ok = AEAD_CONFIG.Get(possiblyEncryptionKeyStr)
 	}
 	return possiblyEncryptionKey, ok
 }

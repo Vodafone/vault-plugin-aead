@@ -137,7 +137,7 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 	// if the config retrieved from the storage is null use the in memory config
 	// not sure how reliable this is.
 	for k, v := range config {
-		aeadConfig.Set(k, v)
+		AEAD_CONFIG.Set(k, v)
 	}
 	return nil
 }
@@ -191,7 +191,7 @@ func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}
 		// is the key we have retrived deterministic?
 		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
 		// set additionalDataBytes as field name of the right type
-		additionalDataBytes := b.getAdditionalData(fieldName, aeadConfig)
+		additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
 
 		if deterministic {
 			// SUPPORT FOR DETERMINISTIC AEAD
@@ -337,7 +337,7 @@ func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interfa
 		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
 
 		// set additionalDataBytes as field name of the right type
-		additionalDataBytes := b.getAdditionalData(fieldName, aeadConfig)
+		additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
 
 		if deterministic {
 			// SUPPORT FOR DETERMINISTIC AEAD
@@ -516,7 +516,7 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 		}
 	}
 	// set additionalDataBytes as field name of the right type
-	additionalDataBytes := b.getAdditionalData(fieldName, aeadConfig)
+	additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for rowNum, unencryptedData := range data.Raw {
@@ -690,7 +690,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 		}
 	}
 	// set additionalDataBytes as field name of the right type
-	additionalDataBytes := b.getAdditionalData(fieldName, aeadConfig)
+	additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
 
 	// iterate through the key=value supplied (ie field1=sdfvbbvwrbwr field2=advwefvwfvbwrfvb)
 	for rowNumber, encryptedDataBase64 := range data.Raw {
@@ -765,7 +765,7 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 	}
 
 	var market string
-	telemetryLMIntf, ok := aeadConfig.Get("TELEMETRY_LM")
+	telemetryLMIntf, ok := AEAD_CONFIG.Get("TELEMETRY_LM")
 	if !ok {
 		return
 		//market = "test"
@@ -791,7 +791,7 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 
 	// Sets your Google Cloud Platform project ID.
 	var projectID string
-	telemetryProjectIDIntf, ok := aeadConfig.Get("TELEMETRY_PROJECTID")
+	telemetryProjectIDIntf, ok := AEAD_CONFIG.Get("TELEMETRY_PROJECTID")
 	if !ok {
 		projectID = "vf-grp-shared-services-poc2"
 	} else {
@@ -800,7 +800,7 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 
 	// Sets the id for the new topic.
 	var topicID string
-	telemetryTopicIDIntf, ok := aeadConfig.Get("TELEMETRY_TOPICID")
+	telemetryTopicIDIntf, ok := AEAD_CONFIG.Get("TELEMETRY_TOPICID")
 	if !ok {
 		topicID = "eaas-telemetry"
 	} else {
