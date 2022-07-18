@@ -1,17 +1,20 @@
 package aeadplugin
 
 import (
+	"bytes"
 	"context"
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
+	version "github.com/Vodafone/vault-plugin-aead/version"
+	"github.com/google/tink/go/daead"
+	"github.com/google/tink/go/insecurecleartextkeyset"
+	"github.com/google/tink/go/keyset"
+	"github.com/hashicorp/vault/sdk/logical"
 	"log"
 	"reflect"
 	"strings"
 	"testing"
-
-	version "github.com/Vodafone/vault-plugin-aead/version"
-	"github.com/hashicorp/vault/sdk/logical"
 )
 
 func testBackend(tb testing.TB) (*backend, logical.Storage) {
@@ -1000,8 +1003,9 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 		keyData := make(map[string]interface{})
-		keyData["test22-key"] = NonDeterministicKeyset
+		keyData["test22-key"] = DeterministicKeyset
 
+		// create deterministic key
 		keyResp, err := b.HandleRequest(context.Background(), &logical.Request{
 			Storage:   storage,
 			Operation: logical.UpdateOperation,
@@ -1018,28 +1022,81 @@ func TestBackend(t *testing.T) {
 
 		}
 
-		updData := make(map[string]interface{})
-		upDataInner := make(map[string]interface{})
-		upDataInner["1532149397"] = "GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ=="
-		updData["test22-key"] = upDataInner
+		// encrypt data with deterministic key
+		data := map[string]interface{}{
+			"test22-key": "the data that will test the changed key",
+		}
+		respValueOrig := encryptData(b, storage, data, t)
+		valueEncryptedWithOriginalKey := fmt.Sprintf("%v", respValueOrig.Data["test22-key"])
 
-		resp, err := b.HandleRequest(context.Background(), &logical.Request{
-			Storage:   storage,
-			Operation: logical.UpdateOperation,
-			Path:      "updateKeyMaterial",
-			Data:      updData,
-		})
+		// Update deterministic key material to different value
+		keyMaterialUpdate := "EkCXhcXHvfUMj8DWgWjfnxyWFz3GcOw8G1xB2PTcfPdbl93idxHTcmANzYLYW3KmsU0putTRfi3vxySALhSHaHl0"
+		ids := []string{"97978150"}
+		var reconstructedKey string
+		var str string
+		for _, id := range ids {
+			upData := map[string]interface{}{
+				"test22-key": make(map[string]interface{}),
+			}
+			upData["test22-key"].(map[string]interface{})[id] = keyMaterialUpdate
 
+			resp, err := b.HandleRequest(context.Background(), &logical.Request{
+				Storage:   storage,
+				Operation: logical.UpdateOperation,
+				Path:      "updateKeyMaterial",
+				Data:      upData,
+			})
+
+			if err != nil {
+				t.Fatal("updateKeyMaterial", err)
+			}
+
+			if len(resp.Data) == 0 {
+				t.Fatal("updateKeyMaterial - no data returned")
+			}
+			str = fmt.Sprintf("%s", resp.Data["test22-key"])
+			reconstructedKey = strings.Replace(str, "***", keyMaterialUpdate, -1)
+
+		}
+
+		// patch the masked result with the updated value
+
+		// decrypt with reconstructed json key
+		kh, _ := insecurecleartextkeyset.Read(keyset.NewJSONReader(bytes.NewBufferString(reconstructedKey)))
+		d, err := daead.New(kh)
 		if err != nil {
-			t.Fatal("updateKeyMaterial", err)
+			log.Fatal(err)
 		}
 
-		if len(resp.Data) == 0 {
-			t.Fatal("updateKeyMaterial - no data returned")
+		// encrypt original data using key with patched material
+		aad := []byte("test22-key")
+		msg := []byte(data["test22-key"].(string))
+		ct, err := d.EncryptDeterministically([]byte(msg), aad)
+		if err != nil {
+			log.Fatal(err)
+		}
+		expectedEncryptedValue := b64.StdEncoding.EncodeToString(ct)
+
+		// value encrypted with key that was change needs to be different than original encrypted value
+		if expectedEncryptedValue == valueEncryptedWithOriginalKey {
+			t.Errorf("expected %q to be diferent to %q", valueEncryptedWithOriginalKey, expectedEncryptedValue)
 		}
 
-		str := fmt.Sprintf("%s", resp.Data)
-		if strings.Count(str, "GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==") != 2 {
+		// encrypt data
+		// encrypt data on the server using new patched key
+		respValue := encryptData(b, storage, data, t)
+		valueEncryptedWithReconstructedKey := fmt.Sprintf("%v", respValue.Data["test22-key"])
+		if expectedEncryptedValue != valueEncryptedWithReconstructedKey {
+			t.Errorf("expected %q to be %q", valueEncryptedWithReconstructedKey, expectedEncryptedValue)
+		}
+		// decrypted result should match expectation
+		respValueDec := decryptData(b, storage, respValue, t)
+		valueDecrypted := fmt.Sprintf("%v", respValueDec.Data["test22-key"])
+		if valueDecrypted != data["test22-key"] {
+			t.Errorf("expected %q to be %q", valueDecrypted, data["test22-key"])
+		}
+
+		if strings.Count(str, "***") != 6 {
 			t.Errorf("material was not changed %s", str)
 		}
 
