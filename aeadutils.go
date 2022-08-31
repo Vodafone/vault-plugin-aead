@@ -400,18 +400,28 @@ func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 	return encryptionKeyStr, deterministic
 }
 
-func getEncryptionKey(fieldName string) (interface{}, bool) {
-
+func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
+	maxDepth := 5
+	if len(setDepth)>0 {
+		maxDepth = setDepth[0]
+	}
 	possiblyEncryptionKey, ok := AEAD_CONFIG.Get(fieldName)
 	if !ok {
 		return possiblyEncryptionKey, ok
 	}
 
-	possiblyEncryptionKeyStr := possiblyEncryptionKey.(string)
-	if !isEncryptionJsonKey(possiblyEncryptionKeyStr) {
-		possiblyEncryptionKey, ok = AEAD_CONFIG.Get(possiblyEncryptionKeyStr)
+	for i:=1;i < maxDepth;i++ {
+		possiblyEncryptionKeyStr := possiblyEncryptionKey.(string)
+		if !isEncryptionJsonKey(possiblyEncryptionKeyStr) {
+			possiblyEncryptionKey, ok = AEAD_CONFIG.Get(possiblyEncryptionKeyStr)
+		} else {
+			return possiblyEncryptionKey, true
+		}
 	}
-	return possiblyEncryptionKey, ok
+
+	notFound := false
+	notFoundEncryptionKeyAtSetDepth := possiblyEncryptionKey
+	return notFoundEncryptionKeyAtSetDepth, notFound
 }
 
 func muteKeyMaterial(theKey string) string {
