@@ -407,21 +407,22 @@ func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
 	}
 	possiblyEncryptionKey, ok := AEAD_CONFIG.Get(fieldName)
 	if !ok {
-		return possiblyEncryptionKey, ok
+		return nil, ok
 	}
-
 	for i:=1;i < maxDepth;i++ {
 		possiblyEncryptionKeyStr := possiblyEncryptionKey.(string)
 		if !isEncryptionJsonKey(possiblyEncryptionKeyStr) {
 			possiblyEncryptionKey, ok = AEAD_CONFIG.Get(possiblyEncryptionKeyStr)
+			if !ok {
+				return nil, ok
+			}
 		} else {
 			return possiblyEncryptionKey, true
 		}
 	}
 
 	notFound := false
-	notFoundEncryptionKeyAtSetDepth := possiblyEncryptionKey
-	return notFoundEncryptionKeyAtSetDepth, notFound
+	return nil, notFound
 }
 
 func muteKeyMaterial(theKey string) string {
