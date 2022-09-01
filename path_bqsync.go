@@ -24,7 +24,7 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 		return nil, err
 	}
 
-	for keyField, encryptionKey := range aeadConfig.Items() {
+	for keyField, encryptionKey := range AEAD_CONFIG.Items() {
 		fieldName := fmt.Sprintf("%v", keyField)
 		keyStr := fmt.Sprintf("%v", encryptionKey)
 		if !strings.Contains(keyStr, "primaryKeyId") {
@@ -260,27 +260,27 @@ func resolveOptions(options *Options, fieldName string, deterministic bool) {
 	options.nondetRoutinePrefix = "pii_aead_"
 
 	// set any overrides
-	kmsKeyInterface, ok := aeadConfig.Get("BQ_KMSKEY")
+	kmsKeyInterface, ok := AEAD_CONFIG.Get("BQ_KMSKEY")
 	if ok {
 		options.kmsKeyName = fmt.Sprintf("%s", kmsKeyInterface)
 	}
-	projectIdInterface, ok := aeadConfig.Get("BQ_PROJECT")
+	projectIdInterface, ok := AEAD_CONFIG.Get("BQ_PROJECT")
 	if ok {
 		options.projectId = fmt.Sprintf("%s", projectIdInterface)
 	}
-	encryptDatasetIdInterface, ok := aeadConfig.Get("BQ_DEFAULT_ENCRYPT_DATASET")
+	encryptDatasetIdInterface, ok := AEAD_CONFIG.Get("BQ_DEFAULT_ENCRYPT_DATASET")
 	if ok {
 		options.encryptDatasetId = fmt.Sprintf("%s", encryptDatasetIdInterface)
 	}
-	decryptDatasetIdInterface, ok := aeadConfig.Get("BQ_DEFAULT_DECRYPT_DATASET")
+	decryptDatasetIdInterface, ok := AEAD_CONFIG.Get("BQ_DEFAULT_DECRYPT_DATASET")
 	if ok {
 		options.decryptDatasetId = fmt.Sprintf("%s", decryptDatasetIdInterface)
 	}
-	detRoutinePrefixInterface, ok := aeadConfig.Get("BQ_ROUTINE_DET_PREFIX")
+	detRoutinePrefixInterface, ok := AEAD_CONFIG.Get("BQ_ROUTINE_DET_PREFIX")
 	if ok {
 		options.detRoutinePrefix = fmt.Sprintf("%s", detRoutinePrefixInterface)
 	}
-	nondetRoutinePrefixInterface, ok := aeadConfig.Get("BQ_ROUTINE_NONDET_PREFIX")
+	nondetRoutinePrefixInterface, ok := AEAD_CONFIG.Get("BQ_ROUTINE_NONDET_PREFIX")
 	if ok {
 		options.nondetRoutinePrefix = fmt.Sprintf("%s", nondetRoutinePrefixInterface)
 	}
@@ -296,11 +296,11 @@ func resolveOptions(options *Options, fieldName string, deterministic bool) {
 	}
 
 	// if we have a config entry for the encrypt or decrypt routine then use that as the dataset
-	overrideBQDatasetInterface, ok := aeadConfig.Get(options.encryptRoutineId)
+	overrideBQDatasetInterface, ok := AEAD_CONFIG.Get(options.encryptRoutineId)
 	if ok {
 		options.encryptDatasetId = fmt.Sprintf("%s", overrideBQDatasetInterface)
 	}
-	overrideBQDatasetInterface, ok = aeadConfig.Get(options.decryptRoutineId)
+	overrideBQDatasetInterface, ok = AEAD_CONFIG.Get(options.decryptRoutineId)
 	if ok {
 		options.decryptDatasetId = fmt.Sprintf("%s", overrideBQDatasetInterface)
 	}

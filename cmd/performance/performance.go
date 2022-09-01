@@ -3,14 +3,20 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"path/filepath"
 	"reflect"
@@ -26,6 +32,8 @@ import (
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/mem"
+	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2/jws"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -42,6 +50,7 @@ type Options struct {
 	rowNumber     int
 	token         string
 	url           string
+	path          string
 	fieldNumber   int
 	concurrency   int
 	batchMode     bool
@@ -116,6 +125,11 @@ func main() {
 
 	token := flag.String("t", "", "token for vault access")
 	url := flag.String("u", "http://127.0.0.1:8080", "url for vault access")
+	path := flag.String("path", "aead-secrets", "Backend path where plugin is mounted")
+	saFilePath := flag.String("sa", "", "ServiceAccount key json file path")
+	vaultRole := flag.String("vr", "", "vault role i.e. encryptor-iam ")
+	expirationSeconds := flag.Int64("ve", 900, "vault token expiration. no more than 15 minutes")
+
 	fieldNumber := flag.Int("f", 1, "number of fields per row")
 	rowNumber := flag.Int("r", 1, "number of rows per dataset")
 	concurrency := flag.Int("c", 1, "number of concurrent clients")
@@ -130,6 +144,7 @@ func main() {
 	kubeStats := flag.Bool("k", false, "collect kube stat averages")
 
 	flag.Parse()
+
 	options.fieldNumber = *fieldNumber
 	options.rowNumber = *rowNumber
 	options.concurrency = *concurrency
@@ -138,6 +153,7 @@ func main() {
 	options.saveResults = *saveresults
 	options.token = *token
 	options.url = *url
+	options.path = *path
 	options.httpProxy = *httpProxy
 	options.debug = *debug
 	options.baseFieldName = *baseFieldName
@@ -147,6 +163,10 @@ func main() {
 
 	doWaitIfRequired(options)
 
+	if *token == "" {
+		value := getVaultTokenForSaAndRole(*saFilePath, *vaultRole, *expirationSeconds, *url, &options)
+		options.token = *value
+	}
 	t := time.Now().UTC()
 	results.RunStartDateTime = civil.DateTimeOf(t)
 
@@ -282,9 +302,9 @@ func gotestBulk(options *Options, ch chan bool) {
 	url := ""
 	if options.columnBased && options.batchMode {
 		fmt.Println("COLUMN BASED BULK ENCRYPT")
-		url = options.url + "/v1/aead-secrets/encryptcol"
+		url = options.url + "/v1/" + options.path + "/encryptcol"
 	} else {
-		url = options.url + "/v1/aead-secrets/encrypt"
+		url = options.url + "/v1/" + options.path + "/encrypt"
 	}
 	encryptedBulkMap, err := encryptOrDecryptData(url, bulkInputMap, options)
 	if err != nil {
@@ -301,9 +321,9 @@ func gotestBulk(options *Options, ch chan bool) {
 
 	if options.columnBased && options.batchMode {
 		fmt.Println("COLUMN BASED BULK DECRYPT")
-		url = options.url + "/v1/aead-secrets/decryptcol"
+		url = options.url + "/v1/" + options.path + "/decryptcol"
 	} else {
-		url = options.url + "/v1/aead-secrets/decrypt"
+		url = options.url + "/v1/" + options.path + "/decrypt"
 	}
 	decryptedBulkMap, err = encryptOrDecryptData(url, encryptedBulkMap, options)
 	if err != nil {
@@ -402,7 +422,7 @@ func gotest(options *Options, ch chan bool) {
 	for k, v := range originalDataMap {
 		// send each row, one at a time as map[string]interface{}
 		// fmt.Printf("Key=%v Value=%v", k, v)
-		url := options.url + "/v1/aead-secrets/encrypt"
+		url := options.url + "/v1/" + options.path + "/encrypt"
 		encryptedRowMap, err = encryptOrDecryptData(url, v, options)
 		if err != nil {
 			panic(err)
@@ -418,7 +438,7 @@ func gotest(options *Options, ch chan bool) {
 
 	for k, v := range encryptedMap {
 		// fmt.Printf("Key=%v Value=%v", k, v)
-		url := options.url + "/v1/aead-secrets/decrypt"
+		url := options.url + "/v1/" + options.path + "/decrypt"
 		decryptedRowMap, err = encryptOrDecryptData(url, v, options)
 		if err != nil {
 			panic(err)
@@ -542,7 +562,6 @@ func makeRandomData(inputMap map[int]map[string]interface{}, options *Options) {
 func goDoHttp(inputData map[string]interface{}, url string, bodyMap map[string]interface{}, options *Options) error {
 
 	client := createHttpClient(options)
-
 	payloadBytes, err := json.Marshal(inputData)
 	if err != nil {
 		fmt.Printf("goDoHttp json.Marshal Error=%v\n", err)
@@ -550,7 +569,8 @@ func goDoHttp(inputData map[string]interface{}, url string, bodyMap map[string]i
 	}
 	inputBody := bytes.NewReader(payloadBytes)
 
-	req, err := retryablehttp.NewRequest("POST", url, inputBody)
+	req, err := retryablehttp.NewRequest(http.MethodPost, url, inputBody)
+
 	if err != nil {
 		fmt.Printf("goDoHttp http.NewRequest Error=%v\n", err)
 		return err
@@ -587,8 +607,7 @@ func goGetConfig(options *Options) {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{Transport: tr}
-
-	req, err := http.NewRequest("GET", options.url+"/v1/aead-secrets/config", nil)
+	req, err := http.NewRequest("GET", options.url+"/v1/"+options.path+"/config", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -817,4 +836,116 @@ func getK8SVaultLimits(kc *kubernetes.Clientset, res *K8sResults) {
 		break
 	}
 	fmt.Printf("VaultImage=%s, VaultPodCounter=%v VaultPodCpu=%v VaultPodMem=%v\n", res.VaultPodImage, len(pl.Items), res.VaultPodCpu, res.VaultPodMem)
+}
+
+func getVaultTokenForSaAndRole(SaFilePath string, VaultRole string, ExpirationSeconds int64, vaultAddr string, options *Options) *string {
+
+	signedJWT, err := generateJWT(SaFilePath, fmt.Sprintf("http://vault/%s", VaultRole), ExpirationSeconds)
+	if err != nil {
+		log.Fatalf("sub.generateJWT: %v", err)
+	}
+	// log.Printf("signedJWT=%v", signedJWT)
+	ret, err := makeJWTRequest(signedJWT, VaultRole, vaultAddr, options)
+	if err != nil {
+		log.Fatalf("sub.makeJWTRequest: %v", err)
+	}
+	type vault_resp struct {
+		Auth struct {
+			Token string `json:"client_token"`
+		} `json:"auth"`
+	}
+	var resp vault_resp
+	err = json.Unmarshal([]byte(ret), &resp)
+	if err != nil {
+		panic(err)
+	}
+	return &resp.Auth.Token
+}
+
+func generateJWT(saKeyfile, audience string, expiryLength int64) (string, error) {
+
+	// Extract the RSA private key from the service account keyfile.
+	sa, err := ioutil.ReadFile(saKeyfile)
+	if err != nil {
+		return "", fmt.Errorf("could not read service account file: %v", err)
+	}
+	conf, err := google.JWTConfigFromJSON(sa)
+	if err != nil {
+		return "", fmt.Errorf("could not parse service account JSON: %v", err)
+	}
+
+	block, _ := pem.Decode(conf.PrivateKey)
+	parsedKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return "", fmt.Errorf("private key parse error: %v", err)
+	}
+	rsaKey, ok := parsedKey.(*rsa.PrivateKey)
+
+	// Sign the JWT with the service account's private key.
+	if !ok {
+		return "", errors.New("private key failed rsa.PrivateKey type assertion")
+	}
+
+	// Build the JWT payload.
+	now := time.Now().Unix()
+
+	jwt := &jws.ClaimSet{
+		Iat: now,
+		// expires after 'expiryLength' seconds.
+		Exp: now + expiryLength,
+		// Iss must match 'issuer' in the security configuration in your
+		// swagger spec (e.g. service account email). It can be any string.
+		Iss: conf.Email,
+		// Aud must be either your Endpoints service name, or match the value
+		// specified as the 'x-google-audience' in the OpenAPI document.
+		Aud: audience,
+		// Sub and Email should match the service account's email address.
+		Sub: conf.Email,
+		// PrivateClaims: map[string]interface{}{"email": saEmail},
+	}
+	jwsHeader := &jws.Header{
+		Algorithm: "RS256",
+		Typ:       "JWT",
+		KeyID:     conf.PrivateKeyID,
+	}
+	return jws.Encode(jwsHeader, jwt, rsaKey)
+}
+
+func makeJWTRequest(signedJWT, role string, url string, options *Options) (string, error) {
+	// client := createHttpClient(options)
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	params, _ := json.Marshal(map[string]string{"jwt": signedJWT, "role": role})
+	vault_addr := fmt.Sprintf("%s/v1/auth/gcp/login", url)
+	req, err := http.NewRequest(http.MethodPut, vault_addr, bytes.NewBuffer(params))
+	if err != nil {
+		return "", fmt.Errorf("failed to create HTTP request: %v", err)
+	}
+	// req.Header.Add("Authorization", "Bearer "+signedJWT)
+	req.Header.Add("content-type", "application/json")
+	debug(httputil.DumpRequestOut(req, true))
+
+	response, err := client.Do(req)
+
+	if err != nil {
+		return "", fmt.Errorf("HTTP request failed: %v", err)
+	}
+	defer response.Body.Close()
+	responseData, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse HTTP response: %v", err)
+	}
+	return string(responseData), nil
+}
+
+// debug(httputil.DumpRequestOut(req, true))
+// debug(httputil.DumpResponse(response, true))
+
+func debug(data []byte, err error) {
+	if err == nil {
+		fmt.Printf("\n  } %s\n\n", data)
+	} else {
+		log.Fatalf("\n  -} %v\n\n", err)
+	}
 }

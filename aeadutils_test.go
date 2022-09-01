@@ -620,4 +620,53 @@ func TestAeadUtils(t *testing.T) {
 		}
 
 	})
+
+	t.Run("test getEncryptionKey", func(t *testing.T){
+		rawKeyset := `{"primaryKeyId":3987026049,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiB5m/rHV+xmMiRngaWWi6zel8IjlOPCdEpGnEsb8RfrMQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1456486908,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCRExtHflcWVUbmk0mwB5TzqSGc3GVMu6Hk+HbL4oH61A==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3987026049,"outputPrefixType":"TINK"}]}`
+
+		key, ok := getEncryptionKey("test")
+		if ok {
+			t.Errorf("shouldn't find the key as it was not set: %s", key.(string))
+		}
+		AEAD_CONFIG.Set("test", "foo")
+		key, ok = getEncryptionKey("test")
+		if ok {
+			t.Errorf("shouldn't find the value \"foo\", as there is no key set. got: %s", key.(string))
+		}
+
+		AEAD_CONFIG.Set("test", rawKeyset)
+		key, ok = getEncryptionKey("test")
+		if !ok {
+			t.Errorf("should find the keyset. got: %s", key.(string))
+		}
+
+
+		AEAD_CONFIG.Set("test", "cat1")
+		AEAD_CONFIG.Set("cat1", rawKeyset)
+
+		key, ok = getEncryptionKey("test")
+		if !ok {
+			t.Errorf("should find the keyset. got: %s", key.(string))
+		}
+
+		AEAD_CONFIG.Set("test", "cat1")
+		AEAD_CONFIG.Set("cat1", "cat2")
+		AEAD_CONFIG.Set("cat2", "cat3")
+		AEAD_CONFIG.Set("cat3", "cat4")
+		AEAD_CONFIG.Set("cat4", "cat5")
+		AEAD_CONFIG.Set("cat5", "cat6")
+		AEAD_CONFIG.Set("cat6", "cat7")
+		AEAD_CONFIG.Set("cat7", rawKeyset)
+
+		key, ok = getEncryptionKey("test")
+		if ok {
+			t.Errorf("shouldn't find the keyset. got: %s", key.(string))
+		}
+
+		key, ok = getEncryptionKey("test", 10)
+		if !ok {
+			t.Errorf("should find the keyset. got: %s", key.(string))
+		}
+
+	})
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	b64 "encoding/base64"
 	"fmt"
-	"strings"
 
 	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
@@ -15,7 +14,7 @@ import (
 	cmap "github.com/orcaman/concurrent-map"
 )
 
-var aeadConfig = cmap.New()
+var AEAD_CONFIG = cmap.New()
 
 func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	return b.configWriteOverwriteCheck(ctx, req, data, false)
@@ -34,16 +33,16 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 	for k, v := range data.Raw {
 		if !overwrite {
 			// don't do this if we already have a key in the config - prevents overwrite
-			_, ok := aeadConfig.Get(k)
+			_, ok := AEAD_CONFIG.Get(k)
 			if ok {
 				hclog.L().Info("pathConfigWrite - key already exists " + k)
 				continue
 			}
 		}
-		aeadConfig.Set(k, v)
+		AEAD_CONFIG.Set(k, v)
 	}
 
-	entry, err := logical.StorageEntryJSON("config", aeadConfig)
+	entry, err := logical.StorageEntryJSON("config", AEAD_CONFIG)
 	// entry, err := logical.StorageEntryJSON("config", data.Raw)
 	if err != nil {
 		return nil, err
@@ -66,7 +65,7 @@ func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, da
 
 	// iterate through the supplied map, deleting from the store
 	for k, _ := range data.Raw {
-		aeadConfig.Remove(k)
+		AEAD_CONFIG.Remove(k)
 		// err := req.Storage.Delete(ctx, k)
 		// if err != nil {
 		// 	hclog.L().Error("failed to delete config")
@@ -74,7 +73,7 @@ func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, da
 		// }
 	}
 
-	entry, err := logical.StorageEntryJSON("config", aeadConfig)
+	entry, err := logical.StorageEntryJSON("config", AEAD_CONFIG)
 	// entry, err := logical.StorageEntryJSON("config", data.Raw)
 	if err != nil {
 		return nil, err
@@ -94,9 +93,15 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 	if err != nil {
 		return nil, err
 	}
-
+	result := make(map[string]interface{}, len(AEAD_CONFIG.Items()))
+	for k, v := range AEAD_CONFIG.Items() {
+		if isEncryptionJsonKey(v.(string)) {
+			v = muteKeyMaterial(v.(string))
+		}
+		result[k] = v
+	}
 	return &logical.Response{
-		Data: aeadConfig.Items(),
+		Data: result,
 	}, nil
 }
 
@@ -109,7 +114,7 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 	}
 
 	m := map[string]interface{}{}
-	for k, v := range aeadConfig.Items() {
+	for k, v := range AEAD_CONFIG.Items() {
 		str := ""
 		_, determinstic := isKeyJsonDeterministic(v)
 		if determinstic {
@@ -149,11 +154,11 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 	if err != nil {
 		return nil, err
 	}
-	for keyField, encryptionKey := range aeadConfig.Items() {
+	for keyField, encryptionKey := range AEAD_CONFIG.Items() {
 		fieldName := fmt.Sprintf("%v", keyField)
 		keyStr := fmt.Sprintf("%v", encryptionKey)
-		if !strings.Contains(keyStr, "primaryKeyId") {
-			// aeadConfig.Set(keyFieldStr, encryptionKey)
+		if !isEncryptionJsonKey(keyStr) {
+			// AEAD_CONFIG.Set(keyFieldStr, encryptionKey)
 			continue
 		} else {
 			encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionKey)
@@ -181,7 +186,7 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 		}
 	}
 
-	entry, err := logical.StorageEntryJSON("config", aeadConfig)
+	entry, err := logical.StorageEntryJSON("config", AEAD_CONFIG)
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +207,7 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := aeadConfig.Get(fieldName)
+		encryptionkey, ok := AEAD_CONFIG.Get(fieldName)
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
 		}
@@ -239,8 +244,16 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 		}
 	}
 
+	mutedResult := make(map[string]interface{}, len(resp))
+	for k, v := range resp {
+		if isEncryptionJsonKey(v.(string)) {
+			v = muteKeyMaterial(v.(string))
+		}
+		mutedResult[k] = v
+	}
+
 	return &logical.Response{
-		Data: resp,
+		Data: mutedResult,
 	}, nil
 }
 func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -252,7 +265,7 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := aeadConfig.Get(fieldName)
+		encryptionkey, ok := AEAD_CONFIG.Get(fieldName)
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
 		}
@@ -289,8 +302,16 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 		}
 	}
 
+	mutedResult := make(map[string]interface{}, len(resp))
+	for k, v := range resp {
+		if isEncryptionJsonKey(v.(string)) {
+			v = muteKeyMaterial(v.(string))
+		}
+		mutedResult[k] = v
+	}
+
 	return &logical.Response{
-		Data: resp,
+		Data: mutedResult,
 	}, nil
 }
 func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -302,7 +323,7 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := aeadConfig.Get(fieldName)
+		encryptionkey, ok := AEAD_CONFIG.Get(fieldName)
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
 		}
@@ -337,8 +358,16 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 
 	}
 
+	mutedResult := make(map[string]interface{}, len(resp))
+	for k, v := range resp {
+		if isEncryptionJsonKey(v.(string)) {
+			v = muteKeyMaterial(v.(string))
+		}
+		mutedResult[k] = v
+	}
+
 	return &logical.Response{
-		Data: resp,
+		Data: mutedResult,
 	}, nil
 }
 func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -350,7 +379,7 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := aeadConfig.Get(fieldName)
+		encryptionkey, ok := AEAD_CONFIG.Get(fieldName)
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
 		}
@@ -387,8 +416,16 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 		}
 	}
 
+	mutedResult := make(map[string]interface{}, len(resp))
+	for k, v := range resp {
+		if isEncryptionJsonKey(v.(string)) {
+			v = muteKeyMaterial(v.(string))
+		}
+		mutedResult[k] = v
+	}
+
 	return &logical.Response{
-		Data: resp,
+		Data: mutedResult,
 	}, nil
 }
 func (b *backend) pathImportKey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -444,7 +481,7 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 
 		if !overwrite {
 			// don't do this if we already have a key in the config - prevents overwrite
-			_, ok := aeadConfig.Get(fieldName)
+			_, ok := AEAD_CONFIG.Get(fieldName)
 			if ok {
 				resp[fieldName] = fieldName + " key exists"
 				continue
@@ -508,7 +545,7 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 
 		if !overwrite {
 			// don't do this if we already have a key in the config - prevents overwrite
-			_, ok := aeadConfig.Get(fieldName)
+			_, ok := AEAD_CONFIG.Get(fieldName)
 			if ok {
 				resp[fieldName] = fieldName + " key exists"
 				continue
@@ -554,7 +591,7 @@ func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string,
 
 	if !overwrite {
 		// don't do this if we already have a key in the config - prevents overwrite
-		_, ok := aeadConfig.Get(fieldName)
+		_, ok := AEAD_CONFIG.Get(fieldName)
 		if ok {
 			hclog.L().Error("saveKeyToConfig - key already exists " + fieldName)
 			return
@@ -567,14 +604,14 @@ func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string,
 		hclog.L().Error("Failed to save to config", err)
 	}
 
-	aeadConfig.Set(fieldName, keyAsJson)
+	AEAD_CONFIG.Set(fieldName, keyAsJson)
 
 	m1 := make(map[string]interface{})
 	m1[fieldName] = keyAsJson
 
 	// prior to this there were race conditions as multiple goroutines access data
 	dn := framework.FieldData{
-		//		Raw:    aeadConfig.Items(),
+		//		Raw:    AEAD_CONFIG.Items(),
 		Raw:    m1,
 		Schema: nil,
 	}
@@ -585,19 +622,10 @@ func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string,
 	}
 }
 
-func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
-	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
-	deterministic := false
-	if strings.Contains(encryptionKeyStr, "AesSivKey") {
-		deterministic = true
-	}
-	return encryptionKeyStr, deterministic
-}
-
 func (b *backend) getAdditionalData(fieldName string, config cmap.ConcurrentMap) []byte {
 
 	// set additionalDataBytes as field name of the right type
-	aad, ok := aeadConfig.Get("ADDITIONAL_DATA_" + fieldName)
+	aad, ok := AEAD_CONFIG.Get("ADDITIONAL_DATA_" + fieldName)
 	if ok {
 		aadStr := fmt.Sprintf("%s", aad)
 		return []byte(aadStr)

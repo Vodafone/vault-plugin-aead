@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/google/tink/go/aead"
 	"github.com/google/tink/go/daead"
@@ -383,4 +384,63 @@ func ValidateKeySetJson(keySetJson string) error {
 		return err
 	}
 	return nil
+}
+
+func isEncryptionJsonKey(keyStr string) bool {
+	//TODO find better way to check this
+	return strings.Contains(keyStr, "primaryKeyId")
+}
+
+func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
+	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
+	deterministic := false
+	if strings.Contains(encryptionKeyStr, "AesSivKey") {
+		deterministic = true
+	}
+	return encryptionKeyStr, deterministic
+}
+
+func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
+	maxDepth := 5
+	if len(setDepth)>0 {
+		maxDepth = setDepth[0]
+	}
+	possiblyEncryptionKey, ok := AEAD_CONFIG.Get(fieldName)
+	if !ok {
+		return nil, ok
+	}
+	for i:=1;i < maxDepth;i++ {
+		possiblyEncryptionKeyStr := possiblyEncryptionKey.(string)
+		if !isEncryptionJsonKey(possiblyEncryptionKeyStr) {
+			possiblyEncryptionKey, ok = AEAD_CONFIG.Get(possiblyEncryptionKeyStr)
+			if !ok {
+				return nil, ok
+			}
+		} else {
+			return possiblyEncryptionKey, true
+		}
+	}
+
+	isKeysetFound := false
+	return nil, isKeysetFound
+}
+
+func muteKeyMaterial(theKey string) string {
+	type jsonKey struct {
+		Key []struct {
+			KeyData struct {
+				Value string `json:"value"`
+			} `json:"keyData"`
+		} `json:"key"`
+	}
+	var resp jsonKey
+	err := json.Unmarshal([]byte(theKey), &resp)
+	if err != nil {
+		panic(err)
+	}
+	mutedMaterial := theKey
+	for _, key := range resp.Key {
+		mutedMaterial = strings.Replace(mutedMaterial, key.KeyData.Value, "***", -1)
+	}
+	return mutedMaterial
 }

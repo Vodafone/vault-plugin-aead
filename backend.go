@@ -64,6 +64,11 @@ func Backend(c *logical.BackendConfig) *backend {
 			bqsync
 				curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/bqsync
 
+			adding key-families:
+				curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/createAEADkey -H "Content-Type: application/json" -d '{"FAMILY_ADDRESS":"plaintext"}'
+				curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/config -H "Content-Type: application/json" -d '{"address-line1":"FAMILY_ADDRESS"}'
+				curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/aead-secrets/config -H "Content-Type: application/json" -d '{"postcode":"FAMILY_ADDRESS"}'
+
 		*/
 
 		Paths: []*framework.Path{
