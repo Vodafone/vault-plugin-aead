@@ -421,8 +421,8 @@ func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
 		}
 	}
 
-	notFound := false
-	return nil, notFound
+	isKeysetFound := false
+	return nil, isKeysetFound
 }
 
 func muteKeyMaterial(theKey string) string {
