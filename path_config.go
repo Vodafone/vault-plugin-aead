@@ -16,10 +16,6 @@ import (
 
 var AEAD_CONFIG = cmap.New()
 
-func (b *backend) readConfig(fieldName string) (string, bool) {
-	return "", true
-}
-
 func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	return b.configWriteOverwriteCheck(ctx, req, data, false)
 }
