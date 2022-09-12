@@ -16,6 +16,10 @@ import (
 
 var AEAD_CONFIG = cmap.New()
 
+func (b *backend) readConfig(fieldName string) (string, bool) {
+	return "", true
+}
+
 func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	return b.configWriteOverwriteCheck(ctx, req, data, false)
 }
@@ -129,9 +133,9 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 	}, nil
 }
 
-func (b *backend) config(ctx context.Context, s logical.Storage) (map[string]interface{}, error) {
+func (b *backend) readConsulConfig(ctx context.Context, s logical.Storage) (map[string]interface{}, error) {
 
-	config := make(map[string]interface{})
+	consulConfig := make(map[string]interface{})
 	entry, err := s.Get(ctx, "config")
 
 	if err != nil {
@@ -141,10 +145,10 @@ func (b *backend) config(ctx context.Context, s logical.Storage) (map[string]int
 		return nil, nil
 	}
 
-	if err := entry.DecodeJSON(&config); err != nil {
+	if err := entry.DecodeJSON(&consulConfig); err != nil {
 		return nil, err
 	}
-	return config, nil
+	return consulConfig, nil
 }
 
 func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {

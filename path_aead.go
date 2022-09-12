@@ -128,17 +128,25 @@ func (b *backend) decryptRowChan(ctx context.Context, req *logical.Request, data
 
 func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error {
 
-	config, err := b.config(ctx, req.Storage)
+	consulConfig, err := b.readConsulConfig(ctx, req.Storage)
 
 	if err != nil {
 		return err
 	}
 
 	// if the config retrieved from the storage is null use the in memory config
-	// not sure how reliable this is.
-	for k, v := range config {
+	// add config from consul into the AEAD_CONFIG cache
+	for k, v := range consulConfig {
 		AEAD_CONFIG.Set(k, v)
 	}
+
+	// remove config from the cache anything that is not in consul
+	for k, _ := range AEAD_CONFIG.Items() {
+		if _, ok := consulConfig[k]; !ok {
+			AEAD_CONFIG.Remove(k)
+		}
+	}
+
 	return nil
 }
 
