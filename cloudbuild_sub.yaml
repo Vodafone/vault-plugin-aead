@@ -33,10 +33,10 @@ steps:
     args:
     - -c
     - |
-      BUILD_TAG=$(cat ../version/version.go | grep -E "const Version = " | sed -E 's/.*const Version = \"//' | sed -E 's/\"//')-${_TARGET_TAG}
+      BUILD_TAG=$(cat ./version/version.go | grep -E "const Version = " | sed -E 's/.*const Version = \"//' | sed -E 's/\"//')-${_TARGET_TAG}
       docker tag ${_TARGET}:${_TARGET_TAG} ${_TARGET}:$${BUILD_TAG}-rc
       docker push ${_TARGET}:$${BUILD_TAG}-rc
-      
+
 timeout: 1200s      
 images: [ '${_TARGET}:${_TARGET_TAG}' ]
 logsBucket: 'gs://vf-grp-clouddmz-lab-logging'
