@@ -15,19 +15,27 @@ steps:
         make build
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
     entrypoint: /bin/sh
+
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
     waitFor: ['go-build']
     entrypoint: /bin/bash
     args:
+      - build
+      - '-t'
+      - '${_TARGET}:${_TARGET_TAG}'
+      - .
+    dir: docker
+  - name: gcr.io/cloud-builders/docker
+    id: 'container-push'
+    waitFor: ['container-build']
+    entrypoint: /bin/bash
+    args:
     - -c
     - |
       BUILD_TAG=$(cat ../version/version.go | grep -E "const Version = " | sed -E 's/.*const Version = \"//' | sed -E 's/\"//')-${_TARGET_TAG}
-      docker tag ${_TARGET}:${_TARGET_TAG} ${_TARGET}:$${BUILD_TAG}
-      docker push ${_TARGET}:$${BUILD_TAG}
       docker tag ${_TARGET}:${_TARGET_TAG} ${_TARGET}:$${BUILD_TAG}-rc
       docker push ${_TARGET}:$${BUILD_TAG}-rc
-    dir: docker
 timeout: 1200s      
 images: [ '${_TARGET}:${_TARGET_TAG}' ]
 logsBucket: 'gs://vf-grp-clouddmz-lab-logging'
