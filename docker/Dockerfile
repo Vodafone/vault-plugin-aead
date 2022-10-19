@@ -1,4 +1,4 @@
-FROM eu.gcr.io/vf-grp-neuronenabler-nonlive/vault:1.9.0-ent
+FROM europe-west1-docker.pkg.dev/vf-grp-neuronenabler-nonlive/core/hashicorp/vault:1.12.0
 
 RUN mkdir /vault/plugins
 
