@@ -124,8 +124,9 @@ vault path-help aead-secrets
 
 If running against the local developer vault as per the quickstart then set this:
 ```
-export VAULT_URL=http://127.0.0.1:8200
+export VAULT_ADDR=http://127.0.0.1:8200
 export VAULT_TOKEN=root
+export AEAD_ENGINE=aead-secrets
 ```
 
 ## Data returned
@@ -180,7 +181,7 @@ This would mean that both address-line1 and address-l1 columns would be encrypte
 Lots of parallelisation. Splits bulk data into 1 goroutine per data row, and then every key:value pair is also a goroutine. So a file of 1000 rows and 6 fields is 6000 parallel goroutines. Unanswered questions about whether this is really executed in parallel for bulk data when in a container. Fields that do not have an encryption key are returned as-is and not errored. Note there is a 32Mb json restriction on http message size - the client is expected to handle this
 
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/encrypt -H "Content-Type: application/json" -d '{"fieldname":"plaintext"}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/encrypt -H "Content-Type: application/json" -d '{"fieldname":"plaintext"}'
 ```
 Returns
 ```
@@ -198,7 +199,7 @@ Returns
 }
 ```
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/encrypt -H "Content-Type: application/json" -d '{"fieldname1":"plaintext","fieldname2":"plaintext"}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/encrypt -H "Content-Type: application/json" -d '{"fieldname1":"plaintext","fieldname2":"plaintext"}'
 ```
 Returns:
 ```
@@ -217,10 +218,10 @@ Returns:
 }
 ```
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/encrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/encrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
 ```
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/encrypt -H "Content-Type: application/json" -d '{"0":{"field0":"value00","field1":"value01","field2":"value02"},"1":{"field0":"value10","field1":"value11","field2":"value12"},"2":{"field0":"value20","field1":"value21","field2":"value22"}}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/encrypt -H "Content-Type: application/json" -d '{"0":{"field0":"value00","field1":"value01","field2":"value02"},"1":{"field0":"value10","field1":"value11","field2":"value12"},"2":{"field0":"value20","field1":"value21","field2":"value22"}}'
 ```
 Returns:
 ```
@@ -257,22 +258,22 @@ Lots of parallelisation. Splits bulk data into 1 goroutine per data row, and the
 See equivalent encrypt for return json format
 
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/decrypt -H "Content-Type: application/json" -d {"fieldname":"cyphertext"}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/decrypt -H "Content-Type: application/json" -d {"fieldname":"cyphertext"}'
 ```
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/decrypt -H "Content-Type: application/json" -d '{"fieldname1":"cyphertext","fieldname2":"cyphertext",...}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/decrypt -H "Content-Type: application/json" -d '{"fieldname1":"cyphertext","fieldname2":"cyphertext",...}'
 ```
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/decrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/decrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
 ```
 
 ### /encryptcol
 Column based encryption or decryption. Intended for bulk data only. Pivots the bulk data into columns - then parellizes 1 row (aka field) at a time, re-pivots before returning. Pivoting operations are transparent to to the client, So a file of 1000 rows and 6 fields is 6 parallel goroutines. This is 2x faster when running with a local vault, but only 20% faster in a containerised vault. Unexplained.
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/encrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/encrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
 ```
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/encryptcol -H "Content-Type: application/json" -d '{"0":{"field0":"value00","field1":"value01","field2":"value02"},"1":{"field0":"value10","field1":"value11","field2":"value12"},"2":{"field0":"value20","field1":"value21","field2":"value22"}}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/encryptcol -H "Content-Type: application/json" -d '{"0":{"field0":"value00","field1":"value01","field2":"value02"},"1":{"field0":"value10","field1":"value11","field2":"value12"},"2":{"field0":"value20","field1":"value21","field2":"value22"}}'
 ```
 Returns:
 ```
@@ -311,7 +312,7 @@ See equivalent encryptcol for return json format
 
 
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/decrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/decrypt -H "Content-Type: application/json" -d 'BULK DATA - see below'
 ```
 
 
@@ -319,63 +320,63 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1
 ### /info
 returns the plugin version number as json.
 ```
-curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_URL}/v1/${AEAD_ENGINE}/info
+curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD_ENGINE}/info
 ```
 ### /config (read)
 returns the config as json - mostly keys. This is intended to be a restricted endpoint as it is in clear text. See  section on "LIMITATIONS AND TODO's"
 ```
-curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_URL}/v1/${AEAD_ENGINE}/config
+curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD_ENGINE}/config
 ```
 
 ### /config (write)
 writes key : value to config. Note this DOES NOT overwrite an existing key. Can also be used to import a key
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/config -H "Content-Type: application/json" -d '{"key":"value"}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/config -H "Content-Type: application/json" -d '{"key":"value"}'
 ```
 ### /configOverwrite
 writes key : value to config. Note this could overwrite an existing key. Can also be used to import a key
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/configOverwrite -H "Content-Type: application/json" -d '{"key":"value"}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/configOverwrite -H "Content-Type: application/json" -d '{"key":"value"}'
 ```
 
 ### /configDelete
 Deletes the config entry
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/configDelete -H "Content-Type: application/json" -d '{"key":""}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/configDelete -H "Content-Type: application/json" -d '{"key":""}'
 ```
 
 ### /createAEADkey
 creates a non deterministic keyset with 1 key of type github.com/google/tink/go/aead.AES256GCMKeyTemplate() for field "fieldname-nondet" and saves it to config. Note this DOES NOT overwrite an existing keyset
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/createAEADkey -H "Content-Type: application/json" -d '{"fieldname-nondet":"junktext"}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkey -H "Content-Type: application/json" -d '{"fieldname-nondet":"junktext"}'
 ```
 ### /createAEADkeyOverwrite
 creates a non deterministic keyset with 1 key of type github.com/google/tink/go/aead.AES256GCMKeyTemplate() for field "fieldname-nondet" and saves it to config. Note this DOES NOT overwrite an existing keyset
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/createAEADkeyOverwrite -H "Content-Type: application/json" -d '{"fieldname-nondet":"junktext"}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkeyOverwrite -H "Content-Type: application/json" -d '{"fieldname-nondet":"junktext"}'
 ```
 ### /createDAEADkey
 creates a deterministic keyset with 1 key of type github.com/google/tink/go/daead.AESSIVKeyTemplate() for field "fieldname-det" and saves it to config. Note this WILL NOT overwrite an existing keyset
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/createDAEADkey -H "Content-Type: application/json" -d '{"fieldname-det":"junktext"}' 
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkey -H "Content-Type: application/json" -d '{"fieldname-det":"junktext"}' 
 ```
 ### /createDAEADkeyOverwrite
 creates a deterministic keyset with 1 key of type github.com/google/tink/go/daead.AESSIVKeyTemplate() for field "fieldname-det" and saves it to config. Note this WILL overwrite an existing keyset
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/createDAEADkeyOverwrite -H "Content-Type: application/json" -d '{"fieldname-det":"junktext"}' 
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkeyOverwrite -H "Content-Type: application/json" -d '{"fieldname-det":"junktext"}' 
 ```
 
 ### /rotate
 Spin through all the keys and rotate them. The config endpoint should show rotated keys
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/rotate
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/rotate
 ```
 
 ### /keytypes
 Spin through all the keys and return DETERMINISTIC or NON_DETERMINISTIC
 
 ```
-curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_URL}/v1/${AEAD_ENGINE}/keytypes
+curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD_ENGINE}/keytypes
 ```
 
 ### /bqsync
@@ -386,7 +387,7 @@ Consider this a draft endpoint for now. It functionally works fine, but the Dete
 
 
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/bqsync
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/bqsync
 ```
 
 
@@ -413,33 +414,33 @@ This default to the following, which can be set using the config endpoint
 ### /updateKeyStatus
 updates the status of a specific key within a specific keyset as ENABLED or DISABLED. New key is checked for validity before updating.
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/updateKeyStatus -H "Content-Type: application/json" -d  '{"field1":{"4138735456":"DISABLED"}}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/updateKeyStatus -H "Content-Type: application/json" -d  '{"field1":{"4138735456":"DISABLED"}}'
 ```
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/updateKeyStatus -H "Content-Type: application/json" -d  '{"field1":{"4138735456":"ENABLED"}}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/updateKeyStatus -H "Content-Type: application/json" -d  '{"field1":{"4138735456":"ENABLED"}}'
 ```
 ### /updateKeyMaterial
 updates the key material of a specific key within a specific keyset as ENABLED or DISABLED. Note material must be valid
 
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/updateKeyMaterial -H "Content-Type: application/json" -d  '{"field2":{"3233050044":"GiBNxwpdhnnTsrdKF/05N0h1cqO9o1awaR3nNDZOfy/Kaw=="}}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/updateKeyMaterial -H "Content-Type: application/json" -d  '{"field2":{"3233050044":"GiBNxwpdhnnTsrdKF/05N0h1cqO9o1awaR3nNDZOfy/Kaw=="}}'
 ```
 ### /updateKeyID
 updates the keyID  of a specific key within a specific keyset to a new number. If the key ID is also the primary it updates the primary too.  New key is checked for validity before updating.
 
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/updateKeyID -H "Content-Type: application/json" -d  '{"field2":{"3233050044":"3233050045"}}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/updateKeyID -H "Content-Type: application/json" -d  '{"field2":{"3233050044":"3233050045"}}'
 ```
 ### /updatePrimaryKeyID
 updates the primary keyID  of a specific keyset to a new number.  New key is checked for validity before updating.
 
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/updatePrimaryKeyID -H "Content-Type: application/json" -d  '{"field2":"2817739672"}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/updatePrimaryKeyID -H "Content-Type: application/json" -d  '{"field2":"2817739672"}'
 ```
 ### /importKey
 Imports a key as json to a field - in the example below importing a keyset of 3 keys.  New key is checked for validity before importing.
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/importKey -H "Content-Type: application/json" -d  '{"field3":"{\"primaryKeyId\":1513996195,\"key\":[{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiD2rBnfl5oi1tMfHwcFcyqS+JpQpWUcAj8zzd8D3q3IQA==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":2480583041,\"outputPrefixType\":\"TINK\"},{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiBQUDTlxVawIr3T1/dRvuF5CzBhTZtnnpuVsNZayxv1LQ==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":133713585,\"outputPrefixType\":\"TINK\"},{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiBs9EEVquF+igDsDI+FskdsDjVOf6vxLZQHkbJrrIoQLQ==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":1513996195,\"outputPrefixType\":\"TINK\"}]}"}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/importKey -H "Content-Type: application/json" -d  '{"field3":"{\"primaryKeyId\":1513996195,\"key\":[{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiD2rBnfl5oi1tMfHwcFcyqS+JpQpWUcAj8zzd8D3q3IQA==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":2480583041,\"outputPrefixType\":\"TINK\"},{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiBQUDTlxVawIr3T1/dRvuF5CzBhTZtnnpuVsNZayxv1LQ==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":133713585,\"outputPrefixType\":\"TINK\"},{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiBs9EEVquF+igDsDI+FskdsDjVOf6vxLZQHkbJrrIoQLQ==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":1513996195,\"outputPrefixType\":\"TINK\"}]}"}'
 ```
 
 
@@ -543,7 +544,7 @@ map[string]interface{}
 
 For a set of key:value pairs such as this...
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_URL}/v1/${AEAD_ENGINE}/decrypt -H "Content-Type: application/json" -d '{"fieldname1":"cyphertext","fieldname2":"cyphertext",...}'
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/decrypt -H "Content-Type: application/json" -d '{"fieldname1":"cyphertext","fieldname2":"cyphertext",...}'
 ```
 where the keys are the fields and the values are the text - in other words tha map is asserted to be...
 ```
