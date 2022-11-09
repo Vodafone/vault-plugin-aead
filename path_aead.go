@@ -801,7 +801,7 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 	var projectID string
 	telemetryProjectIDIntf, ok := AEAD_CONFIG.Get("TELEMETRY_PROJECTID")
 	if !ok {
-		projectID = "vf-grp-shared-services-poc2"
+		projectID = "your-pubsub-project"
 	} else {
 		projectID = fmt.Sprintf("%s", telemetryProjectIDIntf)
 	}

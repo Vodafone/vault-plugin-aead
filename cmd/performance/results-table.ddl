@@ -1,4 +1,4 @@
-CREATE TABLE `vf-pf1-ca-live.aead_tests.results_new`
+CREATE TABLE `your-bq-results-project.aead_tests.results_new`
 (
   RunStartDateTime DATETIME,
   RunEndDateTime DATETIME,

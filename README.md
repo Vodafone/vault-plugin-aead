@@ -394,10 +394,10 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v
 This default to the following, which can be set using the config endpoint
 
 ```
-	BQ_KMSKEY : my-kmskey (default "projects/vf-grp-shared-services-poc2/locations/europe/keyRings/tink-keyring/cryptoKeys/key1")
+	BQ_KMSKEY : my-kmskey (default "projects/your-kms-project/locations/europe/keyRings/tink-keyring/cryptoKeys/key1")
     note that the vault service account must have encryptor-by-delegation role on this KMS
     note also that the kms key must be inthe same region as the datasets to which the routines will be attached
-	BQ_PROJECT : my-project  (default "vf-pf1-ca-live")
+	BQ_PROJECT : my-project  (default "your-bq-project") the project that has the datasets into which we will create or replace the bq routines
 	BQ_DEFAULT_ENCRYPT_DATASET : a-dataset (default "pii_dataset_eu")
 	BQ_DEFAULT_DECRYPT_DATASET : a-dataset (default "pii_dataset_eu")
 	BQ_ROUTINE_DET_PREFIX : a prefix for deterministic routines (default "pii_daead_")
@@ -660,7 +660,7 @@ Usage of ./performance:
     	proxy url - something like http://someproxy.vodafone.com:8080
   -r int
     	number of rows per dataset (default 1)
-  -s	save results to bq vf-pf1-ca-live.aead_tests.results - assumes the user or SA this runs as can access this table - need to change this if non-VF and rebuild. You will need to have a table created and writable - see results-table.ddl as per -k - also needs the k8s .kube/config to exist as it does a one-time inspection of the kube statefuleset
+  -s	save results to bq <value-as-project-id>.aead_tests.results - assumes the user or SA this runs as can access this table - need to change this if you use a different table and rebuild. You will need to have a table created and writable - see results-table.ddl as per -k - also needs the k8s .kube/config to exist as it does a one-time inspection of the kube statefuleset
   -t string
     	token for vault access
   -u string
@@ -745,8 +745,8 @@ Dataflow can be configured to consume this and save to a BigQuery for analysis
 
 ## Config example
 ```
-TELEMETRY_LM : TEST
-TELEMETRY_PROJECTID : vf-grp-shared-services-poc2
+TELEMETRY_LM : TEST (this is the same as the secret engine)
+TELEMETRY_PROJECTID : your-pubsub-project
 TELEMETRY_TOPICID : eaas-telemetry
 ```
 

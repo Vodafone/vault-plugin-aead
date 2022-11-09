@@ -47,21 +47,21 @@ import (
 // 	Field2 string `json:"field2"`
 // }
 type Options struct {
-	rowNumber     int
-	token         string
-	url           string
-	path          string
-	fieldNumber   int
-	concurrency   int
-	batchMode     bool
-	repeat        int
-	saveResults   bool
-	httpProxy     string
-	debug         bool
-	baseFieldName string
-	waitUntil     string
-	columnBased   bool
-	kubeStats     bool
+	rowNumber         int
+	token             string
+	url               string
+	path              string
+	fieldNumber       int
+	concurrency       int
+	batchMode         bool
+	repeat            int
+	saveResultProject string
+	httpProxy         string
+	debug             bool
+	baseFieldName     string
+	waitUntil         string
+	columnBased       bool
+	kubeStats         bool
 }
 
 type Results struct {
@@ -135,7 +135,7 @@ func main() {
 	concurrency := flag.Int("c", 1, "number of concurrent clients")
 	repeat := flag.Int("i", 1, "number of iterations")
 	batchMode := flag.Bool("b", false, "send all data as 1 batch (32Mb json limit)")
-	saveresults := flag.Bool("s", false, "save results to bq vf-pf1-ca-live.aead_tests.results")
+	saveresultproject := flag.String("s", "", "save results to bq <value-of-this-as-aproject-id>.aead_tests.results")
 	httpProxy := flag.String("p", "", "proxy url - something like http://a-real-proxy.vodafone.com:8080")
 	debug := flag.Bool("d", false, "debug")
 	baseFieldName := flag.String("n", "field", "root name for fields to be anonynised - default field so names would be field0, field1, field2.....fieldn")
@@ -150,7 +150,7 @@ func main() {
 	options.concurrency = *concurrency
 	options.repeat = *repeat
 	options.batchMode = *batchMode
-	options.saveResults = *saveresults
+	options.saveResultProject = *saveresultproject
 	options.token = *token
 	options.url = *url
 	options.path = *path
@@ -176,14 +176,14 @@ func main() {
 		options.batchMode,
 		options.concurrency,
 		options.repeat,
-		options.saveResults,
+		options.saveResultProject,
 		options.columnBased)
 
 	ch_quit := make(chan bool)
 	ch_results := make(chan K8sResults)
 
 	var k8sDets K8sResults
-	if options.saveResults {
+	if options.saveResultProject != "" {
 		if options.kubeStats {
 			getPodStats(ch_quit, ch_results)
 		} else {
@@ -228,7 +228,7 @@ func main() {
 		close(ch_quit)
 	}
 
-	if options.saveResults {
+	if options.saveResultProject != "" {
 		saveResults(options, results, k8sDets)
 	}
 
@@ -668,7 +668,7 @@ func saveResults(options Options, results Results, k8sres K8sResults) {
 	results.VaultPodMem = k8sres.VaultPodMem
 
 	ctx := context.Background()
-	client, err := bigquery.NewClient(ctx, "vf-pf1-ca-live")
+	client, err := bigquery.NewClient(ctx, options.saveResultProject)
 	if err != nil {
 		log.Fatal(err)
 	}
