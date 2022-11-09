@@ -7,6 +7,7 @@ VAULT AEAD SECRETS PLUGIN
   - [Data returned](#data-returned)
   - [Client APIS](#client-apis)
     - [General note an Additional Data](#general-note-an-additional-data)
+    - [General note an Key Families](#general-note-an-key-families)
     - [/encrypt](#encrypt)
     - [/decrypt](#decrypt)
     - [/encryptcol](#encryptcol)
@@ -114,7 +115,8 @@ make
 In another terminal
 ```
 export VAULT_ADDR=http://127.0.0.1:8200
-
+export VAULT_TOKEN=root
+vault login
 vault secrets enable -path=aead-secrets vault-plugin-aead
 vault path-help aead-secrets
 ```
@@ -171,11 +173,32 @@ To cater for this the AD can be overridden for particular fields
 In my example the following can be set up by an admin using the config endpoint
 
 ```
-    ADDITIONAL_DATA_address_line1 : ad-for-address-l1
-    ADDITIONAL_DATA_address_l1 : ad-for-address-l1
+ADDITIONAL_DATA_address_line1 : ad-for-address-l1
+ADDITIONAL_DATA_address_l1 : ad-for-address-l1
 ```
 
 This would mean that both address-line1 and address-l1 columns would be encrypted or decrypted with the same additional-data = ad-for-address-l1
+
+### General note an Key Families
+By default you would set up 1 keyset per field to be encrypted
+```
+address_line: <keyset1>
+lastname: <keyset2>
+```
+However, this would mean that for example multi-line addresses, or for addresses with slightly different field names in different feeds, we would have:
+```
+address_line1: <keyset1>
+address_line2: <keyset2>
+address_l1: <keyset3>
+```
+This may not be desirable, you may for example want all address fields to use the same key. This is done as follows, and circular references are defended against by only looking recursively 5 times
+```
+address_line1: address
+address_line2: address
+address_l1: address
+address: <keyset>
+```
+
 
 ### /encrypt
 Lots of parallelisation. Splits bulk data into 1 goroutine per data row, and then every key:value pair is also a goroutine. So a file of 1000 rows and 6 fields is 6000 parallel goroutines. Unanswered questions about whether this is really executed in parallel for bulk data when in a container. Fields that do not have an encryption key are returned as-is and not errored. Note there is a 32Mb json restriction on http message size - the client is expected to handle this
@@ -380,10 +403,8 @@ curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD
 ```
 
 ### /bqsync
-Sync keysets to a defined BQ dataset so the same key can be wholey used in BQ.
-
-
-Consider this a draft endpoint for now. It functionally works fine, but the Determinstic BQ stuff is not GA from Google - you have to have the projects(s) whitelisted
+Sync Tink keysets, encrypted with KMS, as a routine in a defined BQ dataset so the same key can be used directly in BQ.
+Because the user of BQ is granted the decryptor by delegation role on the KMS key, the user can invoke the routine to use the encrypted keyset to decrypty data, but cannot decrypt the keyset itself.
 
 
 ```
@@ -589,8 +610,9 @@ select "value1" as ORIGINAL,
 
 # PERFORMANCE TESTING
 
-**5 Million encryptions/decryptions per second have been achieved with a large performance test rig and pods of 300 x 8 CPU**
-- this claim needs to be independently verified
+**10 Million encryptions/decryptions per second have been achieved with a large performance test rig and pods of 500 x 3 CPU**
+
+See Infrastucture section for Enterprise Vault requirements to get high throughput
 
 ![alt text](jpg-files/EaaS-PerformanceTesting.jpg "Performance Testing")
 
@@ -632,7 +654,7 @@ If running against a local vault as per the quick-start, this would be:
 30x concurrent execution of (hint use the -w option to set the same UTC start time for all runs)
 typically...
 10 from on prem
-10 from project a, instance group of 10 vm's
+10 from project a, instance group of 10 vm'sV
 10 from project b, instance group of 10 vm's
 
 **NOTE the -s switch - you will need to have a table created and writable - see results-table.ddl**
@@ -694,8 +716,11 @@ last column of this stat speaks for itself. This is the average number of memory
 
 
 # INFRASTRUCTURE
-For proper deployment, not local testing, we use Vault Enterprise v1.9 and Consul v1.10
+For proper deployment, not local testing, we use Vault Enterprise v1.12.0 and Consul v1.10
 This is deployed on GCP's GKE
+
+Note that the solution works on community and enterprise vault, but only the enterprise version supports the concept of performance replicas. 
+To get high throughput, the performance replica feature is required because without this feature all traffic is routed through the master vault pod, but the performance is gained via Kubernetes horizonal scaling, and the traffic being routed through hundreds of pods
 
 Components: 
 * Cloud DNS is providing high-availability of domain and pointing to the correct external load balancer 
