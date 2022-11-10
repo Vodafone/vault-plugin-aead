@@ -25,8 +25,10 @@ func (b *backend) pathConfigOverwrite(ctx context.Context, req *logical.Request,
 }
 func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
 
-	if err := data.Validate(); err != nil {
-		return nil, logical.CodedError(422, err.Error())
+	// retrive the config from  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
 	}
 
 	// iterate through the supplied map, adding it to the config map
@@ -129,6 +131,30 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 	}, nil
 }
 
+func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error {
+
+	consulConfig, err := b.readConsulConfig(ctx, req.Storage)
+
+	if err != nil {
+		return err
+	}
+
+	// if the config retrieved from the storage is null use the in memory config
+	// add config from consul into the AEAD_CONFIG cache
+	for k, v := range consulConfig {
+		AEAD_CONFIG.Set(k, v)
+	}
+
+	// remove config from the cache anything that is not in consul
+	for k, _ := range AEAD_CONFIG.Items() {
+		if _, ok := consulConfig[k]; !ok {
+			AEAD_CONFIG.Remove(k)
+		}
+	}
+
+	return nil
+}
+
 func (b *backend) readConsulConfig(ctx context.Context, s logical.Storage) (map[string]interface{}, error) {
 
 	consulConfig := make(map[string]interface{})
@@ -154,6 +180,7 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 	if err != nil {
 		return nil, err
 	}
+
 	for keyField, encryptionKey := range AEAD_CONFIG.Items() {
 		fieldName := fmt.Sprintf("%v", keyField)
 		keyStr := fmt.Sprintf("%v", encryptionKey)
@@ -202,6 +229,11 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 
 	// data.Raw is map[string]map[string]string
 	// map['field0':map['key':'status']]
+	// retrive the config from  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
 	resp := make(map[string]interface{})
 
@@ -260,7 +292,11 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 
 	// data.Raw is map[string]map[string]string
 	// map['field0':map['key':'material']]
-
+	// retrive the config from  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 	resp := make(map[string]interface{})
 
 	for fieldName, v := range data.Raw {
@@ -318,7 +354,11 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 
 	// data.Raw is map[string]string
 	// map['field0':'primaryKey']]
-
+	// retrive the config from  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 	resp := make(map[string]interface{})
 
 	for fieldName, v := range data.Raw {
@@ -374,7 +414,11 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 
 	// data.Raw is map[string]map[string]string
 	// map['field0':map['key':'newkey']]
-
+	// retrive the config from  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 	resp := make(map[string]interface{})
 
 	for fieldName, v := range data.Raw {
@@ -588,6 +632,12 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 }
 
 func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string, ctx context.Context, req *logical.Request, overwrite bool) {
+
+	// retrive the config from  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return
+	}
 
 	if !overwrite {
 		// don't do this if we already have a key in the config - prevents overwrite
