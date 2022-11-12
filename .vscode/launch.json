@@ -1,0 +1,66 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "performance-local",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "/Users/shackladya/github-com-vf/vault/vault-plugin-aead/cmd/performance/performance.go",
+            "env": {},
+            "args": ["-f", "6", "-r", "10", "-c", "1", "-i", "1", "-t", "root1", "-u", "http://127.0.0.1:8200", "-n", "field", "-b", "-d"]
+        },
+
+        {
+            "name": "performance",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "/Users/shackladya/github-com-vf/vault/vault-plugin-aead/cmd/performance/performance.go",
+            "env": {},
+            "args": ["-f", "6", "-r", "10", "-c", "1", "-i", "1", "-t", "s.273OFw7fsWZhKTevUxh3bItR", "-u", "https://poc2.vault.neuron.bdp.vodafone.com", "-p", "http://vfukukproxy.internal.vodafone.com:8080", "-n", "field", "-b", "-d"]
+        },
+
+        {
+            "name": "sandbox",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "/Users/shackladya/github-com-vf/vault/vault-plugin-aead/cmd/sandbox/sandbox.go",
+            "env": {},
+            "args": []
+        }
+
+        {
+            "name": "backend_test",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "/Users/shackladya/github-com-vf/vault/vault-plugin-aead/backend_test.go",
+            "env": {},
+            "args": []
+        }
+
+        {
+            "name": "aeadutils_test",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "/Users/shackladya/github-com-vf/vault/vault-plugin-aead/aeadutils_test.go",
+            "env": {},
+            "args": []
+        }
+
+        {
+            "name": "sandbox",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "/Users/shackladya/github-com-vf/vault/vault-plugin-aead/cmd/sandbox/sandbox.go",
+            "env": {},
+            "args": []
+        }
+
+    ]
+}

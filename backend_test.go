@@ -979,7 +979,7 @@ func TestBackend(t *testing.T) {
 		upDataInner["1481824018"] = "DISABLED"
 		updData["test21-key"] = upDataInner
 
-		resp, err := b.HandleRequest(context.Background(), &logical.Request{
+		_, err = b.HandleRequest(context.Background(), &logical.Request{
 			Storage:   storage,
 			Operation: logical.UpdateOperation,
 			Path:      "updateKeyStatus",
@@ -989,6 +989,8 @@ func TestBackend(t *testing.T) {
 		if err != nil {
 			t.Fatal("updateKeyStatus", err)
 		}
+
+		resp := readConfig(b, storage, t)
 
 		if len(resp.Data) == 0 {
 			t.Fatal("updateKeyStatus - no data returned")
