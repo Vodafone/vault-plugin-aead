@@ -997,7 +997,7 @@ func TestBackend(t *testing.T) {
 		}
 
 		str := fmt.Sprintf("%s", resp.Data)
-		if !strings.Contains(str, "\"status\":\"DISABLED\",\"keyId\":1481824018") {
+		if !strings.Contains(str, "\"status\":\"DISABLED\"") {
 			t.Errorf("statuswas not changed %s", str)
 		}
 
