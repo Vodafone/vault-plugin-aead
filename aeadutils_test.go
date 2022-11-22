@@ -621,7 +621,7 @@ func TestAeadUtils(t *testing.T) {
 
 	})
 
-	t.Run("test getEncryptionKey", func(t *testing.T){
+	t.Run("test getEncryptionKey", func(t *testing.T) {
 		rawKeyset := `{"primaryKeyId":3987026049,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiB5m/rHV+xmMiRngaWWi6zel8IjlOPCdEpGnEsb8RfrMQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1456486908,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCRExtHflcWVUbmk0mwB5TzqSGc3GVMu6Hk+HbL4oH61A==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3987026049,"outputPrefixType":"TINK"}]}`
 
 		key, ok := getEncryptionKey("test")
@@ -639,7 +639,6 @@ func TestAeadUtils(t *testing.T) {
 		if !ok {
 			t.Errorf("should find the keyset. got: %s", key.(string))
 		}
-
 
 		AEAD_CONFIG.Set("test", "cat1")
 		AEAD_CONFIG.Set("cat1", rawKeyset)

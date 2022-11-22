@@ -21,6 +21,8 @@ steps:
     waitFor: ['go-build']
     args:
       - build
+      - '--build-arg'
+      - 'REPO_PROJECT=${_REPO_PROJECT}'
       - '-t'
       - '${_TARGET}:${_TARGET_TAG}'
       - .
@@ -39,9 +41,9 @@ steps:
 
 timeout: 1200s      
 images: [ '${_TARGET}:${_TARGET_TAG}' ]
-logsBucket: 'gs://vf-grp-clouddmz-lab-logging'
+logsBucket: 'gs://${_BUILD_PROJECT}-logging'
 options:
-  workerPool: projects/vf-grp-clouddmz-lab/locations/europe-west1/workerPools/worker-pool2
+  workerPool: projects/${_BUILD_PROJECT}/locations/europe-west1/workerPools/worker-pool2
   env:
     - 'GOPRIVATE=github.com/pierrec,google.golang.org'
     - 'GOOS=linux'

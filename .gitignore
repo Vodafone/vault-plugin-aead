@@ -1,2 +1,5 @@
 vault/plugins/*
 .DS_Store
+cmd/apiserver
+cmd/bqtest
+cmd/sandbox

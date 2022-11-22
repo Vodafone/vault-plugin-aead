@@ -239,21 +239,10 @@ func doBQRoutineCreateOrUpdate(ctx context.Context, options Options, escapedWrap
 }
 
 func resolveOptions(options *Options, fieldName string, deterministic bool) {
-	// BQ_DEFAULT_ENCRYPT_DATASET (default "pii_dataset_eu")
-	// BQ_DEFAULT_DECRYPT_DATASET (default "pii_dataset_eu")
-	// BQ_ROUTINE_DET_PREFIX (default "pii_daead_")
-	// BQ_ROUTINE_NONDET_PREFIX (default "pii_aead_")
-	// BQ_<field>_ENCRYPT_DATASET (default not set, use default)
-	// BQ_<field>_DECRYPT_DATASET (default not set, use default, is set format is BQ_ROUTINE_[DET|NONDET]_PREFIX_<FIELDNAME>_[en|de]crypt : specfic BQ Dataset)
-
-	// Specify the following values
-
-	// BQ_KMSKEY (default "projects/vf-grp-shared-services-poc2/locations/europe/keyRings/tink-keyring/cryptoKeys/key1")
-	// BQ_PROJECT (default "vf-pf1-ca-live")
 
 	// set the defaults
-	options.kmsKeyName = "projects/vf-grp-shared-services-poc2/locations/europe/keyRings/tink-keyring/cryptoKeys/key1" // Format: 'projects/.../locations/.../keyRings/.../cryptoKeys/...'
-	options.projectId = "vf-pf1-ca-live"
+	options.kmsKeyName = "projects/your-kms-project/locations/europe/keyRings/tink-keyring/cryptoKeys/key1" // Format: 'projects/.../locations/.../keyRings/.../cryptoKeys/...'
+	options.projectId = "your-bq-project"
 	options.encryptDatasetId = "pii_dataset_eu"
 	options.decryptDatasetId = "pii_dataset_eu"
 	options.detRoutinePrefix = "pii_daead_"
