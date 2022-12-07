@@ -22,7 +22,7 @@ steps:
     args:
       - build
       - '--build-arg'
-      - 'REPO_PROJECT=${_REPO_PROJECT}'
+      - 'FQ_BASE_IMAGE=${_FQ_BASE_IMAGE}'
       - '-t'
       - '${_TARGET}:${_TARGET_TAG}'
       - .
