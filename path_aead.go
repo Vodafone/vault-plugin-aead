@@ -858,7 +858,16 @@ func (b *backend) pathAeadEncryptBulkColTemp(ctx context.Context, req *logical.R
 	} else {
 		tokenStr = fmt.Sprintf("%s", token)
 	}
-	resultMap, err := EncryptOrDecryptData("https://vault-enterprise-ready.vault-enterprise-ready.svc.cluster.local/v1/aead-secrets/encryptcol", data.Raw, "", tokenStr)
+
+	serviceStr := ""
+	service, ok := AEAD_CONFIG.Get("INTERNAL_SERVICE")
+	if !ok {
+		hclog.L().Error("pathAeadEncryptBulkColTemp: Count not find a service in the config")
+	} else {
+		serviceStr = fmt.Sprintf("%s", service)
+	}
+
+	resultMap, err := EncryptOrDecryptData(serviceStr+"/v1/aead-secrets/encryptcol", data.Raw, "", tokenStr)
 	if err != nil {
 		hclog.L().Error("pathAeadEncryptBulkColTemp: EncryptOrDecryptData: %v", err)
 	}
