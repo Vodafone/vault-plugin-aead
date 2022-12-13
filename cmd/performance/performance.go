@@ -17,7 +17,6 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -26,9 +25,8 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	"cloud.google.com/go/civil"
+	aeadplugin "github.com/Vodafone/vault-plugin-aead"
 	lorem "github.com/bozaro/golorem"
-	backoff "github.com/cenkalti/backoff/v4"
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/mem"
@@ -306,7 +304,7 @@ func gotestBulk(options *Options, ch chan bool) {
 	} else {
 		url = options.url + "/v1/" + options.path + "/encrypt"
 	}
-	encryptedBulkMap, err := encryptOrDecryptData(url, bulkInputMap, options)
+	encryptedBulkMap, err := aeadplugin.EncryptOrDecryptData(url, bulkInputMap, options.httpProxy, options.token)
 	if err != nil {
 		panic(err)
 	}
@@ -325,7 +323,7 @@ func gotestBulk(options *Options, ch chan bool) {
 	} else {
 		url = options.url + "/v1/" + options.path + "/decrypt"
 	}
-	decryptedBulkMap, err = encryptOrDecryptData(url, encryptedBulkMap, options)
+	decryptedBulkMap, err = aeadplugin.EncryptOrDecryptData(url, encryptedBulkMap, options.httpProxy, options.token)
 	if err != nil {
 		panic(err)
 	}
@@ -362,29 +360,6 @@ func gotestBulk(options *Options, ch chan bool) {
 	ch <- success
 }
 
-func createHttpClient(options *Options) *retryablehttp.Client {
-	var tr *http.Transport
-	if options.httpProxy == "" {
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	} else {
-		proxyUrl, _ := url.Parse(options.httpProxy)
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			Proxy:           http.ProxyURL(proxyUrl),
-		}
-	}
-
-	// Hmmm dodgy
-	httpClient := &http.Client{Transport: tr}
-	client := retryablehttp.NewClient()
-	client.HTTPClient = httpClient
-	client.RetryMax = 10                    // max 10 retries
-	client.RetryWaitMax = 300 * time.Second // max 5 mins between retries
-	return client
-}
-
 func gotest(options *Options, ch chan bool) {
 
 	//  client := createHttpClient(options)
@@ -419,11 +394,11 @@ func gotest(options *Options, ch chan bool) {
 	fmt.Printf("%v START ENCRYPT\n", time.Since(t))
 
 	t = time.Now()
-	for k, v := range originalDataMap {
+	for k, inputRowAsMap := range originalDataMap {
 		// send each row, one at a time as map[string]interface{}
 		// fmt.Printf("Key=%v Value=%v", k, v)
 		url := options.url + "/v1/" + options.path + "/encrypt"
-		encryptedRowMap, err = encryptOrDecryptData(url, v, options)
+		encryptedRowMap, err = aeadplugin.EncryptOrDecryptData(url, inputRowAsMap, options.httpProxy, options.token)
 		if err != nil {
 			panic(err)
 		}
@@ -436,10 +411,10 @@ func gotest(options *Options, ch chan bool) {
 	}
 	t = time.Now()
 
-	for k, v := range encryptedMap {
+	for k, inputRowAsMap := range encryptedMap {
 		// fmt.Printf("Key=%v Value=%v", k, v)
 		url := options.url + "/v1/" + options.path + "/decrypt"
-		decryptedRowMap, err = encryptOrDecryptData(url, v, options)
+		decryptedRowMap, err = aeadplugin.EncryptOrDecryptData(url, inputRowAsMap, options.httpProxy, options.token)
 		if err != nil {
 			panic(err)
 		}
@@ -480,52 +455,6 @@ func gotest(options *Options, ch chan bool) {
 // 	return dataDecrypted
 // }
 
-func encryptOrDecryptData(url string, inputMap map[string]interface{}, options *Options) (map[string]interface{}, error) {
-
-	response := make(map[string]interface{})
-	emptyMap := make(map[string]interface{})
-	data := make(map[string]interface{})
-	ok := true
-	i := 0
-
-	// I absolutely hate that you can only wrap a function with no args that returns an error "func() error" here
-	// so I have to rely on variable scope, but life is too short
-	operation := func() error {
-		// if i > 0 {
-		// 	fmt.Printf("Retry=%v encryptOrDecryptData\n", i)
-		// }
-		i++
-		err := goDoHttp(inputMap, url, response, options)
-		if err != nil {
-			fmt.Printf("encryptOrDecryptData Try=%v Error after goDoHttp=%v\n", i, err)
-			return err
-		}
-		data, ok = response["data"].(map[string]interface{})
-		if !ok {
-			errors, ok := response["errors"].([]interface{})
-			if ok {
-				// we have errors from vault
-				fmt.Printf("encryptOrDecryptData Try=%v Vault Response=%v\n", i, errors)
-				return fmt.Errorf("error response from vault %v", errors)
-			} else {
-				// we have errors but no idea why
-				fmt.Printf("encryptOrDecryptData Try=%v Vault Response - no idea\n", i)
-				return fmt.Errorf("error converting response to map[string]interface{}")
-			}
-		}
-		return nil // or an error
-	}
-	xbo := backoff.NewExponentialBackOff()
-	xbo.MaxElapsedTime = 15 * time.Minute
-	err := backoff.Retry(operation, xbo)
-	if err != nil {
-		// Handle error.
-		return emptyMap, err
-	}
-
-	return data, nil
-}
-
 func makeRandomData(inputMap map[int]map[string]interface{}, options *Options) {
 
 	// fmt.Println("Options:", options)
@@ -557,47 +486,6 @@ func makeRandomData(inputMap map[int]map[string]interface{}, options *Options) {
 
 		}
 	}
-}
-
-func goDoHttp(inputData map[string]interface{}, url string, bodyMap map[string]interface{}, options *Options) error {
-
-	client := createHttpClient(options)
-	payloadBytes, err := json.Marshal(inputData)
-	if err != nil {
-		fmt.Printf("goDoHttp json.Marshal Error=%v\n", err)
-		return err
-	}
-	inputBody := bytes.NewReader(payloadBytes)
-
-	req, err := retryablehttp.NewRequest(http.MethodPost, url, inputBody)
-
-	if err != nil {
-		fmt.Printf("goDoHttp http.NewRequest Error=%v\n", err)
-		return err
-	}
-	req.Header.Set("X-Vault-Token", options.token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Printf("goDoHttp client.Do Error=%v\n", err)
-		return err
-	}
-
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Printf("goDoHttp io.ReadAll Error=%v\n", err)
-		return err
-	}
-
-	err = json.Unmarshal([]byte(body), &bodyMap)
-	if err != nil {
-		fmt.Printf("goDoHttp Unmarshall Error=%v\n", err)
-		return err
-	}
-	return nil
 }
 
 func goGetConfig(options *Options) {

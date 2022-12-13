@@ -833,3 +833,42 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 		hclog.L().Error("pubsub: result.Get: %v", err)
 	}
 }
+
+//***********************************************
+// TEMP SECTION
+//***********************************************
+
+func (b *backend) pathAeadEncryptBulkColTemp(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	// fire and forget the telemetry
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go b.publishTelemetry(&wg, ctx, req, "encryptTemp", data.Raw)
+
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenStr := ""
+	token, ok := AEAD_CONFIG.Get("TOKEN")
+	if !ok {
+		hclog.L().Error("pathAeadEncryptBulkColTemp: Count not find a token in the config")
+	} else {
+		tokenStr = fmt.Sprintf("%s", token)
+	}
+	resultMap, err := EncryptOrDecryptData("https://vault-enterprise-ready.vault-enterprise-ready.svc.cluster.local/v1/aead-secrets/encryptcol", data.Raw, "", tokenStr)
+	if err != nil {
+		hclog.L().Error("pathAeadEncryptBulkColTemp: EncryptOrDecryptData: %v", err)
+	}
+
+	var respStruct = logical.Response{}
+	var resp = &respStruct
+
+	resp.Data = resultMap
+
+	wg.Wait()
+
+	return resp, nil
+}

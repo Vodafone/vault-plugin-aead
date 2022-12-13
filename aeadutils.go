@@ -2,18 +2,25 @@ package aeadplugin
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
+
+	backoff "github.com/cenkalti/backoff/v4"
 
 	"github.com/google/tink/go/aead"
 	"github.com/google/tink/go/daead"
 	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
 	"github.com/google/tink/go/tink"
-
 	hclog "github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 func CreateInsecureHandleAndAead(rawKeyset string) (*keyset.Handle, tink.AEAD, error) {
@@ -443,4 +450,113 @@ func muteKeyMaterial(theKey string) string {
 		mutedMaterial = strings.Replace(mutedMaterial, key.KeyData.Value, "***", -1)
 	}
 	return mutedMaterial
+}
+
+func createHttpClient(httpProxy string) *retryablehttp.Client {
+	var tr *http.Transport
+	if httpProxy == "" {
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	} else {
+		proxyUrl, _ := url.Parse(httpProxy)
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			Proxy:           http.ProxyURL(proxyUrl),
+		}
+	}
+
+	httpClient := &http.Client{Transport: tr}
+	client := retryablehttp.NewClient()
+	client.HTTPClient = httpClient
+	client.RetryMax = 10                    // max 10 retries
+	client.RetryWaitMax = 300 * time.Second // max 5 mins between retries
+	return client
+}
+
+func goDoHttp(inputData map[string]interface{}, url string, bodyMap map[string]interface{}, httpProxy string, token string) error {
+
+	client := createHttpClient(httpProxy)
+	payloadBytes, err := json.Marshal(inputData)
+	if err != nil {
+		fmt.Printf("goDoHttp json.Marshal Error=%v\n", err)
+		return err
+	}
+	inputBody := bytes.NewReader(payloadBytes)
+
+	req, err := retryablehttp.NewRequest(http.MethodPost, url, inputBody)
+
+	if err != nil {
+		fmt.Printf("goDoHttp http.NewRequest Error=%v\n", err)
+		return err
+	}
+	req.Header.Set("X-Vault-Token", token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("goDoHttp client.Do Error=%v\n", err)
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("goDoHttp io.ReadAll Error=%v\n", err)
+		return err
+	}
+
+	err = json.Unmarshal([]byte(body), &bodyMap)
+	if err != nil {
+		fmt.Printf("goDoHttp Unmarshall Error=%v\n", err)
+		return err
+	}
+	return nil
+}
+
+func EncryptOrDecryptData(url string, inputMap map[string]interface{}, httpProxy string, token string) (map[string]interface{}, error) {
+
+	response := make(map[string]interface{})
+	emptyMap := make(map[string]interface{})
+	data := make(map[string]interface{})
+	ok := true
+	i := 0
+
+	// I absolutely hate that you can only wrap a function with no args that returns an error "func() error" here
+	// so I have to rely on variable scope, but life is too short
+	operation := func() error {
+		// if i > 0 {
+		// 	fmt.Printf("Retry=%v encryptOrDecryptData\n", i)
+		// }
+		i++
+		err := goDoHttp(inputMap, url, response, httpProxy, token)
+		if err != nil {
+			fmt.Printf("encryptOrDecryptData Try=%v Error after goDoHttp=%v\n", i, err)
+			return err
+		}
+		data, ok = response["data"].(map[string]interface{})
+		if !ok {
+			errors, ok := response["errors"].([]interface{})
+			if ok {
+				// we have errors from vault
+				fmt.Printf("encryptOrDecryptData Try=%v Vault Response=%v\n", i, errors)
+				return fmt.Errorf("error response from vault %v", errors)
+			} else {
+				// we have errors but no idea why
+				fmt.Printf("encryptOrDecryptData Try=%v Vault Response - no idea\n", i)
+				return fmt.Errorf("error converting response to map[string]interface{}")
+			}
+		}
+		return nil // or an error
+	}
+	xbo := backoff.NewExponentialBackOff()
+	xbo.MaxElapsedTime = 15 * time.Minute
+	err := backoff.Retry(operation, xbo)
+	if err != nil {
+		// Handle error.
+		return emptyMap, err
+	}
+
+	return data, nil
 }
