@@ -60,6 +60,7 @@ type Options struct {
 	waitUntil         string
 	columnBased       bool
 	kubeStats         bool
+	farmBased         bool
 }
 
 type Results struct {
@@ -140,6 +141,7 @@ func main() {
 	waitUntil := flag.String("w", "", "UTC datetime in the format of 2022-03-28 11:05 YYYY-MM-DD HH24:MM to delay until")
 	columnBased := flag.Bool("col", false, "column based ops (only if batchMode = true)")
 	kubeStats := flag.Bool("k", false, "collect kube stat averages")
+	farmBased := flag.Bool("farm", false, "farm based column ops (only if batchMode = true)")
 
 	flag.Parse()
 
@@ -158,6 +160,7 @@ func main() {
 	options.waitUntil = *waitUntil
 	options.columnBased = *columnBased
 	options.kubeStats = *kubeStats
+	options.farmBased = *farmBased
 
 	doWaitIfRequired(options)
 
@@ -300,10 +303,14 @@ func gotestBulk(options *Options, ch chan bool) {
 	url := ""
 	if options.columnBased && options.batchMode {
 		fmt.Println("COLUMN BASED BULK ENCRYPT")
-		url = options.url + "/v1/" + options.path + "/encryptcoltemp"
+		url = options.url + "/v1/" + options.path + "/encryptcol"
+		if options.farmBased {
+			url = options.url + "/v1/" + options.path + "/encryptcolfarm"
+		}
 	} else {
 		url = options.url + "/v1/" + options.path + "/encrypt"
 	}
+
 	encryptedBulkMap, err := aeadplugin.EncryptOrDecryptData(url, bulkInputMap, options.httpProxy, options.token)
 	if err != nil {
 		panic(err)
@@ -320,6 +327,9 @@ func gotestBulk(options *Options, ch chan bool) {
 	if options.columnBased && options.batchMode {
 		fmt.Println("COLUMN BASED BULK DECRYPT")
 		url = options.url + "/v1/" + options.path + "/decryptcol"
+		if options.farmBased {
+			url = options.url + "/v1/" + options.path + "/decryptcolfarm"
+		}
 	} else {
 		url = options.url + "/v1/" + options.path + "/decrypt"
 	}
