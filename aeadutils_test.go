@@ -668,4 +668,76 @@ func TestAeadUtils(t *testing.T) {
 		}
 
 	})
+
+	t.Run("test mapSlice", func(t *testing.T) {
+
+		var inputMap = map[string]map[string]interface{}{}
+
+		makeInputdata(inputMap, 10, 6, "field")
+
+		// define the max number of items in each slice
+		// initialize an empty slice of the correct type, max capacity same as the chunksize
+		mapSlice := createSliceOfMapsFromMap(inputMap, 11)
+
+		if len(mapSlice) != 1 {
+			t.Errorf("Expected Slice length of: %v got: %v", 1, len(mapSlice))
+		}
+
+		mapSlice = createSliceOfMapsFromMap(inputMap, 3)
+
+		if len(mapSlice) != 4 {
+			t.Errorf("Expected Slice length of: %v got: %v", 4, len(mapSlice))
+		}
+
+		mapSlice = createSliceOfMapsFromMap(inputMap, 10)
+
+		if len(mapSlice) != 1 {
+			t.Errorf("Expected Slice length of: %v got: %v", 1, len(mapSlice))
+		}
+
+		mapSlice = createSliceOfMapsFromMap(inputMap, 1)
+
+		if len(mapSlice) != 10 {
+			t.Errorf("Expected Slice length of: %v got: %v", 10, len(mapSlice))
+		}
+
+		newMap := createMapFromSliceOfMaps(mapSlice)
+
+		if !reflect.DeepEqual(newMap, inputMap) {
+			t.Errorf("Reassembled Map is not the same as original")
+
+		}
+
+	})
+
+	t.Run("test mapSliceNew", func(t *testing.T) {
+
+		var inputMap = map[string]map[string]interface{}{}
+
+		makeInputdata(inputMap, 10, 6, "field")
+
+		//newMap, ok := inputMap.(map[string]interface{})
+
+		var inputMapNew = map[string]interface{}{}
+		for k, v := range inputMap {
+			inputMapNew[k] = v
+		}
+
+		// define the max number of items in each slice
+		// initialize an empty slice of the correct type, max capacity same as the chunksize
+		mapSlice := createSliceOfMapsFromMapStrInt(inputMapNew, 3)
+
+		if len(mapSlice) != 4 {
+			t.Errorf("Expected Slice length of: %v got: %v", 4, len(mapSlice))
+		}
+
+		newMap := createMapFromSliceOfMapsStrInt(mapSlice)
+
+		if !reflect.DeepEqual(newMap, inputMapNew) {
+			t.Errorf("Reassembled Map is not the same as original")
+
+		}
+
+	})
+
 }

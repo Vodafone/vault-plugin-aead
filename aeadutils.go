@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	lorem "github.com/bozaro/golorem"
 	backoff "github.com/cenkalti/backoff/v4"
 
 	"github.com/google/tink/go/aead"
@@ -515,6 +517,15 @@ func goDoHttp(inputData map[string]interface{}, url string, bodyMap map[string]i
 	return nil
 }
 
+func EncryptOrDecryptDataChan(url string, inputMap map[string]interface{}, httpProxy string, token string, ch chan map[string]interface{}) {
+	dataMap, err := EncryptOrDecryptData(url, inputMap, httpProxy, token)
+	if err != nil {
+		// TODO - not sure on putting a panic here
+		panic(err)
+	}
+	ch <- dataMap
+}
+
 func EncryptOrDecryptData(url string, inputMap map[string]interface{}, httpProxy string, token string) (map[string]interface{}, error) {
 
 	response := make(map[string]interface{})
@@ -559,4 +570,107 @@ func EncryptOrDecryptData(url string, inputMap map[string]interface{}, httpProxy
 	}
 
 	return data, nil
+}
+
+func makeInputdata(inputMap map[string]map[string]interface{}, rows int, fields int, baseName string) {
+	for i := 0; i < rows; i++ {
+		s := fmt.Sprint(i)
+		inputMap[s] = map[string]interface{}{}
+
+		for j := 0; j < fields; j++ {
+			randomStr := ""
+			randomInt := rand.Intn(6)
+			switch randomInt {
+			case 0:
+				randomStr = lorem.New().Email()
+			case 1:
+				randomStr = lorem.New().FirstName(lorem.Female)
+			case 2:
+				randomStr = lorem.New().FullName(lorem.Male)
+			case 3:
+				randomStr = lorem.New().Host()
+			case 4:
+				randomStr = lorem.New().Url()
+			case 5:
+				randomStr = lorem.New().Word(0, 10)
+			default:
+				randomStr = lorem.New().Word(0, 10)
+			}
+
+			inputMap[s][baseName+fmt.Sprint(j)] = randomStr
+
+		}
+	}
+}
+
+func createSliceOfMapsFromMap(inputMap map[string]map[string]interface{}, maxSize int) []map[string]map[string]interface{} {
+
+	// create a slice of maps with zero elements and max size
+	batchMaps := make([]map[string]map[string]interface{}, 0, maxSize)
+	// make the fist element of the slice and empty (but not nil) map
+	batchMaps = append(batchMaps, make(map[string]map[string]interface{}))
+
+	i, n := 0, 0
+	for k, v := range inputMap {
+		n++
+
+		batchMaps[i][k] = v
+
+		if n%maxSize == 0 && n != len(inputMap) {
+			// create a new element of the slice if we are at max size but not at the last element
+			i++
+			batchMaps = append(batchMaps, make(map[string]map[string]interface{}))
+		}
+	}
+
+	return batchMaps
+}
+
+func createMapFromSliceOfMaps(sliceMap []map[string]map[string]interface{}) map[string]map[string]interface{} {
+
+	newMap := make(map[string]map[string]interface{})
+
+	for _, innerMap := range sliceMap {
+		for ki, vi := range innerMap {
+			newMap[ki] = vi
+		}
+	}
+
+	return newMap
+}
+
+func createSliceOfMapsFromMapStrInt(inputMap map[string]interface{}, maxSize int) []map[string]interface{} {
+
+	// create a slice of maps with zero elements and max size
+	batchMaps := make([]map[string]interface{}, 0, maxSize)
+	// make the fist element of the slice and empty (but not nil) map
+	batchMaps = append(batchMaps, make(map[string]interface{}))
+
+	i, n := 0, 0
+	for k, v := range inputMap {
+		n++
+
+		batchMaps[i][k] = v
+
+		if n%maxSize == 0 && n != len(inputMap) {
+			// create a new element of the slice if we are at max size but not at the last element
+			i++
+			batchMaps = append(batchMaps, make(map[string]interface{}))
+		}
+	}
+
+	return batchMaps
+}
+
+func createMapFromSliceOfMapsStrInt(sliceMap []map[string]interface{}) map[string]interface{} {
+
+	newMap := make(map[string]interface{})
+
+	for _, innerMap := range sliceMap {
+		for ki, vi := range innerMap {
+			newMap[ki] = vi
+		}
+	}
+
+	return newMap
 }

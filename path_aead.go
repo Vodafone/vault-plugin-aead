@@ -838,7 +838,7 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 // TEMP SECTION
 //***********************************************
 
-func (b *backend) pathAeadEncryptBulkColTemp(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
 	// fire and forget the telemetry
 	var wg sync.WaitGroup
@@ -854,7 +854,7 @@ func (b *backend) pathAeadEncryptBulkColTemp(ctx context.Context, req *logical.R
 	tokenStr := ""
 	token, ok := AEAD_CONFIG.Get("TOKEN")
 	if !ok {
-		hclog.L().Error("pathAeadEncryptBulkColTemp: Count not find a token in the config")
+		hclog.L().Error("pathAeadEncryptBulkColFarm: Count not find a TOKEN in the config")
 	} else {
 		tokenStr = fmt.Sprintf("%s", token)
 	}
@@ -862,20 +862,120 @@ func (b *backend) pathAeadEncryptBulkColTemp(ctx context.Context, req *logical.R
 	serviceStr := ""
 	service, ok := AEAD_CONFIG.Get("INTERNAL_SERVICE")
 	if !ok {
-		hclog.L().Error("pathAeadEncryptBulkColTemp: Count not find a service in the config")
+		hclog.L().Error("pathAeadEncryptBulkColFarm: Could not find a INTERNAL_SERVICE in the config")
 	} else {
 		serviceStr = fmt.Sprintf("%s", service)
 	}
 
-	resultMap, err := EncryptOrDecryptData(serviceStr+"/v1/aead-secrets/encryptcol", data.Raw, "", tokenStr)
-	if err != nil {
-		hclog.L().Error("pathAeadEncryptBulkColTemp: EncryptOrDecryptData: %v", err)
+	maxbatchInt := 0
+	maxbatch, ok := AEAD_CONFIG.Get("MAX_BATCHROWS")
+	if !ok {
+		hclog.L().Error("pathAeadEncryptBulkColFarm: Could not find a MAX_BATCHROWS in the config")
+	} else {
+		maxbatchInt, ok = maxbatch.(int)
+		if !ok {
+			hclog.L().Error("pathAeadEncryptBulkColFarm: Could not convert MAX_BATCHROWS to integer")
+		}
+	}
+
+	mapSlice := createSliceOfMapsFromMapStrInt(data.Raw, maxbatchInt)
+
+	// ok so now we have a slice of maps of data
+
+	channelCap := len(mapSlice)
+	channel := make(chan map[string]interface{}, channelCap)
+
+	// call the encrypt or decrypt per broken up map
+	for _, dataMap := range mapSlice {
+		go EncryptOrDecryptDataChan(serviceStr+"/v1/aead-secrets/encryptcol", dataMap, "", tokenStr, channel)
 	}
 
 	var respStruct = logical.Response{}
 	var resp = &respStruct
+	resp.Data = make(map[string]interface{})
+	resultsMap := make(map[string]interface{})
 
-	resp.Data = resultMap
+	for i := 0; i < channelCap; i++ {
+		res := <-channel
+		for k, v := range res {
+			// this should be a map of 1 row of rownumber index as string and the map of values
+			resultsMap[k] = v
+		}
+	}
+
+	resp.Data = resultsMap
+
+	wg.Wait()
+
+	return resp, nil
+}
+
+func (b *backend) pathAeadDecryptBulkColFarm(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	// fire and forget the telemetry
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go b.publishTelemetry(&wg, ctx, req, "decryptTemp", data.Raw)
+
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenStr := ""
+	token, ok := AEAD_CONFIG.Get("TOKEN")
+	if !ok {
+		hclog.L().Error("pathAeadDecryptBulkColFarm: Count not find a TOKEN in the config")
+	} else {
+		tokenStr = fmt.Sprintf("%s", token)
+	}
+
+	serviceStr := ""
+	service, ok := AEAD_CONFIG.Get("INTERNAL_SERVICE")
+	if !ok {
+		hclog.L().Error("pathAeadDecryptBulkColFarm: Could not find a INTERNAL_SERVICE in the config")
+	} else {
+		serviceStr = fmt.Sprintf("%s", service)
+	}
+
+	maxbatchInt := 0
+	maxbatch, ok := AEAD_CONFIG.Get("MAX_BATCHROWS")
+	if !ok {
+		hclog.L().Error("pathAeadDecryptBulkColFarm: Could not find a MAX_BATCHROWS in the config")
+	} else {
+		maxbatchInt, ok = maxbatch.(int)
+		if !ok {
+			hclog.L().Error("pathAeadDecryptBulkColFarm: Could not convert MAX_BATCHROWS to integer")
+		}
+	}
+
+	mapSlice := createSliceOfMapsFromMapStrInt(data.Raw, maxbatchInt)
+
+	// ok so now we have a slice of maps of data
+
+	channelCap := len(mapSlice)
+	channel := make(chan map[string]interface{}, channelCap)
+
+	// call the encrypt or decrypt per broken up map
+	for _, dataMap := range mapSlice {
+		go EncryptOrDecryptDataChan(serviceStr+"/v1/aead-secrets/decryptcol", dataMap, "", tokenStr, channel)
+	}
+
+	var respStruct = logical.Response{}
+	var resp = &respStruct
+	resp.Data = make(map[string]interface{})
+	resultsMap := make(map[string]interface{})
+
+	for i := 0; i < channelCap; i++ {
+		res := <-channel
+		for k, v := range res {
+			// this should be a map of 1 row of rownumber index as string and the map of values
+			resultsMap[k] = v
+		}
+	}
+
+	resp.Data = resultsMap
 
 	wg.Wait()
 

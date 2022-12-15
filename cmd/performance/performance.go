@@ -300,7 +300,7 @@ func gotestBulk(options *Options, ch chan bool) {
 	url := ""
 	if options.columnBased && options.batchMode {
 		fmt.Println("COLUMN BASED BULK ENCRYPT")
-		url = options.url + "/v1/" + options.path + "/encryptcol"
+		url = options.url + "/v1/" + options.path + "/encryptcoltemp"
 	} else {
 		url = options.url + "/v1/" + options.path + "/encrypt"
 	}
