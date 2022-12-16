@@ -844,7 +844,7 @@ func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.R
 	// fire and forget the telemetry
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go b.publishTelemetry(&wg, ctx, req, "encryptTemp", data.Raw)
+	go b.publishTelemetry(&wg, ctx, req, "encryptFarm", data.Raw)
 
 	// retrive the config fro  storage
 	err := b.getAeadConfig(ctx, req)
@@ -918,7 +918,7 @@ func (b *backend) pathAeadDecryptBulkColFarm(ctx context.Context, req *logical.R
 	// fire and forget the telemetry
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go b.publishTelemetry(&wg, ctx, req, "decryptTemp", data.Raw)
+	go b.publishTelemetry(&wg, ctx, req, "decryptFarm", data.Raw)
 
 	// retrive the config fro  storage
 	err := b.getAeadConfig(ctx, req)
@@ -947,9 +947,11 @@ func (b *backend) pathAeadDecryptBulkColFarm(ctx context.Context, req *logical.R
 	if !ok {
 		hclog.L().Error("pathAeadDecryptBulkColFarm: Could not find a MAX_BATCHROWS in the config")
 	} else {
-		maxbatchInt, ok = maxbatch.(int)
-		if !ok {
-			hclog.L().Error("pathAeadDecryptBulkColFarm: Could not convert MAX_BATCHROWS to integer")
+		// this is an integer value, masquerading as a string, but of type interface{} - go figure
+		maxbatchStr := maxbatch.(string)
+		maxbatchInt, err = strconv.Atoi(maxbatchStr)
+		if err != nil {
+			hclog.L().Error("pathAeadEncryptBulkColFarm: Could not convert MAX_BATCHROWS to integer")
 		}
 	}
 
