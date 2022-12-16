@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 	"unsafe"
@@ -872,8 +873,10 @@ func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.R
 	if !ok {
 		hclog.L().Error("pathAeadEncryptBulkColFarm: Could not find a MAX_BATCHROWS in the config")
 	} else {
-		maxbatchInt, ok = maxbatch.(int)
-		if !ok {
+		// this is an integer value, masquerading as a string, but of type interface{} - go figure
+		maxbatchStr := maxbatch.(string)
+		maxbatchInt, err = strconv.Atoi(maxbatchStr)
+		if err != nil {
 			hclog.L().Error("pathAeadEncryptBulkColFarm: Could not convert MAX_BATCHROWS to integer")
 		}
 	}
