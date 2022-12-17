@@ -15,6 +15,7 @@ import (
 )
 
 var AEAD_CONFIG = cmap.New()
+var AEAD_KEYS = cmap.New()
 
 func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	return b.configWriteOverwriteCheck(ctx, req, data, false)
@@ -672,7 +673,7 @@ func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string,
 	}
 }
 
-func (b *backend) getAdditionalData(fieldName string, config cmap.ConcurrentMap) []byte {
+func getAdditionalData(fieldName string, config cmap.ConcurrentMap) []byte {
 
 	// set additionalDataBytes as field name of the right type
 	aad, ok := AEAD_CONFIG.Get("ADDITIONAL_DATA_" + fieldName)
