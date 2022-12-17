@@ -45,6 +45,12 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 	wg.Add(1)
 	go b.publishTelemetry(&wg, ctx, req, "encrypt", data.Raw)
 
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
 	var respStruct = logical.Response{}
 	var resp = &respStruct
 
@@ -284,6 +290,12 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 	wg.Add(1)
 	go b.publishTelemetry(&wg, ctx, req, "decrypt", data.Raw)
 
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
 	var respStruct = logical.Response{}
 	var resp = &respStruct
 
@@ -486,6 +498,12 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go b.publishTelemetry(&wg, ctx, req, "encrypt", data.Raw)
+
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
 	var respStruct = logical.Response{}
 	var resp = &respStruct
@@ -691,6 +709,12 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go b.publishTelemetry(&wg, ctx, req, "decrypt", data.Raw)
+
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
 	var respStruct = logical.Response{}
 	var resp = &respStruct
