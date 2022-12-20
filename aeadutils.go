@@ -409,73 +409,8 @@ func isKeyJsonDeterministic(encryptionkeyIntf interface{}) (string, bool) {
 	return encryptionKeyStr, deterministic
 }
 
-func getKeyAndAD(fieldName string) (interface{}, []byte, error) {
-
-	// set additionalDataBytes as field name of the right type
-	additionalDataBytes := getAdditionalData(fieldName, AEAD_CONFIG)
-
-	_, ok := AEAD_CONFIG.Get("DIRTY_READ_KEYS")
-	if ok {
-		tinkKeySet, ok := AEAD_KEYS.Get(fieldName)
-		if ok {
-			return tinkKeySet, additionalDataBytes, nil
-		}
-	}
-
-	encryptionkeyIntf, ok := getEncryptionKey(fieldName)
-
-	// do we have a key already in config
-	if ok {
-		// is the key we have retrived deterministic?
-		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkeyIntf)
-		if deterministic {
-			// SUPPORT FOR DETERMINISTIC AEAD
-			// we don't need the key handle which is returned first
-			_, tinkDetAead, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
-			if err != nil {
-				hclog.L().Error("Failed to create a keyhandle", err)
-				return nil, nil, err
-			} else {
-				AEAD_KEYS.Set(fieldName, tinkDetAead)
-				return tinkDetAead, additionalDataBytes, nil
-			}
-		} else {
-			_, tinkAead, err := CreateInsecureHandleAndAead(encryptionKeyStr)
-			if err != nil {
-				hclog.L().Error("Failed to create a keyhandle", err)
-				return nil, nil, err
-			} else {
-				AEAD_KEYS.Set(fieldName, tinkAead)
-				return tinkAead, additionalDataBytes, nil
-			}
-		}
-	}
-	return nil, nil, nil
-}
-
-func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
-	maxDepth := 5
-	if len(setDepth) > 0 {
-		maxDepth = setDepth[0]
-	}
-	possiblyEncryptionKey, ok := AEAD_CONFIG.Get(fieldName)
-	if !ok {
-		return nil, ok
-	}
-	for i := 1; i < maxDepth; i++ {
-		possiblyEncryptionKeyStr := possiblyEncryptionKey.(string)
-		if !isEncryptionJsonKey(possiblyEncryptionKeyStr) {
-			possiblyEncryptionKey, ok = AEAD_CONFIG.Get(possiblyEncryptionKeyStr)
-			if !ok {
-				return nil, ok
-			}
-		} else {
-			return possiblyEncryptionKey, true
-		}
-	}
-
-	isKeysetFound := false
-	return nil, isKeysetFound
+func IsKeyJsonDeterministic(encryptionkeyIntf interface{}) (string, bool) {
+	return isKeyJsonDeterministic(encryptionkeyIntf)
 }
 
 func muteKeyMaterial(theKey string) string {

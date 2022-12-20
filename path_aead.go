@@ -180,7 +180,7 @@ func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}
 	var tinkAead tink.AEAD
 	var ok bool
 
-	keySet, additionalDataBytes, err := getKeyAndAD(fieldName)
+	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
 	if err != nil {
 		// we didn't find a key - return original data
 		hclog.L().Info("did not find a key for field " + fieldName)
@@ -356,7 +356,7 @@ func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *fr
 	// iterate through the key=value supplied (ie field1=sdfvbbvwrbwr field2=advwefvwfvbwrfvb)
 	for field, encryptedDataBase64 := range data.Raw {
 		// doDecryption(field, encryptedDataBase64, resp)
-		go b.doDecryptionChan(field, encryptedDataBase64, channel)
+		go b.doDecryptionChan(field, encryptedDataBase64, data, ctx, req, channel)
 	}
 
 	for i := 0; i < len(data.Raw); i++ {
@@ -372,13 +372,14 @@ func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *fr
 	}, nil
 }
 
-func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, ch chan map[string]interface{}) {
+func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, data *framework.FieldData, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
+
 	resp := make(map[string]interface{})
 	var tinkDetAead tink.DeterministicAEAD
 	var tinkAead tink.AEAD
 	var ok bool
 
-	keySet, additionalDataBytes, err := getKeyAndAD(fieldName)
+	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
 	if err != nil {
 		// we didn't find a key - return original data
 		hclog.L().Info("did not find a key for field " + fieldName)
@@ -584,7 +585,7 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 	deterministic := false
 	keyFound := false
 
-	keySet, additionalDataBytes, err := getKeyAndAD(fieldName)
+	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
 	if err != nil {
 		// we didn't find a key - return original data
 		if err != nil {
@@ -796,7 +797,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 	deterministic := false
 	keyFound := false
 
-	keySet, additionalDataBytes, err := getKeyAndAD(fieldName)
+	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
 	if err != nil {
 		// we didn't find a key - return original data
 		if err != nil {
