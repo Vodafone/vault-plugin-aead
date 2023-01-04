@@ -5,6 +5,7 @@ import (
 	"context"
 	b64 "encoding/base64"
 	"fmt"
+	"time"
 
 	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
@@ -15,6 +16,8 @@ import (
 )
 
 var AEAD_CONFIG = cmap.New()
+var AEAD_KEYS = cmap.New()
+var COUNTER = 0
 
 func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	return b.configWriteOverwriteCheck(ctx, req, data, false)
@@ -133,8 +136,9 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 
 func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error {
 
+	t := time.Now()
 	consulConfig, err := b.readConsulConfig(ctx, req.Storage)
-
+	hclog.L().Info("getAeadConfig time to read Consul=%v", time.Since(t))
 	if err != nil {
 		return err
 	}
@@ -682,4 +686,82 @@ func (b *backend) getAdditionalData(fieldName string, config cmap.ConcurrentMap)
 	}
 
 	return []byte(fieldName)
+}
+
+func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
+	maxDepth := 5
+	if len(setDepth) > 0 {
+		maxDepth = setDepth[0]
+	}
+	possiblyEncryptionKey, ok := AEAD_CONFIG.Get(fieldName)
+	if !ok {
+		return nil, ok
+	}
+	for i := 1; i < maxDepth; i++ {
+		possiblyEncryptionKeyStr := possiblyEncryptionKey.(string)
+		if !isEncryptionJsonKey(possiblyEncryptionKeyStr) {
+			possiblyEncryptionKey, ok = AEAD_CONFIG.Get(possiblyEncryptionKeyStr)
+			if !ok {
+				return nil, ok
+			}
+		} else {
+			return possiblyEncryptionKey, true
+		}
+	}
+
+	isKeysetFound := false
+	return nil, isKeysetFound
+}
+
+func (b *backend) getKeyAndAD(fieldName string, ctx context.Context, req *logical.Request) (interface{}, []byte, error) {
+
+	COUNTER++
+	hclog.L().Info("getKeyAndAD COUNTER=%v AEAD_KEYS Len=%v", COUNTER, AEAD_KEYS.Count())
+	// set additionalDataBytes as field name of the right type
+	additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
+
+	_, ok := AEAD_CONFIG.Get("DIRTY_READ_KEYS")
+	if ok {
+		tinkKeySet, ok := AEAD_KEYS.Get(fieldName)
+		if ok {
+			hclog.L().Info("getKeyAndAD FOUND KEY IN AEAD_KEYS for FIELD=%s", fieldName)
+			return tinkKeySet, additionalDataBytes, nil
+		}
+		hclog.L().Info("getKeyAndAD NOT FOUND KEY IN AEAD_KEYS for FIELD=%s", fieldName)
+
+	}
+
+	encryptionkeyIntf, ok := getEncryptionKey(fieldName)
+
+	// do we have a key already in config
+	if ok {
+		// is the key we have retrived deterministic?
+		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkeyIntf)
+		if deterministic {
+			// SUPPORT FOR DETERMINISTIC AEAD
+			// we don't need the key handle which is returned first
+			_, tinkDetAead, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+			if err != nil {
+				hclog.L().Error("Failed to create a keyhandle", err)
+				return nil, nil, err
+			} else {
+				b.saveKeyObjectToConfig(fieldName, tinkDetAead, ctx, req)
+				return tinkDetAead, additionalDataBytes, nil
+			}
+		} else {
+			_, tinkAead, err := CreateInsecureHandleAndAead(encryptionKeyStr)
+			if err != nil {
+				hclog.L().Error("Failed to create a keyhandle", err)
+				return nil, nil, err
+			} else {
+				b.saveKeyObjectToConfig(fieldName, tinkAead, ctx, req)
+				return tinkAead, additionalDataBytes, nil
+			}
+		}
+	}
+	return nil, nil, nil
+}
+
+func (b *backend) saveKeyObjectToConfig(fieldName string, keyObj interface{}, ctx context.Context, req *logical.Request) {
+	AEAD_KEYS.Set(fieldName, keyObj)
 }

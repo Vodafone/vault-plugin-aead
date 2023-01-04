@@ -337,6 +337,42 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
+			// aead/encryptcolfarm
+			&framework.Path{
+				Pattern:         "encryptcolfarm",
+				HelpSynopsis:    "Encrypt or decrypt data with the aead key held in config",
+				HelpDescription: "Encrypt or decrypt data with the aead key held in config",
+				Fields: map[string]*framework.FieldSchema{
+					"aeadData": &framework.FieldSchema{
+						Type:        framework.TypeString,
+						Description: "Data to be (d)encrypted",
+						Default:     "",
+					},
+				},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback: b.pathAeadEncryptBulkColFarm,
+					},
+				},
+			},
+			// aead/decryptcolfarm
+			&framework.Path{
+				Pattern:         "decryptcolfarm",
+				HelpSynopsis:    "Encrypt or decrypt data with the aead key held in config",
+				HelpDescription: "Encrypt or decrypt data with the aead key held in config",
+				Fields: map[string]*framework.FieldSchema{
+					"aeadData": &framework.FieldSchema{
+						Type:        framework.TypeString,
+						Description: "Data to be (d)encrypted",
+						Default:     "",
+					},
+				},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback: b.pathAeadDecryptBulkColFarm,
+					},
+				},
+			},
 			// aead/updateKeyStatus
 			&framework.Path{
 				Pattern:         "updateKeyStatus",

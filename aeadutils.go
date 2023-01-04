@@ -2,18 +2,27 @@ package aeadplugin
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math/rand"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
+
+	lorem "github.com/bozaro/golorem"
+	backoff "github.com/cenkalti/backoff/v4"
 
 	"github.com/google/tink/go/aead"
 	"github.com/google/tink/go/daead"
 	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
 	"github.com/google/tink/go/tink"
-
 	hclog "github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 func CreateInsecureHandleAndAead(rawKeyset string) (*keyset.Handle, tink.AEAD, error) {
@@ -391,8 +400,8 @@ func isEncryptionJsonKey(keyStr string) bool {
 	return strings.Contains(keyStr, "primaryKeyId")
 }
 
-func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
-	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
+func isKeyJsonDeterministic(encryptionkeyIntf interface{}) (string, bool) {
+	encryptionKeyStr := fmt.Sprintf("%v", encryptionkeyIntf)
 	deterministic := false
 	if strings.Contains(encryptionKeyStr, "AesSivKey") {
 		deterministic = true
@@ -400,29 +409,8 @@ func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 	return encryptionKeyStr, deterministic
 }
 
-func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
-	maxDepth := 5
-	if len(setDepth) > 0 {
-		maxDepth = setDepth[0]
-	}
-	possiblyEncryptionKey, ok := AEAD_CONFIG.Get(fieldName)
-	if !ok {
-		return nil, ok
-	}
-	for i := 1; i < maxDepth; i++ {
-		possiblyEncryptionKeyStr := possiblyEncryptionKey.(string)
-		if !isEncryptionJsonKey(possiblyEncryptionKeyStr) {
-			possiblyEncryptionKey, ok = AEAD_CONFIG.Get(possiblyEncryptionKeyStr)
-			if !ok {
-				return nil, ok
-			}
-		} else {
-			return possiblyEncryptionKey, true
-		}
-	}
-
-	isKeysetFound := false
-	return nil, isKeysetFound
+func IsKeyJsonDeterministic(encryptionkeyIntf interface{}) (string, bool) {
+	return isKeyJsonDeterministic(encryptionkeyIntf)
 }
 
 func muteKeyMaterial(theKey string) string {
@@ -443,4 +431,225 @@ func muteKeyMaterial(theKey string) string {
 		mutedMaterial = strings.Replace(mutedMaterial, key.KeyData.Value, "***", -1)
 	}
 	return mutedMaterial
+}
+
+func createHttpClient(httpProxy string) *retryablehttp.Client {
+	var tr *http.Transport
+	if httpProxy == "" {
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	} else {
+		proxyUrl, _ := url.Parse(httpProxy)
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			Proxy:           http.ProxyURL(proxyUrl),
+		}
+	}
+
+	httpClient := &http.Client{Transport: tr}
+	client := retryablehttp.NewClient()
+	client.HTTPClient = httpClient
+	client.RetryMax = 10                    // max 10 retries
+	client.RetryWaitMax = 300 * time.Second // max 5 mins between retries
+	return client
+}
+
+func goDoHttp(inputData map[string]interface{}, url string, bodyMap map[string]interface{}, httpProxy string, token string) error {
+
+	client := createHttpClient(httpProxy)
+	payloadBytes, err := json.Marshal(inputData)
+	if err != nil {
+		fmt.Printf("goDoHttp json.Marshal Error=%v\n", err)
+		return err
+	}
+	inputBody := bytes.NewReader(payloadBytes)
+
+	req, err := retryablehttp.NewRequest(http.MethodPost, url, inputBody)
+
+	if err != nil {
+		fmt.Printf("goDoHttp http.NewRequest Error=%v\n", err)
+		return err
+	}
+	req.Header.Set("X-Vault-Token", token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("goDoHttp client.Do Error=%v\n", err)
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("goDoHttp io.ReadAll Error=%v\n", err)
+		return err
+	}
+
+	err = json.Unmarshal([]byte(body), &bodyMap)
+	if err != nil {
+		fmt.Printf("goDoHttp Unmarshall Error=%v\n", err)
+		return err
+	}
+	return nil
+}
+
+func EncryptOrDecryptDataChan(url string, inputMap map[string]interface{}, httpProxy string, token string, ch chan map[string]interface{}) {
+	dataMap, err := EncryptOrDecryptData(url, inputMap, httpProxy, token)
+	if err != nil {
+		// TODO - not sure on putting a panic here
+		panic(err)
+	}
+	ch <- dataMap
+}
+
+func EncryptOrDecryptData(url string, inputMap map[string]interface{}, httpProxy string, token string) (map[string]interface{}, error) {
+
+	response := make(map[string]interface{})
+	emptyMap := make(map[string]interface{})
+	data := make(map[string]interface{})
+	ok := true
+	i := 0
+
+	// I absolutely hate that you can only wrap a function with no args that returns an error "func() error" here
+	// so I have to rely on variable scope, but life is too short
+	operation := func() error {
+		// if i > 0 {
+		// 	fmt.Printf("Retry=%v encryptOrDecryptData\n", i)
+		// }
+		i++
+		err := goDoHttp(inputMap, url, response, httpProxy, token)
+		if err != nil {
+			fmt.Printf("encryptOrDecryptData Try=%v Error after goDoHttp=%v\n", i, err)
+			return err
+		}
+		data, ok = response["data"].(map[string]interface{})
+		if !ok {
+			errors, ok := response["errors"].([]interface{})
+			if ok {
+				// we have errors from vault
+				fmt.Printf("encryptOrDecryptData Try=%v Vault Response=%v\n", i, errors)
+				return fmt.Errorf("error response from vault %v", errors)
+			} else {
+				// we have errors but no idea why
+				fmt.Printf("encryptOrDecryptData Try=%v Vault Response - no idea\n", i)
+				return fmt.Errorf("error converting response to map[string]interface{}")
+			}
+		}
+		return nil // or an error
+	}
+	xbo := backoff.NewExponentialBackOff()
+	xbo.MaxElapsedTime = 15 * time.Minute
+	err := backoff.Retry(operation, xbo)
+	if err != nil {
+		// Handle error.
+		return emptyMap, err
+	}
+
+	return data, nil
+}
+
+func makeInputdata(inputMap map[string]map[string]interface{}, rows int, fields int, baseName string) {
+	for i := 0; i < rows; i++ {
+		s := fmt.Sprint(i)
+		inputMap[s] = map[string]interface{}{}
+
+		for j := 0; j < fields; j++ {
+			randomStr := ""
+			randomInt := rand.Intn(6)
+			switch randomInt {
+			case 0:
+				randomStr = lorem.New().Email()
+			case 1:
+				randomStr = lorem.New().FirstName(lorem.Female)
+			case 2:
+				randomStr = lorem.New().FullName(lorem.Male)
+			case 3:
+				randomStr = lorem.New().Host()
+			case 4:
+				randomStr = lorem.New().Url()
+			case 5:
+				randomStr = lorem.New().Word(0, 10)
+			default:
+				randomStr = lorem.New().Word(0, 10)
+			}
+
+			inputMap[s][baseName+fmt.Sprint(j)] = randomStr
+
+		}
+	}
+}
+
+func createSliceOfMapsFromMap(inputMap map[string]map[string]interface{}, maxSize int) []map[string]map[string]interface{} {
+
+	// create a slice of maps with zero elements and max size
+	batchMaps := make([]map[string]map[string]interface{}, 0, maxSize)
+	// make the fist element of the slice and empty (but not nil) map
+	batchMaps = append(batchMaps, make(map[string]map[string]interface{}))
+
+	i, n := 0, 0
+	for k, v := range inputMap {
+		n++
+
+		batchMaps[i][k] = v
+
+		if n%maxSize == 0 && n != len(inputMap) {
+			// create a new element of the slice if we are at max size but not at the last element
+			i++
+			batchMaps = append(batchMaps, make(map[string]map[string]interface{}))
+		}
+	}
+
+	return batchMaps
+}
+
+func createMapFromSliceOfMaps(sliceMap []map[string]map[string]interface{}) map[string]map[string]interface{} {
+
+	newMap := make(map[string]map[string]interface{})
+
+	for _, innerMap := range sliceMap {
+		for ki, vi := range innerMap {
+			newMap[ki] = vi
+		}
+	}
+
+	return newMap
+}
+
+func createSliceOfMapsFromMapStrInt(inputMap map[string]interface{}, maxSize int) []map[string]interface{} {
+
+	// create a slice of maps with zero elements and max size
+	batchMaps := make([]map[string]interface{}, 0, maxSize)
+	// make the fist element of the slice and empty (but not nil) map
+	batchMaps = append(batchMaps, make(map[string]interface{}))
+
+	i, n := 0, 0
+	for k, v := range inputMap {
+		n++
+
+		batchMaps[i][k] = v
+
+		if n%maxSize == 0 && n != len(inputMap) {
+			// create a new element of the slice if we are at max size but not at the last element
+			i++
+			batchMaps = append(batchMaps, make(map[string]interface{}))
+		}
+	}
+
+	return batchMaps
+}
+
+func createMapFromSliceOfMapsStrInt(sliceMap []map[string]interface{}) map[string]interface{} {
+
+	newMap := make(map[string]interface{})
+
+	for _, innerMap := range sliceMap {
+		for ki, vi := range innerMap {
+			newMap[ki] = vi
+		}
+	}
+
+	return newMap
 }

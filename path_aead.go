@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 	"unsafe"
@@ -43,6 +44,12 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go b.publishTelemetry(&wg, ctx, req, "encrypt", data.Raw)
+
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
 	var respStruct = logical.Response{}
 	var resp = &respStruct
@@ -169,21 +176,19 @@ func (b *backend) encryptRow(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}, data *framework.FieldData, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
 	resp := make(map[string]interface{})
-	encryptionkey, ok := getEncryptionKey(fieldName)
-	// do we have a key already in config
-	if ok {
-		// is the key we have retrived deterministic?
-		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
-		// set additionalDataBytes as field name of the right type
-		additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
+	var tinkDetAead tink.DeterministicAEAD
+	var tinkAead tink.AEAD
+	var ok bool
 
-		if deterministic {
-			// SUPPORT FOR DETERMINISTIC AEAD
-			// we don't need the key handle which is returned first
-			_, tinkDetAead, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
-			if err != nil {
-				hclog.L().Error("Failed to create a keyhandle", err)
-			}
+	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
+	if err != nil {
+		// we didn't find a key - return original data
+		hclog.L().Info("did not find a key for field " + fieldName)
+		resp[fieldName] = fmt.Sprintf("%s", unencryptedData)
+	} else {
+		// we should have a valid keySet here, so just determine the type and use it
+		tinkDetAead, ok = keySet.(tink.DeterministicAEAD)
+		if ok {
 			// set the unencrypted data to be the right type
 			unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
 
@@ -192,33 +197,82 @@ func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}
 			if err != nil {
 				hclog.L().Error("Failed to encrypt", err)
 			}
-
 			// set the response as the base64 encrypted data
 			resp[fieldName] = b64.StdEncoding.EncodeToString(cypherText)
 		} else {
-			// SUPPORT FOR NON DETERMINISTIC AEAD
-			_, tinkAead, err := CreateInsecureHandleAndAead(encryptionKeyStr)
-			if err != nil {
-				hclog.L().Error("Failed to create a keyhandle", err)
-			}
-			// set the unencrypted data to be the right type
-			unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
+			tinkAead, ok = keySet.(tink.AEAD)
+			if ok {
+				// set the unencrypted data to be the right type
+				unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
 
-			// encrypt it
-			cyphertext, err := tinkAead.Encrypt(unencryptedDataBytes, additionalDataBytes)
-			if err != nil {
-				hclog.L().Error("Failed to encrypt", err)
-			}
+				// encrypt it
+				cyphertext, err := tinkAead.Encrypt(unencryptedDataBytes, additionalDataBytes)
+				if err != nil {
+					hclog.L().Error("Failed to encrypt", err)
+				}
 
-			// set the response as the base64 encrypted data
-			resp[fieldName] = b64.StdEncoding.EncodeToString(cyphertext)
+				// set the response as the base64 encrypted data
+				resp[fieldName] = b64.StdEncoding.EncodeToString(cyphertext)
+			} else {
+				// we didn't find a key - return original data
+				hclog.L().Info("did not find a key for field " + fieldName)
+				resp[fieldName] = fmt.Sprintf("%s", unencryptedData)
+			}
 		}
-	} else {
-		// we didn't find a key - return original data
-		hclog.L().Info("did not find a key for field " + fieldName)
-		resp[fieldName] = fmt.Sprintf("%s", unencryptedData)
+
 	}
 	ch <- resp
+
+	// encryptionkey, ok := getEncryptionKey(fieldName)
+	// // do we have a key already in config
+	// if ok {
+	// 	// is the key we have retrived deterministic?
+	// 	encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
+	// 	// set additionalDataBytes as field name of the right type
+	// 	additionalDataBytes := getAdditionalData(fieldName, AEAD_CONFIG)
+
+	// 	if deterministic {
+	// 		// SUPPORT FOR DETERMINISTIC AEAD
+	// 		// we don't need the key handle which is returned first
+	// 		_, tinkDetAead, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+	// 		if err != nil {
+	// 			hclog.L().Error("Failed to create a keyhandle", err)
+	// 		}
+	// 		// set the unencrypted data to be the right type
+	// 		unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
+
+	// 		// encrypt it
+	// 		cypherText, err := tinkDetAead.EncryptDeterministically(unencryptedDataBytes, additionalDataBytes)
+	// 		if err != nil {
+	// 			hclog.L().Error("Failed to encrypt", err)
+	// 		}
+
+	// 		// set the response as the base64 encrypted data
+	// 		resp[fieldName] = b64.StdEncoding.EncodeToString(cypherText)
+	// 	} else {
+	// 		// SUPPORT FOR NON DETERMINISTIC AEAD
+	// 		_, tinkAead, err := CreateInsecureHandleAndAead(encryptionKeyStr)
+	// 		if err != nil {
+	// 			hclog.L().Error("Failed to create a keyhandle", err)
+	// 		}
+	// 		// set the unencrypted data to be the right type
+	// 		unencryptedDataBytes := []byte(fmt.Sprintf("%v", unencryptedData))
+
+	// 		// encrypt it
+	// 		cyphertext, err := tinkAead.Encrypt(unencryptedDataBytes, additionalDataBytes)
+	// 		if err != nil {
+	// 			hclog.L().Error("Failed to encrypt", err)
+	// 		}
+
+	// 		// set the response as the base64 encrypted data
+	// 		resp[fieldName] = b64.StdEncoding.EncodeToString(cyphertext)
+	// 	}
+	// } else {
+	// 	// we didn't find a key - return original data
+	// 	hclog.L().Info("did not find a key for field " + fieldName)
+	// 	resp[fieldName] = fmt.Sprintf("%s", unencryptedData)
+	// }
+	// ch <- resp
 }
 
 func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -235,6 +289,12 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go b.publishTelemetry(&wg, ctx, req, "decrypt", data.Raw)
+
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
 	var respStruct = logical.Response{}
 	var resp = &respStruct
@@ -296,7 +356,7 @@ func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *fr
 	// iterate through the key=value supplied (ie field1=sdfvbbvwrbwr field2=advwefvwfvbwrfvb)
 	for field, encryptedDataBase64 := range data.Raw {
 		// doDecryption(field, encryptedDataBase64, resp)
-		go b.doDecryptionChan(field, encryptedDataBase64, channel)
+		go b.doDecryptionChan(field, encryptedDataBase64, data, ctx, req, channel)
 	}
 
 	for i := 0; i < len(data.Raw); i++ {
@@ -312,25 +372,22 @@ func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *fr
 	}, nil
 }
 
-func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, ch chan map[string]interface{}) {
+func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, data *framework.FieldData, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
+
 	resp := make(map[string]interface{})
-	encryptionkey, ok := getEncryptionKey(fieldName)
-	// do we have a key already in config
-	if ok {
-		// is the key deterministig or non deterministic
-		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
+	var tinkDetAead tink.DeterministicAEAD
+	var tinkAead tink.AEAD
+	var ok bool
 
-		// set additionalDataBytes as field name of the right type
-		additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
-
-		if deterministic {
-			// SUPPORT FOR DETERMINISTIC AEAD
-			// we don't need the key handle which is returned first
-			_, tinkDetAead, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
-			if err != nil {
-				hclog.L().Error("Failed to create a  key handle", err)
-			}
-
+	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
+	if err != nil {
+		// we didn't find a key - return original data
+		hclog.L().Info("did not find a key for field " + fieldName)
+		resp[fieldName] = fmt.Sprintf("%s", encryptedDataBase64)
+	} else {
+		// we should have a valid keySet here, so just determine the type and use it
+		tinkDetAead, ok = keySet.(tink.DeterministicAEAD)
+		if ok {
 			// set the unencrypted data to be the right type
 			encryptedDataBytes, _ := b64.StdEncoding.DecodeString(fmt.Sprintf("%v", encryptedDataBase64))
 
@@ -342,30 +399,81 @@ func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interfa
 
 			resp[fieldName] = string(plainText)
 		} else {
-			// SUPPORT FOR NON DETERMINISTIC AEAD
-			_, tinkAead, err := CreateInsecureHandleAndAead(encryptionKeyStr)
-			if err != nil {
-				hclog.L().Error("Failed to create tinkAead", err)
+			tinkAead, ok = keySet.(tink.AEAD)
+			if ok {
+				// set the unencrypted data to be the right type
+
+				encryptedDataBytes, _ := b64.StdEncoding.DecodeString(fmt.Sprintf("%v", encryptedDataBase64))
+
+				// encrypt it
+				plainText, err := tinkAead.Decrypt(encryptedDataBytes, additionalDataBytes)
+				if err != nil {
+					hclog.L().Error("Failed to decrypt ", err)
+				}
+
+				resp[fieldName] = string(plainText)
+			} else {
+				// we didn't find a key - return original data
+				hclog.L().Info("did not find a key for field " + fieldName)
+				resp[fieldName] = fmt.Sprintf("%s", encryptedDataBase64)
 			}
-
-			// set the unencrypted data to be the right type
-
-			encryptedDataBytes, _ := b64.StdEncoding.DecodeString(fmt.Sprintf("%v", encryptedDataBase64))
-
-			// encrypt it
-			plainText, err := tinkAead.Decrypt(encryptedDataBytes, additionalDataBytes)
-			if err != nil {
-				hclog.L().Error("Failed to decrypt ", err)
-			}
-
-			resp[fieldName] = string(plainText)
 		}
-	} else {
-		// we didn't find a key - return original data
-		hclog.L().Info("did not find a key for field " + fieldName)
-		resp[fieldName] = fmt.Sprintf("%s", encryptedDataBase64)
+
 	}
 	ch <- resp
+
+	// encryptionkey, ok := getEncryptionKey(fieldName)
+	// // do we have a key already in config
+	// if ok {
+	// 	// is the key deterministig or non deterministic
+	// 	encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
+
+	// 	// set additionalDataBytes as field name of the right type
+	// 	additionalDataBytes := getAdditionalData(fieldName, AEAD_CONFIG)
+
+	// 	if deterministic {
+	// 		// SUPPORT FOR DETERMINISTIC AEAD
+	// 		// we don't need the key handle which is returned first
+	// 		_, tinkDetAead, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+	// 		if err != nil {
+	// 			hclog.L().Error("Failed to create a  key handle", err)
+	// 		}
+
+	// 		// set the unencrypted data to be the right type
+	// 		encryptedDataBytes, _ := b64.StdEncoding.DecodeString(fmt.Sprintf("%v", encryptedDataBase64))
+
+	// 		// decrypt it
+	// 		plainText, err := tinkDetAead.DecryptDeterministically(encryptedDataBytes, additionalDataBytes)
+	// 		if err != nil {
+	// 			hclog.L().Error("Failed to decrypt ", err)
+	// 		}
+
+	// 		resp[fieldName] = string(plainText)
+	// 	} else {
+	// 		// SUPPORT FOR NON DETERMINISTIC AEAD
+	// 		_, tinkAead, err := CreateInsecureHandleAndAead(encryptionKeyStr)
+	// 		if err != nil {
+	// 			hclog.L().Error("Failed to create tinkAead", err)
+	// 		}
+
+	// 		// set the unencrypted data to be the right type
+
+	// 		encryptedDataBytes, _ := b64.StdEncoding.DecodeString(fmt.Sprintf("%v", encryptedDataBase64))
+
+	// 		// encrypt it
+	// 		plainText, err := tinkAead.Decrypt(encryptedDataBytes, additionalDataBytes)
+	// 		if err != nil {
+	// 			hclog.L().Error("Failed to decrypt ", err)
+	// 		}
+
+	// 		resp[fieldName] = string(plainText)
+	// 	}
+	// } else {
+	// 	// we didn't find a key - return original data
+	// 	hclog.L().Info("did not find a key for field " + fieldName)
+	// 	resp[fieldName] = fmt.Sprintf("%s", encryptedDataBase64)
+	// }
+	// ch <- resp
 }
 
 func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -391,6 +499,12 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go b.publishTelemetry(&wg, ctx, req, "encrypt", data.Raw)
+
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
 	var respStruct = logical.Response{}
 	var resp = &respStruct
@@ -464,43 +578,73 @@ func (b *backend) encryptColChan(ctx context.Context, req *logical.Request, data
 
 func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
 
-	// retrive the config fro  storage
-
-	err := b.getAeadConfig(ctx, req)
-	if err != nil {
-		return nil, err
-	}
 	resp := make(map[string]interface{})
-
-	encryptionkey, keyFound := getEncryptionKey(fieldName)
-	// is the key we have retrived deterministic?
-	encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
-
 	var tinkDetAead tink.DeterministicAEAD
 	var tinkAead tink.AEAD
+	var ok bool
+	deterministic := false
+	keyFound := false
 
-	if keyFound && deterministic {
-		// SUPPORT FOR DETERMINISTIC AEAD
-		// we don't need the key handle which is returned first
-		_, tinkDetAead, err = CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
+	if err != nil {
+		// we didn't find a key - return original data
 		if err != nil {
 			hclog.L().Error("Failed to create a keyhandle", err)
 			return &logical.Response{
 				Data: resp,
 			}, err
-		}
-	} else if keyFound && !deterministic {
-		// SUPPORT FOR NON DETERMINISTIC AEAD
-		_, tinkAead, err = CreateInsecureHandleAndAead(encryptionKeyStr)
-		if err != nil {
-			hclog.L().Error("Failed to create a key", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
+		} else {
+			tinkDetAead, ok = keySet.(tink.DeterministicAEAD)
+			if ok {
+				deterministic = true
+				keyFound = true
+			} else {
+				tinkAead, ok = keySet.(tink.AEAD)
+				if ok {
+					deterministic = false
+					keyFound = true
+				}
+			}
 		}
 	}
-	// set additionalDataBytes as field name of the right type
-	additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
+
+	// // retrive the config fro  storage
+
+	// err := b.getAeadConfig(ctx, req)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// resp := make(map[string]interface{})
+
+	// encryptionkey, keyFound := getEncryptionKey(fieldName)
+	// // is the key we have retrived deterministic?
+	// encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
+
+	// var tinkDetAead tink.DeterministicAEAD
+	// var tinkAead tink.AEAD
+
+	// if keyFound && deterministic {
+	// 	// SUPPORT FOR DETERMINISTIC AEAD
+	// 	// we don't need the key handle which is returned first
+	// 	_, tinkDetAead, err = CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+	// 	if err != nil {
+	// 		hclog.L().Error("Failed to create a keyhandle", err)
+	// 		return &logical.Response{
+	// 			Data: resp,
+	// 		}, err
+	// 	}
+	// } else if keyFound && !deterministic {
+	// 	// SUPPORT FOR NON DETERMINISTIC AEAD
+	// 	_, tinkAead, err = CreateInsecureHandleAndAead(encryptionKeyStr)
+	// 	if err != nil {
+	// 		hclog.L().Error("Failed to create a key", err)
+	// 		return &logical.Response{
+	// 			Data: resp,
+	// 		}, err
+	// 	}
+	// }
+	// // set additionalDataBytes as field name of the right type
+	// additionalDataBytes := getAdditionalData(fieldName, AEAD_CONFIG)
 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for rowNum, unencryptedData := range data.Raw {
@@ -566,6 +710,12 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go b.publishTelemetry(&wg, ctx, req, "decrypt", data.Raw)
+
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
 	var respStruct = logical.Response{}
 	var resp = &respStruct
@@ -639,42 +789,73 @@ func (b *backend) decryptColChan(ctx context.Context, req *logical.Request, data
 }
 
 func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
-	// retrive the config from  storage
-	err := b.getAeadConfig(ctx, req)
-	if err != nil {
-		return nil, err
-	}
+
 	resp := make(map[string]interface{})
-
-	encryptionkey, keyFound := getEncryptionKey(fieldName)
-	// is the key we have retrived deterministic?
-	encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
-
 	var tinkDetAead tink.DeterministicAEAD
 	var tinkAead tink.AEAD
+	var ok bool
+	deterministic := false
+	keyFound := false
 
-	if keyFound && deterministic {
-		// SUPPORT FOR DETERMINISTIC AEAD
-		// we don't need the key handle which is returned first
-		_, tinkDetAead, err = CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
+	if err != nil {
+		// we didn't find a key - return original data
 		if err != nil {
-			hclog.L().Error("Failed to create a key handle", err)
+			hclog.L().Error("Failed to create a keyhandle", err)
 			return &logical.Response{
 				Data: resp,
 			}, err
-		}
-	} else if keyFound && !deterministic {
-		// SUPPORT FOR NON DETERMINISTIC AEAD
-		_, tinkAead, err = CreateInsecureHandleAndAead(encryptionKeyStr)
-		if err != nil {
-			hclog.L().Error("Failed to create a key handle", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
+		} else {
+			tinkDetAead, ok = keySet.(tink.DeterministicAEAD)
+			if ok {
+				deterministic = true
+				keyFound = true
+			} else {
+				tinkAead, ok = keySet.(tink.AEAD)
+				if ok {
+					deterministic = false
+					keyFound = true
+				}
+			}
 		}
 	}
-	// set additionalDataBytes as field name of the right type
-	additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
+
+	// // retrive the config from  storage
+	// err := b.getAeadConfig(ctx, req)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// resp := make(map[string]interface{})
+
+	// encryptionkey, keyFound := getEncryptionKey(fieldName)
+	// // is the key we have retrived deterministic?
+	// encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
+
+	// var tinkDetAead tink.DeterministicAEAD
+	// var tinkAead tink.AEAD
+
+	// if keyFound && deterministic {
+	// 	// SUPPORT FOR DETERMINISTIC AEAD
+	// 	// we don't need the key handle which is returned first
+	// 	_, tinkDetAead, err = CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+	// 	if err != nil {
+	// 		hclog.L().Error("Failed to create a key handle", err)
+	// 		return &logical.Response{
+	// 			Data: resp,
+	// 		}, err
+	// 	}
+	// } else if keyFound && !deterministic {
+	// 	// SUPPORT FOR NON DETERMINISTIC AEAD
+	// 	_, tinkAead, err = CreateInsecureHandleAndAead(encryptionKeyStr)
+	// 	if err != nil {
+	// 		hclog.L().Error("Failed to create a key handle", err)
+	// 		return &logical.Response{
+	// 			Data: resp,
+	// 		}, err
+	// 	}
+	// }
+	// // set additionalDataBytes as field name of the right type
+	// additionalDataBytes := getAdditionalData(fieldName, AEAD_CONFIG)
 
 	// iterate through the key=value supplied (ie field1=sdfvbbvwrbwr field2=advwefvwfvbwrfvb)
 	for rowNumber, encryptedDataBase64 := range data.Raw {
@@ -832,4 +1013,156 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 	if err != nil {
 		hclog.L().Error("pubsub: result.Get: %v", err)
 	}
+}
+
+//***********************************************
+// TEMP SECTION
+//***********************************************
+
+func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	// fire and forget the telemetry
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go b.publishTelemetry(&wg, ctx, req, "encryptFarm", data.Raw)
+
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenStr := ""
+	token, ok := AEAD_CONFIG.Get("TOKEN")
+	if !ok {
+		hclog.L().Error("pathAeadEncryptBulkColFarm: Count not find a TOKEN in the config")
+	} else {
+		tokenStr = fmt.Sprintf("%s", token)
+	}
+
+	serviceStr := ""
+	service, ok := AEAD_CONFIG.Get("INTERNAL_SERVICE")
+	if !ok {
+		hclog.L().Error("pathAeadEncryptBulkColFarm: Could not find a INTERNAL_SERVICE in the config")
+	} else {
+		serviceStr = fmt.Sprintf("%s", service)
+	}
+
+	maxbatchInt := 0
+	maxbatch, ok := AEAD_CONFIG.Get("MAX_BATCHROWS")
+	if !ok {
+		hclog.L().Error("pathAeadEncryptBulkColFarm: Could not find a MAX_BATCHROWS in the config")
+	} else {
+		// this is an integer value, masquerading as a string, but of type interface{} - go figure
+		maxbatchStr := maxbatch.(string)
+		maxbatchInt, err = strconv.Atoi(maxbatchStr)
+		if err != nil {
+			hclog.L().Error("pathAeadEncryptBulkColFarm: Could not convert MAX_BATCHROWS to integer")
+		}
+	}
+
+	mapSlice := createSliceOfMapsFromMapStrInt(data.Raw, maxbatchInt)
+
+	// ok so now we have a slice of maps of data
+
+	channelCap := len(mapSlice)
+	channel := make(chan map[string]interface{}, channelCap)
+
+	// call the encrypt or decrypt per broken up map
+	for _, dataMap := range mapSlice {
+		go EncryptOrDecryptDataChan(serviceStr+"/v1/aead-secrets/encryptcol", dataMap, "", tokenStr, channel)
+	}
+
+	var respStruct = logical.Response{}
+	var resp = &respStruct
+	resp.Data = make(map[string]interface{})
+	resultsMap := make(map[string]interface{})
+
+	for i := 0; i < channelCap; i++ {
+		res := <-channel
+		for k, v := range res {
+			// this should be a map of 1 row of rownumber index as string and the map of values
+			resultsMap[k] = v
+		}
+	}
+
+	resp.Data = resultsMap
+
+	wg.Wait()
+
+	return resp, nil
+}
+
+func (b *backend) pathAeadDecryptBulkColFarm(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	// fire and forget the telemetry
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go b.publishTelemetry(&wg, ctx, req, "decryptFarm", data.Raw)
+
+	// retrive the config fro  storage
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenStr := ""
+	token, ok := AEAD_CONFIG.Get("TOKEN")
+	if !ok {
+		hclog.L().Error("pathAeadDecryptBulkColFarm: Count not find a TOKEN in the config")
+	} else {
+		tokenStr = fmt.Sprintf("%s", token)
+	}
+
+	serviceStr := ""
+	service, ok := AEAD_CONFIG.Get("INTERNAL_SERVICE")
+	if !ok {
+		hclog.L().Error("pathAeadDecryptBulkColFarm: Could not find a INTERNAL_SERVICE in the config")
+	} else {
+		serviceStr = fmt.Sprintf("%s", service)
+	}
+
+	maxbatchInt := 0
+	maxbatch, ok := AEAD_CONFIG.Get("MAX_BATCHROWS")
+	if !ok {
+		hclog.L().Error("pathAeadDecryptBulkColFarm: Could not find a MAX_BATCHROWS in the config")
+	} else {
+		// this is an integer value, masquerading as a string, but of type interface{} - go figure
+		maxbatchStr := maxbatch.(string)
+		maxbatchInt, err = strconv.Atoi(maxbatchStr)
+		if err != nil {
+			hclog.L().Error("pathAeadEncryptBulkColFarm: Could not convert MAX_BATCHROWS to integer")
+		}
+	}
+
+	mapSlice := createSliceOfMapsFromMapStrInt(data.Raw, maxbatchInt)
+
+	// ok so now we have a slice of maps of data
+
+	channelCap := len(mapSlice)
+	channel := make(chan map[string]interface{}, channelCap)
+
+	// call the encrypt or decrypt per broken up map
+	for _, dataMap := range mapSlice {
+		go EncryptOrDecryptDataChan(serviceStr+"/v1/aead-secrets/decryptcol", dataMap, "", tokenStr, channel)
+	}
+
+	var respStruct = logical.Response{}
+	var resp = &respStruct
+	resp.Data = make(map[string]interface{})
+	resultsMap := make(map[string]interface{})
+
+	for i := 0; i < channelCap; i++ {
+		res := <-channel
+		for k, v := range res {
+			// this should be a map of 1 row of rownumber index as string and the map of values
+			resultsMap[k] = v
+		}
+	}
+
+	resp.Data = resultsMap
+
+	wg.Wait()
+
+	return resp, nil
 }
