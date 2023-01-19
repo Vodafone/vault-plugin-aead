@@ -17,7 +17,6 @@ import (
 
 var AEAD_CONFIG = cmap.New()
 var AEAD_KEYS = cmap.New()
-var COUNTER = 0
 
 func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	return b.configWriteOverwriteCheck(ctx, req, data, false)
@@ -138,7 +137,7 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 
 	t := time.Now()
 	consulConfig, err := b.readConsulConfig(ctx, req.Storage)
-	hclog.L().Info("getAeadConfig time to read Consul=%v", time.Since(t))
+	hclog.L().Info("getAeadConfig time to read Consul=" + time.Since(t).String())
 	if err != nil {
 		return err
 	}
@@ -715,8 +714,8 @@ func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
 
 func (b *backend) getKeyAndAD(fieldName string, ctx context.Context, req *logical.Request) (interface{}, []byte, error) {
 
-	COUNTER++
-	hclog.L().Info("getKeyAndAD COUNTER=%v AEAD_KEYS Len=%v", COUNTER, AEAD_KEYS.Count())
+	t := time.Now()
+
 	// set additionalDataBytes as field name of the right type
 	additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
 
@@ -724,10 +723,10 @@ func (b *backend) getKeyAndAD(fieldName string, ctx context.Context, req *logica
 	if ok {
 		tinkKeySet, ok := AEAD_KEYS.Get(fieldName)
 		if ok {
-			hclog.L().Info("getKeyAndAD FOUND KEY IN AEAD_KEYS for FIELD=%s", fieldName)
+			hclog.L().Info("getKeyAndAD FOUND KEY IN AEAD_KEYS for FIELD=" + fieldName + " time to read Consul=" + time.Since(t).String())
 			return tinkKeySet, additionalDataBytes, nil
 		}
-		hclog.L().Info("getKeyAndAD NOT FOUND KEY IN AEAD_KEYS for FIELD=%s", fieldName)
+		hclog.L().Info("getKeyAndAD NOT FOUND KEY IN AEAD_KEYS for FIELD=" + fieldName + " time to read Consul=" + time.Since(t).String())
 
 	}
 
