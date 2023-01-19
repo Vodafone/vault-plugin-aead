@@ -46,10 +46,11 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 	go b.publishTelemetry(&wg, ctx, req, "encrypt", data.Raw)
 
 	// retrive the config fro  storage
-	err := b.getAeadConfig(ctx, req)
-	if err != nil {
-		return nil, err
-	}
+	// AS Optimisation
+	// err := b.getAeadConfig(ctx, req)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	var respStruct = logical.Response{}
 	var resp = &respStruct
@@ -136,11 +137,11 @@ func (b *backend) decryptRowChan(ctx context.Context, req *logical.Request, data
 func (b *backend) encryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
 	// retrive the config fro  storage
-
-	err := b.getAeadConfig(ctx, req)
-	if err != nil {
-		return nil, err
-	}
+	// AS Optimisation
+	// err := b.getAeadConfig(ctx, req)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	// logical.Response{
 	// 	Secret:   &logical.Secret{},
@@ -291,10 +292,11 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 	go b.publishTelemetry(&wg, ctx, req, "decrypt", data.Raw)
 
 	// retrive the config fro  storage
-	err := b.getAeadConfig(ctx, req)
-	if err != nil {
-		return nil, err
-	}
+	// AS Optimisation
+	// err := b.getAeadConfig(ctx, req)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	var respStruct = logical.Response{}
 	var resp = &respStruct
@@ -345,10 +347,11 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 
 func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	// retrive the config from  storage
-	err := b.getAeadConfig(ctx, req)
-	if err != nil {
-		return nil, err
-	}
+	// AS Optimisation
+	// err := b.getAeadConfig(ctx, req)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	resp := make(map[string]interface{})
 	channel := make(chan map[string]interface{}, len(data.Raw))
@@ -501,10 +504,11 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 	go b.publishTelemetry(&wg, ctx, req, "encrypt", data.Raw)
 
 	// retrive the config fro  storage
-	err := b.getAeadConfig(ctx, req)
-	if err != nil {
-		return nil, err
-	}
+	// AS Optimisation
+	// err := b.getAeadConfig(ctx, req)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	var respStruct = logical.Response{}
 	var resp = &respStruct
@@ -586,24 +590,23 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 	keyFound := false
 
 	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
+
+	// we didn't find a key - return original data
 	if err != nil {
-		// we didn't find a key - return original data
-		if err != nil {
-			hclog.L().Error("Failed to create a keyhandle", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
+		hclog.L().Error("Failed to create a keyhandle", err)
+		return &logical.Response{
+			Data: resp,
+		}, err
+	} else {
+		tinkDetAead, ok = keySet.(tink.DeterministicAEAD)
+		if ok {
+			deterministic = true
+			keyFound = true
 		} else {
-			tinkDetAead, ok = keySet.(tink.DeterministicAEAD)
+			tinkAead, ok = keySet.(tink.AEAD)
 			if ok {
-				deterministic = true
+				deterministic = false
 				keyFound = true
-			} else {
-				tinkAead, ok = keySet.(tink.AEAD)
-				if ok {
-					deterministic = false
-					keyFound = true
-				}
 			}
 		}
 	}
@@ -712,10 +715,11 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 	go b.publishTelemetry(&wg, ctx, req, "decrypt", data.Raw)
 
 	// retrive the config fro  storage
-	err := b.getAeadConfig(ctx, req)
-	if err != nil {
-		return nil, err
-	}
+	// AS Optimisation
+	// err := b.getAeadConfig(ctx, req)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	var respStruct = logical.Response{}
 	var resp = &respStruct
@@ -798,24 +802,22 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 	keyFound := false
 
 	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
+	// we didn't find a key - return original data
 	if err != nil {
-		// we didn't find a key - return original data
-		if err != nil {
-			hclog.L().Error("Failed to create a keyhandle", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
+		hclog.L().Error("Failed to create a keyhandle", err)
+		return &logical.Response{
+			Data: resp,
+		}, err
+	} else {
+		tinkDetAead, ok = keySet.(tink.DeterministicAEAD)
+		if ok {
+			deterministic = true
+			keyFound = true
 		} else {
-			tinkDetAead, ok = keySet.(tink.DeterministicAEAD)
+			tinkAead, ok = keySet.(tink.AEAD)
 			if ok {
-				deterministic = true
+				deterministic = false
 				keyFound = true
-			} else {
-				tinkAead, ok = keySet.(tink.AEAD)
-				if ok {
-					deterministic = false
-					keyFound = true
-				}
 			}
 		}
 	}
@@ -924,7 +926,7 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 	defer wg.Done()
 
 	// retrive the config from  storage
-	err := b.getAeadConfig(ctx, req)
+	err := b.getAeadConfig(ctx, req, true)
 	if err != nil {
 		return
 	}
@@ -1027,7 +1029,8 @@ func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.R
 	go b.publishTelemetry(&wg, ctx, req, "encryptFarm", data.Raw)
 
 	// retrive the config fro  storage
-	err := b.getAeadConfig(ctx, req)
+
+	err := b.getAeadConfig(ctx, req, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1101,7 +1104,7 @@ func (b *backend) pathAeadDecryptBulkColFarm(ctx context.Context, req *logical.R
 	go b.publishTelemetry(&wg, ctx, req, "decryptFarm", data.Raw)
 
 	// retrive the config fro  storage
-	err := b.getAeadConfig(ctx, req)
+	err := b.getAeadConfig(ctx, req, true)
 	if err != nil {
 		return nil, err
 	}

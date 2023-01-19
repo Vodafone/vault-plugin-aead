@@ -133,7 +133,17 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 	}, nil
 }
 
-func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error {
+func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request, b_optionalDirtyRead ...bool) error {
+
+	dirtyRead := false
+	if len(b_optionalDirtyRead) > 0 {
+		dirtyRead = b_optionalDirtyRead[0]
+	}
+
+	// if we are doing a dirty read and the config is not empty then return, don't bother re-reading
+	if dirtyRead && !AEAD_CONFIG.IsEmpty() {
+		return nil
+	}
 
 	t := time.Now()
 	consulConfig, err := b.readConsulConfig(ctx, req.Storage)
