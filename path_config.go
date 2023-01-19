@@ -5,6 +5,7 @@ import (
 	"context"
 	b64 "encoding/base64"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/tink/go/insecurecleartextkeyset"
@@ -134,6 +135,8 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 }
 
 func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request, b_optionalDirtyRead ...bool) error {
+
+	hclog.L().Info("getAeadConfig AEAD_LENGTH=" + strconv.Itoa(len(AEAD_CONFIG.Items())))
 
 	dirtyRead := false
 	if len(b_optionalDirtyRead) > 0 {
@@ -725,6 +728,7 @@ func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
 func (b *backend) getKeyAndAD(fieldName string, ctx context.Context, req *logical.Request) (interface{}, []byte, error) {
 
 	t := time.Now()
+	hclog.L().Info("getKeyAndAD AEAD_LENGTH=" + strconv.Itoa(len(AEAD_CONFIG.Items())))
 
 	// set additionalDataBytes as field name of the right type
 	additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
@@ -739,6 +743,7 @@ func (b *backend) getKeyAndAD(fieldName string, ctx context.Context, req *logica
 		hclog.L().Info("getKeyAndAD NOT FOUND KEY IN AEAD_KEYS for FIELD=" + fieldName + " time to read Consul=" + time.Since(t).String())
 
 	}
+	t = time.Now()
 
 	encryptionkeyIntf, ok := getEncryptionKey(fieldName)
 
@@ -751,23 +756,26 @@ func (b *backend) getKeyAndAD(fieldName string, ctx context.Context, req *logica
 			// we don't need the key handle which is returned first
 			_, tinkDetAead, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 			if err != nil {
-				hclog.L().Error("Failed to create a keyhandle", err)
+				hclog.L().Error("getKeyAndAD Failed to create a keyhandle time="+time.Since(t).String(), err)
 				return nil, nil, err
 			} else {
 				b.saveKeyObjectToConfig(fieldName, tinkDetAead, ctx, req)
+				hclog.L().Info("getKeyAndAD FOUND KEY IN CONFIG for FIELD=" + fieldName + " time to read Consul=" + time.Since(t).String())
 				return tinkDetAead, additionalDataBytes, nil
 			}
 		} else {
 			_, tinkAead, err := CreateInsecureHandleAndAead(encryptionKeyStr)
 			if err != nil {
-				hclog.L().Error("Failed to create a keyhandle", err)
+				hclog.L().Error("getKeyAndAD Failed to create a keyhandle time="+time.Since(t).String(), err)
 				return nil, nil, err
 			} else {
 				b.saveKeyObjectToConfig(fieldName, tinkAead, ctx, req)
+				hclog.L().Info("getKeyAndAD FOUND KEY IN CONFIG for FIELD=" + fieldName + " time to read Consul=" + time.Since(t).String())
 				return tinkAead, additionalDataBytes, nil
 			}
 		}
 	}
+	hclog.L().Error("getKeyAndAD Failed to find or create a key time=" + time.Since(t).String())
 	return nil, nil, nil
 }
 
