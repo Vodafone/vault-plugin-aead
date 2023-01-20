@@ -136,7 +136,7 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 
 func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request, b_optionalDirtyRead ...bool) error {
 
-	hclog.L().Info("getAeadConfig AEAD_LENGTH=" + strconv.Itoa(len(AEAD_CONFIG.Items())))
+	hclog.L().Info("getAeadConfig start AEAD_LENGTH=" + strconv.Itoa(len(AEAD_CONFIG.Items())))
 
 	dirtyRead := false
 	if len(b_optionalDirtyRead) > 0 {
@@ -167,6 +167,7 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request, b_opt
 			AEAD_CONFIG.Remove(k)
 		}
 	}
+	hclog.L().Info("getAeadConfig end AEAD_LENGTH=" + strconv.Itoa(len(AEAD_CONFIG.Items())))
 
 	return nil
 }
@@ -730,6 +731,14 @@ func (b *backend) getKeyAndAD(fieldName string, ctx context.Context, req *logica
 	t := time.Now()
 	hclog.L().Info("getKeyAndAD AEAD_LENGTH=" + strconv.Itoa(len(AEAD_CONFIG.Items())))
 
+	// retrive the config from  storage with a dirty read
+	err := b.getAeadConfig(ctx, req, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	hclog.L().Info("getKeyAndAD re-read config time to read =" + time.Since(t).String() + " AEAD_LENGTH=" + strconv.Itoa(len(AEAD_CONFIG.Items())))
+	t = time.Now()
+
 	// set additionalDataBytes as field name of the right type
 	additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
 
@@ -737,10 +746,10 @@ func (b *backend) getKeyAndAD(fieldName string, ctx context.Context, req *logica
 	if ok {
 		tinkKeySet, ok := AEAD_KEYS.Get(fieldName)
 		if ok {
-			hclog.L().Info("getKeyAndAD FOUND KEY IN AEAD_KEYS for FIELD=" + fieldName + " time to read Consul=" + time.Since(t).String())
+			hclog.L().Info("getKeyAndAD FOUND KEY IN AEAD_KEYS for FIELD=" + fieldName + " time to read =" + time.Since(t).String())
 			return tinkKeySet, additionalDataBytes, nil
 		}
-		hclog.L().Info("getKeyAndAD NOT FOUND KEY IN AEAD_KEYS for FIELD=" + fieldName + " time to read Consul=" + time.Since(t).String())
+		hclog.L().Info("getKeyAndAD NOT FOUND KEY IN AEAD_KEYS for FIELD=" + fieldName + " time to read =" + time.Since(t).String())
 
 	}
 	t = time.Now()
