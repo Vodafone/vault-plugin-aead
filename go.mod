@@ -21,7 +21,10 @@ require (
 	github.com/orcaman/concurrent-map v1.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil v3.21.11+incompatible
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.8.1
+	go.opentelemetry.io/otel v1.12.0
+	go.opentelemetry.io/otel/exporters/jaeger v1.12.0
+	go.opentelemetry.io/otel/sdk v1.12.0
 	golang.org/x/oauth2 v0.0.0-20221014153046-6fdb5e3db783
 	google.golang.org/genproto v0.0.0-20221018160656-63c7b68cfc55
 	k8s.io/apimachinery v0.25.3
@@ -43,6 +46,7 @@ require (
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.20.0 // indirect
@@ -102,12 +106,13 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/stretchr/objx v0.4.0 // indirect
+	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.10 // indirect
 	github.com/tklauser/numcpus v0.5.0 // indirect
 	github.com/ugorji/go/codec v1.2.7 // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	go.opencensus.io v0.23.0 // indirect
+	go.opentelemetry.io/otel/trace v1.12.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	golang.org/x/crypto v0.0.0-20221012134737-56aed061732a // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect

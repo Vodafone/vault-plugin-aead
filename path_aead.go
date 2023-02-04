@@ -11,6 +11,7 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	hclog "github.com/hashicorp/go-hclog"
+	"go.opentelemetry.io/otel"
 
 	b64 "encoding/base64"
 	"encoding/json"
@@ -22,6 +23,17 @@ import (
 )
 
 func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	initialiseOpenTel()
+	tr := tp.Tracer("pathAeadEncrypt-tracer")
+
+	ctx, span := tr.Start(ctx, "pathAeadEncrypt")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 
 	/*
 		what is data.Raw
@@ -106,6 +118,10 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 
 func (b *backend) encryptRowChan(ctx context.Context, req *logical.Request, data *framework.FieldData, row string, ch chan map[string]interface{}) {
 
+	tr := otel.Tracer("component-encryptRowChan")
+	_, span := tr.Start(ctx, "encryptRowChan")
+	defer span.End()
+
 	// this is just a wrapper around the pathAeadEncryptRow methos so that it can be used concurrently in a channel
 	resp, err := b.encryptRow(ctx, req, data)
 	if err != nil {
@@ -121,6 +137,10 @@ func (b *backend) encryptRowChan(ctx context.Context, req *logical.Request, data
 
 func (b *backend) decryptRowChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
+	tr := otel.Tracer("component-decryptRowChan")
+	_, span := tr.Start(ctx, "decryptRowChan")
+	defer span.End()
+
 	// this is just a wrapper around the pathAeadDecryptRow methos so that it can be used concurrently in a channel
 	resp, err := b.pathAeadDecrypt(ctx, req, data)
 	if err != nil {
@@ -135,6 +155,10 @@ func (b *backend) decryptRowChan(ctx context.Context, req *logical.Request, data
 }
 
 func (b *backend) encryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	tr := otel.Tracer("component-encryptRow")
+	_, span := tr.Start(ctx, "encryptRow")
+	defer span.End()
 
 	// retrive the config fro  storage
 	// AS Optimisation
@@ -176,6 +200,11 @@ func (b *backend) encryptRow(ctx context.Context, req *logical.Request, data *fr
 }
 
 func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}, data *framework.FieldData, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
+
+	tr := otel.Tracer("component-doEncryptionChan")
+	_, span := tr.Start(ctx, "doEncryptionChan")
+	defer span.End()
+
 	resp := make(map[string]interface{})
 	var tinkDetAead tink.DeterministicAEAD
 	var tinkAead tink.AEAD
@@ -278,6 +307,17 @@ func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}
 
 func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
+	initialiseOpenTel()
+	tr := tp.Tracer("pathAeadDecrypt-tracer")
+
+	ctx, span := tr.Start(ctx, "pathAeadDEcrypt")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
+
 	// what is data.Raw
 	//
 	// is this a bulk file: ie a map of map[string]map[string]interface{} where the second map is the row to be decrypted
@@ -346,12 +386,10 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 }
 
 func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	// retrive the config from  storage
-	// AS Optimisation
-	// err := b.getAeadConfig(ctx, req)
-	// if err != nil {
-	// 	return nil, err
-	// }
+
+	tr := otel.Tracer("component-decryptRow")
+	_, span := tr.Start(ctx, "decryptRow")
+	defer span.End()
 
 	resp := make(map[string]interface{})
 	channel := make(chan map[string]interface{}, len(data.Raw))
@@ -376,6 +414,10 @@ func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *fr
 }
 
 func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, data *framework.FieldData, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
+
+	tr := otel.Tracer("component-doDecryptionChan")
+	_, span := tr.Start(ctx, "doDecryptionChan")
+	defer span.End()
 
 	resp := make(map[string]interface{})
 	var tinkDetAead tink.DeterministicAEAD
@@ -480,7 +522,16 @@ func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interfa
 }
 
 func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathAeadEncryptBulkCol-tracer")
 
+	ctx, span := tr.Start(ctx, "pathAeadEncryptBulkCol")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	/*
 		what is data.Raw
 
@@ -567,6 +618,10 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 
 func (b *backend) encryptColChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
+	tr := otel.Tracer("component-encryptColChan")
+	_, span := tr.Start(ctx, "encryptColChan")
+	defer span.End()
+
 	// this is just a wrapper around the pathAeadEncryptRow methos so that it can be used concurrently in a channel
 	resp, err := b.encryptCol(ctx, req, data, fieldName)
 	if err != nil {
@@ -581,6 +636,10 @@ func (b *backend) encryptColChan(ctx context.Context, req *logical.Request, data
 }
 
 func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
+
+	tr := otel.Tracer("component-encryptCol")
+	_, span := tr.Start(ctx, "encryptCol")
+	defer span.End()
 
 	resp := make(map[string]interface{})
 	var tinkDetAead tink.DeterministicAEAD
@@ -700,7 +759,16 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 }
 
 func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathAeadDecryptBulkCol-tracer")
 
+	ctx, span := tr.Start(ctx, "pathAeadDecryptBulkCol")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// what is data.Raw
 	//
 	// is this a bulk file: ie a map of map[string]map[string]interface{} where the second map is the row to be decrypted
@@ -779,6 +847,10 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 
 func (b *backend) decryptColChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
+	tr := otel.Tracer("component-decryptColChan")
+	_, span := tr.Start(ctx, "decryptColChan")
+	defer span.End()
+
 	// this is just a wrapper around the pathAeadDecryptRow methos so that it can be used concurrently in a channel
 	resp, err := b.decryptCol(ctx, req, data, fieldName)
 	if err != nil {
@@ -793,6 +865,10 @@ func (b *backend) decryptColChan(ctx context.Context, req *logical.Request, data
 }
 
 func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
+
+	tr := otel.Tracer("component-decryptCol")
+	_, span := tr.Start(ctx, "decryptCol")
+	defer span.End()
 
 	resp := make(map[string]interface{})
 	var tinkDetAead tink.DeterministicAEAD
@@ -923,6 +999,10 @@ func isBulkData(data map[string]interface{}) (bool, error) {
 
 func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req *logical.Request, encryptOrDecrypt string, data map[string]interface{}) {
 
+	tr := otel.Tracer("component-publishTelemetry")
+	_, span := tr.Start(ctx, "publishTelemetry")
+	defer span.End()
+
 	defer wg.Done()
 
 	// retrive the config from  storage
@@ -1022,7 +1102,16 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 //***********************************************
 
 func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathAeadEncryptBulkColFarm-tracer")
 
+	ctx, span := tr.Start(ctx, "pathAeadEncryptBulkColFarm")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// fire and forget the telemetry
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -1097,7 +1186,16 @@ func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.R
 }
 
 func (b *backend) pathAeadDecryptBulkColFarm(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathAeadDecryptBulkColFarm-tracer")
 
+	ctx, span := tr.Start(ctx, "pathAeadDecryptBulkColFarm")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// fire and forget the telemetry
 	var wg sync.WaitGroup
 	wg.Add(1)

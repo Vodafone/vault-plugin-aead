@@ -14,19 +14,42 @@ import (
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 	cmap "github.com/orcaman/concurrent-map"
+	"go.opentelemetry.io/otel"
 )
 
 var AEAD_CONFIG = cmap.New()
 var AEAD_KEYS = cmap.New()
 
 func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathConfigWrite-tracer")
+
+	ctx, span := tr.Start(ctx, "pathConfigWrite")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	return b.configWriteOverwriteCheck(ctx, req, data, false)
 }
 func (b *backend) pathConfigOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.configWriteOverwriteCheck(ctx, req, data, true)
+	initialiseOpenTel()
+	tr := tp.Tracer("pathConfigOverwrite-tracer")
 
+	ctx, span := tr.Start(ctx, "pathConfigOverwrite")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
+	return b.configWriteOverwriteCheck(ctx, req, data, true)
 }
 func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
+	tr := otel.Tracer("component-configWriteOverwriteCheck")
+	_, span := tr.Start(ctx, "configWriteOverwriteCheck")
+	defer span.End()
 
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
@@ -61,7 +84,16 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 }
 
 func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathConfigDelete-tracer")
 
+	ctx, span := tr.Start(ctx, "pathConfigDelete")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
@@ -92,7 +124,16 @@ func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, da
 }
 
 func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathConfigRead-tracer")
 
+	ctx, span := tr.Start(ctx, "pathConfigRead")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
@@ -111,7 +152,16 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 }
 
 func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathReadKeyTypes-tracer")
 
+	ctx, span := tr.Start(ctx, "pathReadKeyTypes")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
@@ -135,6 +185,9 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 }
 
 func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request, b_optionalDirtyRead ...bool) error {
+	tr := otel.Tracer("component-getAeadConfig")
+	_, span := tr.Start(ctx, "getAeadConfig")
+	defer span.End()
 
 	hclog.L().Info("getAeadConfig start AEAD_LENGTH=" + strconv.Itoa(len(AEAD_CONFIG.Items())))
 
@@ -173,6 +226,9 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request, b_opt
 }
 
 func (b *backend) readConsulConfig(ctx context.Context, s logical.Storage) (map[string]interface{}, error) {
+	tr := otel.Tracer("component-readConsulConfig")
+	_, span := tr.Start(ctx, "readConsulConfig")
+	defer span.End()
 
 	consulConfig := make(map[string]interface{})
 	entry, err := s.Get(ctx, "config")
@@ -191,7 +247,16 @@ func (b *backend) readConsulConfig(ctx context.Context, s logical.Storage) (map[
 }
 
 func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathKeyRotate-tracer")
 
+	ctx, span := tr.Start(ctx, "pathKeyRotate")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
@@ -243,7 +308,16 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 }
 
 func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathUpdateKeyStatus-tracer")
 
+	ctx, span := tr.Start(ctx, "pathUpdateKeyStatus")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// data.Raw is map[string]map[string]string
 	// map['field0':map['key':'status']]
 	// retrive the config from  storage
@@ -306,7 +380,16 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 	}, nil
 }
 func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathUpdateKeyMaterial-tracer")
 
+	ctx, span := tr.Start(ctx, "pathUpdateKeyMaterial")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// data.Raw is map[string]map[string]string
 	// map['field0':map['key':'material']]
 	// retrive the config from  storage
@@ -368,7 +451,16 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 	}, nil
 }
 func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathUpdatePrimaryKeyID-tracer")
 
+	ctx, span := tr.Start(ctx, "pathUpdatePrimaryKeyID")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// data.Raw is map[string]string
 	// map['field0':'primaryKey']]
 	// retrive the config from  storage
@@ -428,7 +520,16 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 	}, nil
 }
 func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathUpdateKeyID-tracer")
 
+	ctx, span := tr.Start(ctx, "pathUpdateKeyID")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// data.Raw is map[string]map[string]string
 	// map['field0':map['key':'newkey']]
 	// retrive the config from  storage
@@ -490,7 +591,16 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 	}, nil
 }
 func (b *backend) pathImportKey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathImportKey-tracer")
 
+	ctx, span := tr.Start(ctx, "pathImportKey")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	// data.Raw should be map[string]interface{}
 	for _, v := range data.Raw {
 		// k is the field of the key
@@ -520,14 +630,37 @@ func (b *backend) pathImportKey(ctx context.Context, req *logical.Request, data 
 }
 
 func (b *backend) pathAeadCreateDeterministicKeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathAeadCreateDeterministicKeys-tracer")
+
+	ctx, span := tr.Start(ctx, "pathAeadCreateDeterministicKeys")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	return b.createDeterministicKeysOverwriteCheck(ctx, req, data, false)
 }
 
 func (b *backend) pathAeadCreateDeterministicKeysOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathAeadCreateDeterministicKeysOverwrite-tracer")
+
+	ctx, span := tr.Start(ctx, "pathAeadCreateDeterministicKeysOverwrite")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	return b.createDeterministicKeysOverwriteCheck(ctx, req, data, true)
 }
 
 func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
+	tr := otel.Tracer("component-createDeterministicKeysOverwriteCheck")
+	_, span := tr.Start(ctx, "createDeterministicKeysOverwriteCheck")
+	defer span.End()
 
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
@@ -584,14 +717,38 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 	}, nil
 }
 func (b *backend) pathAeadCreateNonDeterministicKeys(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathAeadCreateNonDeterministicKeys-tracer")
+
+	ctx, span := tr.Start(ctx, "pathAeadCreateNonDeterministicKeys")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	return b.createNonDeterministicKeysOverwriteCheck(ctx, req, data, false)
 }
 
 func (b *backend) pathAeadCreateNonDeterministicKeysOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	initialiseOpenTel()
+	tr := tp.Tracer("pathAeadCreateNonDeterministicKeysOverwrite-tracer")
+
+	ctx, span := tr.Start(ctx, "pathAeadCreateNonDeterministicKeysOverwrite")
+	defer func() {
+		span.End()
+		if err := tp.Shutdown(ctx); err != nil {
+			hclog.L().Error("Failed to shutdown tracerProvider", err)
+		}
+	}()
 	return b.createNonDeterministicKeysOverwriteCheck(ctx, req, data, true)
 }
 
 func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
+
+	tr := otel.Tracer("component-createNonDeterministicKeysOverwriteCheck")
+	_, span := tr.Start(ctx, "createNonDeterministicKeysOverwriteCheck")
+	defer span.End()
 
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
@@ -650,6 +807,10 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 
 func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string, ctx context.Context, req *logical.Request, overwrite bool) {
 
+	tr := otel.Tracer("component-saveKeyToConfig")
+	_, span := tr.Start(ctx, "saveKeyToConfig")
+	defer span.End()
+
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
@@ -689,7 +850,11 @@ func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string,
 	}
 }
 
-func (b *backend) getAdditionalData(fieldName string, config cmap.ConcurrentMap) []byte {
+func (b *backend) getAdditionalData(ctx context.Context, fieldName string, config cmap.ConcurrentMap) []byte {
+
+	tr := otel.Tracer("component-getAdditionalData")
+	_, span := tr.Start(ctx, "getAdditionalData")
+	defer span.End()
 
 	// set additionalDataBytes as field name of the right type
 	aad, ok := AEAD_CONFIG.Get("ADDITIONAL_DATA_" + fieldName)
@@ -728,6 +893,10 @@ func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
 
 func (b *backend) getKeyAndAD(fieldName string, ctx context.Context, req *logical.Request) (interface{}, []byte, error) {
 
+	tr := otel.Tracer("component-getKeyAndAD")
+	_, span := tr.Start(ctx, "getKeyAndAD")
+	defer span.End()
+
 	t := time.Now()
 	hclog.L().Info("getKeyAndAD AEAD_LENGTH=" + strconv.Itoa(len(AEAD_CONFIG.Items())))
 
@@ -740,7 +909,7 @@ func (b *backend) getKeyAndAD(fieldName string, ctx context.Context, req *logica
 	t = time.Now()
 
 	// set additionalDataBytes as field name of the right type
-	additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
+	additionalDataBytes := b.getAdditionalData(ctx, fieldName, AEAD_CONFIG)
 
 	_, ok := AEAD_CONFIG.Get("DIRTY_READ_KEYS")
 	if ok {
@@ -789,5 +958,10 @@ func (b *backend) getKeyAndAD(fieldName string, ctx context.Context, req *logica
 }
 
 func (b *backend) saveKeyObjectToConfig(fieldName string, keyObj interface{}, ctx context.Context, req *logical.Request) {
+
+	tr := otel.Tracer("component-saveKeyObjectToConfig")
+	_, span := tr.Start(ctx, "saveKeyObjectToConfig")
+	defer span.End()
+
 	AEAD_KEYS.Set(fieldName, keyObj)
 }
