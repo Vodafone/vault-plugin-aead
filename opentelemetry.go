@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	service     = "jaeger-test-trace-service"
-	environment = "production"
+	service     = "aead-trace-service"
+	environment = "nonprod"
 	id          = 1
 )
 
@@ -61,16 +61,16 @@ func tracerProvider(url string) (*tracesdk.TracerProvider, error) {
 
 func initialiseOpenTel() {
 	var tperr error
-	if tp == nil {
-		tp, tperr = tracerProvider("http://jaeger-collector.jaeger.svc.cluster.local:14268/api/traces")
-		if tperr != nil {
-			log.Fatal(tperr)
-		}
-
-		// Register our TracerProvider as the global so any imported
-		// instrumentation in the future will default to using it.
-		otel.SetTracerProvider(tp)
+	// if tp == nil {
+	tp, tperr = tracerProvider("http://jaeger-collector.jaeger.svc.cluster.local:14268/api/traces")
+	if tperr != nil {
+		log.Fatal(tperr)
 	}
+
+	// Register our TracerProvider as the global so any imported
+	// instrumentation in the future will default to using it.
+	otel.SetTracerProvider(tp)
+	// }
 }
 
 // func main() {
