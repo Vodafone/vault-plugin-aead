@@ -25,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -34,6 +35,7 @@ const (
 )
 
 var tp *tracesdk.TracerProvider
+var tr oteltrace.Tracer
 
 // tracerProvider returns an OpenTelemetry TracerProvider configured to use
 // the Jaeger exporter that will send spans to the provided url. The returned
@@ -62,7 +64,8 @@ func tracerProvider(url string) (*tracesdk.TracerProvider, error) {
 func initialiseOpenTel() {
 	var tperr error
 	// if tp == nil {
-	tp, tperr = tracerProvider("http://jaeger-collector.jaeger.svc.cluster.local:14268/api/traces")
+	// tp, tperr = tracerProvider("http://jaeger-collector.jaeger.svc.cluster.local:14268/api/traces")
+	tp, tperr = tracerProvider("http://localhost:14268/api/traces")
 	if tperr != nil {
 		log.Fatal(tperr)
 	}
@@ -89,7 +92,7 @@ func initialiseOpenTel() {
 // 	// 	}
 // 	// }(ctx)
 
-// 	tr := tp.Tracer("component-main")
+// 	tr = tp.Tracer("component-main")
 
 // 	ctx, span := tr.Start(ctx, "foo")
 // 	defer func(ctx) {
@@ -103,8 +106,8 @@ func initialiseOpenTel() {
 
 // func bar(ctx context.Context) {
 // 	// Use the global TracerProvider.
-// 	tr := otel.Tracer("component-bar")
-// 	_, span := tr.Start(ctx, "bar")
+// 	// tr := otel.Tracer("component-bar")
+// 	ctx, span := tr.Start(ctx, "bar")
 // 	span.SetAttributes(attribute.Key("testset").String("value"))
 // 	defer span.End()
 

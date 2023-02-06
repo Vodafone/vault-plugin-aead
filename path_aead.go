@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"sync"
 	"time"
 	"unsafe"
 
-	"cloud.google.com/go/pubsub"
-	hclog "github.com/hashicorp/go-hclog"
-	"go.opentelemetry.io/otel"
-
 	b64 "encoding/base64"
 	"encoding/json"
+
+	"cloud.google.com/go/pubsub"
+	hclog "github.com/hashicorp/go-hclog"
 
 	"github.com/google/tink/go/tink"
 	"github.com/google/uuid"
@@ -25,9 +25,10 @@ import (
 func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
 	initialiseOpenTel()
-	tr := tp.Tracer("pathAeadEncrypt-tracer")
+	hostname, _ := os.Hostname()
+	tr = tp.Tracer("pathAeadEncrypt-" + hostname)
 
-	ctx, span := tr.Start(ctx, "pathAeadEncrypt")
+	ctx, span := tr.Start(ctx, "pathAeadEncrypt-"+hostname)
 	defer func() {
 		span.End()
 		if err := tp.Shutdown(ctx); err != nil {
@@ -118,8 +119,8 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 
 func (b *backend) encryptRowChan(ctx context.Context, req *logical.Request, data *framework.FieldData, row string, ch chan map[string]interface{}) {
 
-	tr := otel.Tracer("component-encryptRowChan")
-	_, span := tr.Start(ctx, "encryptRowChan")
+	// tr := otel.Tracer("component-encryptRowChan")
+	ctx, span := tr.Start(ctx, "encryptRowChan")
 	defer span.End()
 
 	// this is just a wrapper around the pathAeadEncryptRow methos so that it can be used concurrently in a channel
@@ -137,8 +138,8 @@ func (b *backend) encryptRowChan(ctx context.Context, req *logical.Request, data
 
 func (b *backend) decryptRowChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
-	tr := otel.Tracer("component-decryptRowChan")
-	_, span := tr.Start(ctx, "decryptRowChan")
+	// tr := otel.Tracer("component-decryptRowChan")
+	ctx, span := tr.Start(ctx, "decryptRowChan")
 	defer span.End()
 
 	// this is just a wrapper around the pathAeadDecryptRow methos so that it can be used concurrently in a channel
@@ -156,8 +157,8 @@ func (b *backend) decryptRowChan(ctx context.Context, req *logical.Request, data
 
 func (b *backend) encryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	tr := otel.Tracer("component-encryptRow")
-	_, span := tr.Start(ctx, "encryptRow")
+	// tr := otel.Tracer("component-encryptRow")
+	ctx, span := tr.Start(ctx, "encryptRow")
 	defer span.End()
 
 	// retrive the config fro  storage
@@ -201,8 +202,8 @@ func (b *backend) encryptRow(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}, data *framework.FieldData, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
 
-	tr := otel.Tracer("component-doEncryptionChan")
-	_, span := tr.Start(ctx, "doEncryptionChan")
+	// tr := otel.Tracer("component-doEncryptionChan")
+	ctx, span := tr.Start(ctx, "doEncryptionChan")
 	defer span.End()
 
 	resp := make(map[string]interface{})
@@ -308,9 +309,10 @@ func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}
 func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
 	initialiseOpenTel()
-	tr := tp.Tracer("pathAeadDecrypt-tracer")
+	hostname, _ := os.Hostname()
+	tr = tp.Tracer("pathAeadDecrypt-" + hostname)
 
-	ctx, span := tr.Start(ctx, "pathAeadDEcrypt")
+	ctx, span := tr.Start(ctx, "pathAeadDEcrypt-"+hostname)
 	defer func() {
 		span.End()
 		if err := tp.Shutdown(ctx); err != nil {
@@ -387,8 +389,8 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 
 func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	tr := otel.Tracer("component-decryptRow")
-	_, span := tr.Start(ctx, "decryptRow")
+	// tr := otel.Tracer("component-decryptRow")
+	ctx, span := tr.Start(ctx, "decryptRow")
 	defer span.End()
 
 	resp := make(map[string]interface{})
@@ -415,8 +417,8 @@ func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, data *framework.FieldData, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
 
-	tr := otel.Tracer("component-doDecryptionChan")
-	_, span := tr.Start(ctx, "doDecryptionChan")
+	// tr := otel.Tracer("component-doDecryptionChan")
+	ctx, span := tr.Start(ctx, "doDecryptionChan")
 	defer span.End()
 
 	resp := make(map[string]interface{})
@@ -523,9 +525,10 @@ func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interfa
 
 func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	initialiseOpenTel()
-	tr := tp.Tracer("pathAeadEncryptBulkCol-tracer")
+	hostname, _ := os.Hostname()
+	tr = tp.Tracer("pathAeadEncryptBulkCol-" + hostname)
 
-	ctx, span := tr.Start(ctx, "pathAeadEncryptBulkCol")
+	ctx, span := tr.Start(ctx, "pathAeadEncryptBulkCol-"+hostname)
 	defer func() {
 		span.End()
 		if err := tp.Shutdown(ctx); err != nil {
@@ -570,7 +573,9 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 
 		// ok, 1st thing to do is to pivot the map
 		pivotedMap := make(map[string]interface{})
+		_, pivotSpan := tr.Start(ctx, fmt.Sprintf("PivotMap"))
 		PivotMapInt(data.Raw, pivotedMap)
+		pivotSpan.End()
 
 		channelCap := len(pivotedMap)
 		channel := make(chan map[string]interface{}, channelCap)
@@ -595,6 +600,7 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 
 		resp.Data = make(map[string]interface{})
 		resultsMap := make(map[string]interface{})
+		_, waitResultsSpan := tr.Start(ctx, fmt.Sprintf("pathAeadDecryptBulkCol-wait"))
 		for i := 0; i < channelCap; i++ {
 			res := <-channel
 			for k, v := range res {
@@ -602,9 +608,12 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 				resultsMap[k] = v
 			}
 		}
+		waitResultsSpan.End()
 
 		// unpivot the map
+		_, unpivotSpan := tr.Start(ctx, fmt.Sprintf("UnPivotMap"))
 		PivotMapInt(resultsMap, resp.Data)
+		unpivotSpan.End()
 
 	} else {
 
@@ -618,8 +627,8 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 
 func (b *backend) encryptColChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
-	tr := otel.Tracer("component-encryptColChan")
-	_, span := tr.Start(ctx, "encryptColChan")
+	// tr := otel.Tracer("component-encryptColChan-" + fieldName)
+	ctx, span := tr.Start(ctx, "encryptColChan-"+fieldName)
 	defer span.End()
 
 	// this is just a wrapper around the pathAeadEncryptRow methos so that it can be used concurrently in a channel
@@ -637,8 +646,8 @@ func (b *backend) encryptColChan(ctx context.Context, req *logical.Request, data
 
 func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
 
-	tr := otel.Tracer("component-encryptCol")
-	_, span := tr.Start(ctx, "encryptCol")
+	// tr := otel.Tracer("component-encryptCol-" + fieldName)
+	ctx, span := tr.Start(ctx, "encryptCol-"+fieldName)
 	defer span.End()
 
 	resp := make(map[string]interface{})
@@ -649,6 +658,8 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 	keyFound := false
 
 	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
+
+	_, keySpan := tr.Start(ctx, "encryptCol-resolveKey"+fieldName)
 
 	// we didn't find a key - return original data
 	if err != nil {
@@ -669,7 +680,7 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 			}
 		}
 	}
-
+	keySpan.End()
 	// // retrive the config fro  storage
 
 	// err := b.getAeadConfig(ctx, req)
@@ -707,6 +718,7 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 	// }
 	// // set additionalDataBytes as field name of the right type
 	// additionalDataBytes := getAdditionalData(fieldName, AEAD_CONFIG)
+	_, encryptSpan := tr.Start(ctx, "encryptCol-doEncryption"+fieldName)
 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for rowNum, unencryptedData := range data.Raw {
@@ -753,6 +765,8 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 		}
 	}
 
+	encryptSpan.End()
+
 	return &logical.Response{
 		Data: resp,
 	}, nil
@@ -760,9 +774,10 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	initialiseOpenTel()
-	tr := tp.Tracer("pathAeadDecryptBulkCol-tracer")
+	hostname, _ := os.Hostname()
+	tr = tp.Tracer("pathAeadDecryptBulkCol-" + hostname)
 
-	ctx, span := tr.Start(ctx, "pathAeadDecryptBulkCol")
+	ctx, span := tr.Start(ctx, "pathAeadDecryptBulkCol-"+hostname)
 	defer func() {
 		span.End()
 		if err := tp.Shutdown(ctx); err != nil {
@@ -798,7 +813,9 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 
 		// ok, 1st thing to do is to pivot the map
 		pivotedMap := make(map[string]interface{})
+		_, pivotSpan := tr.Start(ctx, fmt.Sprintf("PivotMap"))
 		PivotMapInt(data.Raw, pivotedMap)
+		pivotSpan.End()
 
 		channelCap := len(pivotedMap)
 		channel := make(chan map[string]interface{}, channelCap)
@@ -826,6 +843,7 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 		resp.Data = make(map[string]interface{})
 		resultsMap := make(map[string]interface{})
 
+		_, waitResultsSpan := tr.Start(ctx, fmt.Sprintf("pathAeadDecryptBulkCol-wait"))
 		for i := 0; i < channelCap; i++ {
 			res := <-channel
 			for k, v := range res {
@@ -833,9 +851,12 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 				resultsMap[k] = v
 			}
 		}
+		waitResultsSpan.End()
 
 		// unpivot the map
+		_, unpivotSpan := tr.Start(ctx, fmt.Sprintf("UnPivotMap"))
 		PivotMapInt(resultsMap, resp.Data)
+		unpivotSpan.End()
 
 	} else {
 		hclog.L().Info("can only do column ops on bulk data")
@@ -847,8 +868,8 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 
 func (b *backend) decryptColChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
-	tr := otel.Tracer("component-decryptColChan")
-	_, span := tr.Start(ctx, "decryptColChan")
+	// tr := otel.Tracer("component-decryptColChan-" + fieldName)
+	ctx, span := tr.Start(ctx, "decryptColChan-"+fieldName)
 	defer span.End()
 
 	// this is just a wrapper around the pathAeadDecryptRow methos so that it can be used concurrently in a channel
@@ -866,8 +887,8 @@ func (b *backend) decryptColChan(ctx context.Context, req *logical.Request, data
 
 func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
 
-	tr := otel.Tracer("component-decryptCol")
-	_, span := tr.Start(ctx, "decryptCol")
+	// tr := otel.Tracer("component-decryptCol-" + fieldName)
+	ctx, span := tr.Start(ctx, "decryptCol-"+fieldName)
 	defer span.End()
 
 	resp := make(map[string]interface{})
@@ -876,6 +897,8 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 	var ok bool
 	deterministic := false
 	keyFound := false
+
+	_, keySpan := tr.Start(ctx, "decryptCol-resolveKey"+fieldName)
 
 	keySet, additionalDataBytes, err := b.getKeyAndAD(fieldName, ctx, req)
 	// we didn't find a key - return original data
@@ -897,6 +920,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 			}
 		}
 	}
+	keySpan.End()
 
 	// // retrive the config from  storage
 	// err := b.getAeadConfig(ctx, req)
@@ -934,6 +958,8 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 	// }
 	// // set additionalDataBytes as field name of the right type
 	// additionalDataBytes := getAdditionalData(fieldName, AEAD_CONFIG)
+
+	_, decryptSpan := tr.Start(ctx, "decryptCol-doDecryption"+fieldName)
 
 	// iterate through the key=value supplied (ie field1=sdfvbbvwrbwr field2=advwefvwfvbwrfvb)
 	for rowNumber, encryptedDataBase64 := range data.Raw {
@@ -977,7 +1003,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 			resp[rowNumber] = fmt.Sprintf("%s", encryptedDataBase64)
 		}
 	}
-
+	decryptSpan.End()
 	return &logical.Response{
 		Data: resp,
 	}, nil
@@ -999,8 +1025,8 @@ func isBulkData(data map[string]interface{}) (bool, error) {
 
 func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req *logical.Request, encryptOrDecrypt string, data map[string]interface{}) {
 
-	tr := otel.Tracer("component-publishTelemetry")
-	_, span := tr.Start(ctx, "publishTelemetry")
+	// tr := otel.Tracer("component-publishTelemetry")
+	ctx, span := tr.Start(ctx, "publishTelemetry")
 	defer span.End()
 
 	defer wg.Done()
@@ -1103,9 +1129,10 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 
 func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	initialiseOpenTel()
-	tr := tp.Tracer("pathAeadEncryptBulkColFarm-tracer")
+	hostname, _ := os.Hostname()
+	tr = tp.Tracer("pathAeadEncryptBulkColFarm-" + hostname)
 
-	ctx, span := tr.Start(ctx, "pathAeadEncryptBulkColFarm")
+	ctx, span := tr.Start(ctx, "pathAeadEncryptBulkColFarm-"+hostname)
 	defer func() {
 		span.End()
 		if err := tp.Shutdown(ctx); err != nil {
@@ -1187,9 +1214,10 @@ func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.R
 
 func (b *backend) pathAeadDecryptBulkColFarm(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 	initialiseOpenTel()
-	tr := tp.Tracer("pathAeadDecryptBulkColFarm-tracer")
+	hostname, _ := os.Hostname()
+	tr = tp.Tracer("pathAeadDecryptBulkColFarm-" + hostname)
 
-	ctx, span := tr.Start(ctx, "pathAeadDecryptBulkColFarm")
+	ctx, span := tr.Start(ctx, "pathAeadDecryptBulkColFarm-"+hostname)
 	defer func() {
 		span.End()
 		if err := tp.Shutdown(ctx); err != nil {
