@@ -63,9 +63,8 @@ func tracerProvider(url string) (*tracesdk.TracerProvider, error) {
 
 func initialiseOpenTel() {
 	var tperr error
-	// if tp == nil {
-	// tp, tperr = tracerProvider("http://jaeger-collector.jaeger.svc.cluster.local:14268/api/traces")
-	tp, tperr = tracerProvider("http://localhost:14268/api/traces")
+	tp, tperr = tracerProvider("http://jaeger-collector.jaeger.svc.cluster.local:14268/api/traces")
+	//tp, tperr = tracerProvider("http://localhost:14268/api/traces")
 	if tperr != nil {
 		log.Fatal(tperr)
 	}
@@ -73,7 +72,6 @@ func initialiseOpenTel() {
 	// Register our TracerProvider as the global so any imported
 	// instrumentation in the future will default to using it.
 	otel.SetTracerProvider(tp)
-	// }
 }
 
 // func main() {

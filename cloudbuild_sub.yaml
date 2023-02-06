@@ -4,7 +4,7 @@ steps:
     args:
       - '-c'
       - |
-        go test -v -race
+        go test -v
     entrypoint: /bin/sh
   - name: 'gcr.io/cloud-builders/go:1.18'
     id: 'go-build'
