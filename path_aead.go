@@ -1180,7 +1180,9 @@ func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.R
 		}
 	}
 
+	_, makesliceSpan := tr.Start(ctx, fmt.Sprintf("pathAeadEncryptBulkColFarm-makeslice"))
 	mapSlice := createSliceOfMapsFromMapStrInt(data.Raw, maxbatchInt)
+	makesliceSpan.End()
 
 	// ok so now we have a slice of maps of data
 
@@ -1197,6 +1199,8 @@ func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.R
 	resp.Data = make(map[string]interface{})
 	resultsMap := make(map[string]interface{})
 
+	_, waitSpan := tr.Start(ctx, fmt.Sprintf("pathAeadEncryptBulkColFarm-wait"))
+
 	for i := 0; i < channelCap; i++ {
 		res := <-channel
 		for k, v := range res {
@@ -1204,6 +1208,7 @@ func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.R
 			resultsMap[k] = v
 		}
 	}
+	waitSpan.End()
 
 	resp.Data = resultsMap
 
@@ -1264,7 +1269,9 @@ func (b *backend) pathAeadDecryptBulkColFarm(ctx context.Context, req *logical.R
 		}
 	}
 
+	_, makesliceSpan := tr.Start(ctx, fmt.Sprintf("pathAeadDecryptBulkColFarm-makeslice"))
 	mapSlice := createSliceOfMapsFromMapStrInt(data.Raw, maxbatchInt)
+	makesliceSpan.End()
 
 	// ok so now we have a slice of maps of data
 
@@ -1281,6 +1288,8 @@ func (b *backend) pathAeadDecryptBulkColFarm(ctx context.Context, req *logical.R
 	resp.Data = make(map[string]interface{})
 	resultsMap := make(map[string]interface{})
 
+	_, waitSpan := tr.Start(ctx, fmt.Sprintf("pathAeadDecryptBulkColFarm-wait"))
+
 	for i := 0; i < channelCap; i++ {
 		res := <-channel
 		for k, v := range res {
@@ -1288,6 +1297,8 @@ func (b *backend) pathAeadDecryptBulkColFarm(ctx context.Context, req *logical.R
 			resultsMap[k] = v
 		}
 	}
+
+	waitSpan.End()
 
 	resp.Data = resultsMap
 
