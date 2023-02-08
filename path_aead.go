@@ -681,47 +681,67 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 		}
 	}
 	keySpan.End()
-	// // retrive the config fro  storage
 
-	// err := b.getAeadConfig(ctx, req)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// resp := make(map[string]interface{})
-
-	// encryptionkey, keyFound := getEncryptionKey(fieldName)
-	// // is the key we have retrived deterministic?
-	// encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
-
-	// var tinkDetAead tink.DeterministicAEAD
-	// var tinkAead tink.AEAD
-
-	// if keyFound && deterministic {
-	// 	// SUPPORT FOR DETERMINISTIC AEAD
-	// 	// we don't need the key handle which is returned first
-	// 	_, tinkDetAead, err = CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
-	// 	if err != nil {
-	// 		hclog.L().Error("Failed to create a keyhandle", err)
-	// 		return &logical.Response{
-	// 			Data: resp,
-	// 		}, err
-	// 	}
-	// } else if keyFound && !deterministic {
-	// 	// SUPPORT FOR NON DETERMINISTIC AEAD
-	// 	_, tinkAead, err = CreateInsecureHandleAndAead(encryptionKeyStr)
-	// 	if err != nil {
-	// 		hclog.L().Error("Failed to create a key", err)
-	// 		return &logical.Response{
-	// 			Data: resp,
-	// 		}, err
-	// 	}
-	// }
-	// // set additionalDataBytes as field name of the right type
-	// additionalDataBytes := getAdditionalData(fieldName, AEAD_CONFIG)
 	_, encryptSpan := tr.Start(ctx, "encryptCol-doEncryption"+fieldName)
 
+	maxbatchInt := 1000 //TODO
+	maxbatch, ok := AEAD_CONFIG.Get("MAX_BATCHCOLROWS")
+	if !ok {
+		hclog.L().Error("encryptCol: Could not find a MAX_BATCHCOLROWS in the config")
+	} else {
+		// this is an integer value, masquerading as a string, but of type interface{} - go figure
+		maxbatchStr := maxbatch.(string)
+		maxbatchInt, err = strconv.Atoi(maxbatchStr)
+		if err != nil {
+			hclog.L().Error("encryptCol: Could not convert MAX_BATCHCOLROWS to integer")
+		}
+	}
+	_, makesliceSpan := tr.Start(ctx, fmt.Sprintf("encryptCol-makeslice"))
+	mapSlice := createSliceOfMapsFromMapStrInt(data.Raw, maxbatchInt)
+	makesliceSpan.End()
+
+	// ok so now we have a slice of maps of data
+
+	channelCap := len(mapSlice)
+	channel := make(chan map[string]interface{}, channelCap)
+
+	// call the encrypt or decrypt per broken up map
+	for _, dataMap := range mapSlice {
+		go b.encryptColConcurrent(ctx, dataMap, keyFound, deterministic, tinkDetAead, tinkAead, additionalDataBytes, channel)
+	}
+
+	// var respStruct = logical.Response{}
+	// var resp1 = &respStruct
+	// resp1.Data = make(map[string]interface{})
+	resultsMap := make(map[string]interface{})
+
+	_, waitSpan := tr.Start(ctx, fmt.Sprintf("encryptCol-wait"))
+
+	for i := 0; i < channelCap; i++ {
+		res := <-channel
+		for k, v := range res {
+			// this should be a map of 1 row of rownumber index as string and the map of values
+			resultsMap[k] = v
+		}
+	}
+	waitSpan.End()
+
+	encryptSpan.End()
+
+	return &logical.Response{
+		Data: resultsMap,
+	}, nil
+}
+
+func (b *backend) encryptColConcurrent(ctx context.Context, data map[string]interface{}, keyFound bool, deterministic bool, tinkDetAead tink.DeterministicAEAD, tinkAead tink.AEAD, additionalDataBytes []byte, ch chan map[string]interface{}) {
+
+	ctx, span := tr.Start(ctx, "encryptColConcurrent")
+	defer span.End()
+
+	resp := make(map[string]interface{})
+
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
-	for rowNum, unencryptedData := range data.Raw {
+	for rowNum, unencryptedData := range data {
 		// do we have a key already in config
 		if keyFound {
 
@@ -734,10 +754,9 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 				// encrypt it
 				cypherText, err := tinkDetAead.EncryptDeterministically(unencryptedDataBytes, additionalDataBytes)
 				if err != nil {
+					resp[rowNum] = fmt.Sprintf("%s", unencryptedData)
 					hclog.L().Error("Failed to encrypt", err)
-					return &logical.Response{
-						Data: resp,
-					}, err
+					continue
 				}
 
 				// set the response as the base64 encrypted data
@@ -750,10 +769,9 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 				// encrypt it
 				cyphertext, err := tinkAead.Encrypt(unencryptedDataBytes, additionalDataBytes)
 				if err != nil {
+					resp[rowNum] = fmt.Sprintf("%s", unencryptedData)
 					hclog.L().Error("Failed to encrypt", err)
-					return &logical.Response{
-						Data: resp,
-					}, err
+					continue
 				}
 
 				// set the response as the base64 encrypted data
@@ -762,14 +780,10 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 		} else {
 			// we didn't find a key - return original data
 			resp[rowNum] = fmt.Sprintf("%s", unencryptedData)
+			continue
 		}
 	}
-
-	encryptSpan.End()
-
-	return &logical.Response{
-		Data: resp,
-	}, nil
+	ch <- resp
 }
 
 func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -922,47 +936,62 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 	}
 	keySpan.End()
 
-	// // retrive the config from  storage
-	// err := b.getAeadConfig(ctx, req)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// resp := make(map[string]interface{})
-
-	// encryptionkey, keyFound := getEncryptionKey(fieldName)
-	// // is the key we have retrived deterministic?
-	// encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
-
-	// var tinkDetAead tink.DeterministicAEAD
-	// var tinkAead tink.AEAD
-
-	// if keyFound && deterministic {
-	// 	// SUPPORT FOR DETERMINISTIC AEAD
-	// 	// we don't need the key handle which is returned first
-	// 	_, tinkDetAead, err = CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
-	// 	if err != nil {
-	// 		hclog.L().Error("Failed to create a key handle", err)
-	// 		return &logical.Response{
-	// 			Data: resp,
-	// 		}, err
-	// 	}
-	// } else if keyFound && !deterministic {
-	// 	// SUPPORT FOR NON DETERMINISTIC AEAD
-	// 	_, tinkAead, err = CreateInsecureHandleAndAead(encryptionKeyStr)
-	// 	if err != nil {
-	// 		hclog.L().Error("Failed to create a key handle", err)
-	// 		return &logical.Response{
-	// 			Data: resp,
-	// 		}, err
-	// 	}
-	// }
-	// // set additionalDataBytes as field name of the right type
-	// additionalDataBytes := getAdditionalData(fieldName, AEAD_CONFIG)
-
 	_, decryptSpan := tr.Start(ctx, "decryptCol-doDecryption"+fieldName)
 
-	// iterate through the key=value supplied (ie field1=sdfvbbvwrbwr field2=advwefvwfvbwrfvb)
-	for rowNumber, encryptedDataBase64 := range data.Raw {
+	maxbatchInt := 1000 //TODO
+	maxbatch, ok := AEAD_CONFIG.Get("MAX_BATCHCOLROWS")
+	if !ok {
+		hclog.L().Error("encryptCol: Could not find a MAX_BATCHCOLROWS in the config")
+	} else {
+		// this is an integer value, masquerading as a string, but of type interface{} - go figure
+		maxbatchStr := maxbatch.(string)
+		maxbatchInt, err = strconv.Atoi(maxbatchStr)
+		if err != nil {
+			hclog.L().Error("encryptCol: Could not convert MAX_BATCHCOLROWS to integer")
+		}
+	}
+	_, makesliceSpan := tr.Start(ctx, fmt.Sprintf("encryptCol-makeslice"))
+	mapSlice := createSliceOfMapsFromMapStrInt(data.Raw, maxbatchInt)
+	makesliceSpan.End()
+
+	// ok so now we have a slice of maps of data
+
+	channelCap := len(mapSlice)
+	channel := make(chan map[string]interface{}, channelCap)
+
+	// call the encrypt or decrypt per broken up map
+	for _, dataMap := range mapSlice {
+		go b.decryptColConcurrent(ctx, dataMap, keyFound, deterministic, tinkDetAead, tinkAead, additionalDataBytes, channel)
+	}
+
+	resultsMap := make(map[string]interface{})
+	_, waitSpan := tr.Start(ctx, fmt.Sprintf("encryptCol-wait"))
+
+	for i := 0; i < channelCap; i++ {
+		res := <-channel
+		for k, v := range res {
+			// this should be a map of 1 row of rownumber index as string and the map of values
+			resultsMap[k] = v
+		}
+	}
+	waitSpan.End()
+
+	decryptSpan.End()
+
+	return &logical.Response{
+		Data: resultsMap,
+	}, nil
+}
+
+func (b *backend) decryptColConcurrent(ctx context.Context, data map[string]interface{}, keyFound bool, deterministic bool, tinkDetAead tink.DeterministicAEAD, tinkAead tink.AEAD, additionalDataBytes []byte, ch chan map[string]interface{}) {
+
+	ctx, span := tr.Start(ctx, "decryptColConcurrent")
+	defer span.End()
+
+	resp := make(map[string]interface{})
+
+	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
+	for rowNum, encryptedDataBase64 := range data {
 		if keyFound {
 			if deterministic {
 
@@ -973,13 +1002,11 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 				// decrypt it
 				plainText, err := tinkDetAead.DecryptDeterministically(encryptedDataBytes, additionalDataBytes)
 				if err != nil {
-					hclog.L().Error("Failed to decrypt", err)
-					return &logical.Response{
-						Data: resp,
-					}, err
+					resp[rowNum] = fmt.Sprintf("%s", encryptedDataBase64)
+					hclog.L().Error("Failed to deencrypt", err)
+					continue
 				}
-
-				resp[rowNumber] = string(plainText)
+				resp[rowNum] = string(plainText)
 			} else {
 				// SUPPORT FOR NON DETERMINISTIC AEAD
 				// set the unencrypted data to be the right type
@@ -989,24 +1016,19 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 				// encrypt it
 				plainText, err := tinkAead.Decrypt(encryptedDataBytes, additionalDataBytes)
 				if err != nil {
-					hclog.L().Error("Failed to decrypt", err)
-					return &logical.Response{
-						Data: resp,
-					}, err
+					resp[rowNum] = fmt.Sprintf("%s", encryptedDataBase64)
+					hclog.L().Error("Failed to deencrypt", err)
+					continue
 				}
-
-				resp[rowNumber] = string(plainText)
+				resp[rowNum] = string(plainText)
 			}
 		} else {
 			// we didn't find a key - return original data
-			hclog.L().Info("did not find a key for field " + fieldName)
-			resp[rowNumber] = fmt.Sprintf("%s", encryptedDataBase64)
+			resp[rowNum] = fmt.Sprintf("%s", encryptedDataBase64)
+			continue
 		}
 	}
-	decryptSpan.End()
-	return &logical.Response{
-		Data: resp,
-	}, nil
+	ch <- resp
 }
 
 func isBulkData(data map[string]interface{}) (bool, error) {
