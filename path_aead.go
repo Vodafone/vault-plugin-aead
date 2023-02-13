@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -15,6 +17,7 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	hclog "github.com/hashicorp/go-hclog"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/google/tink/go/tink"
 	"github.com/google/uuid"
@@ -685,16 +688,19 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 	_, encryptSpan := tr.Start(ctx, "encryptCol-doEncryption"+fieldName)
 
 	maxbatchInt := 1000 //TODO
-	maxbatch, ok := AEAD_CONFIG.Get("MAX_BATCHCOLROWS")
+	_, ok = AEAD_CONFIG.Get("MAX_BATCHCOLROWS")
 	if !ok {
 		hclog.L().Error("encryptCol: Could not find a MAX_BATCHCOLROWS in the config")
+		maxbatchInt = len(data.Raw)
 	} else {
+		fnum := float64(len(data.Raw)) / float64(runtime.NumCPU())
+		maxbatchInt = int(math.Ceil(fnum))
 		// this is an integer value, masquerading as a string, but of type interface{} - go figure
-		maxbatchStr := maxbatch.(string)
-		maxbatchInt, err = strconv.Atoi(maxbatchStr)
-		if err != nil {
-			hclog.L().Error("encryptCol: Could not convert MAX_BATCHCOLROWS to integer")
-		}
+		// maxbatchStr := maxbatch.(string)
+		// maxbatchInt, err = strconv.Atoi(maxbatchStr)
+		// if err != nil {
+		// 	hclog.L().Error("encryptCol: Could not convert MAX_BATCHCOLROWS to integer")
+		// }
 	}
 	_, makesliceSpan := tr.Start(ctx, fmt.Sprintf("encryptCol-makeslice"))
 	mapSlice := createSliceOfMapsFromMapStrInt(data.Raw, maxbatchInt)
@@ -736,6 +742,15 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 func (b *backend) encryptColConcurrent(ctx context.Context, data map[string]interface{}, keyFound bool, deterministic bool, tinkDetAead tink.DeterministicAEAD, tinkAead tink.AEAD, additionalDataBytes []byte, ch chan map[string]interface{}) {
 
 	ctx, span := tr.Start(ctx, "encryptColConcurrent")
+	rt_ngor := strconv.Itoa(runtime.NumGoroutine())
+	rt_ngmp := strconv.Itoa(runtime.GOMAXPROCS(0))
+	rt_ncpu := strconv.Itoa(runtime.NumCPU())
+	lenData := strconv.Itoa(len(data))
+	span.SetAttributes(attribute.Key("NumGoroutine").String(rt_ngor))
+	span.SetAttributes(attribute.Key("GOMAXPROCS").String(rt_ngmp))
+	span.SetAttributes(attribute.Key("NumCPU").String(rt_ncpu))
+	span.SetAttributes(attribute.Key("DataLength").String(lenData))
+
 	defer span.End()
 
 	resp := make(map[string]interface{})
@@ -792,6 +807,13 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 	tr = tp.Tracer("pathAeadDecryptBulkCol-" + hostname)
 
 	ctx, span := tr.Start(ctx, "pathAeadDecryptBulkCol-"+hostname)
+	rt_ngor := strconv.Itoa(runtime.NumGoroutine())
+	rt_ngmp := strconv.Itoa(runtime.GOMAXPROCS(0))
+	rt_ncpu := strconv.Itoa(runtime.NumCPU())
+	span.SetAttributes(attribute.Key("NumGoroutine").String(rt_ngor))
+	span.SetAttributes(attribute.Key("GOMAXPROCS").String(rt_ngmp))
+	span.SetAttributes(attribute.Key("NumCPU").String(rt_ncpu))
+
 	defer func() {
 		span.End()
 		if err := tp.Shutdown(ctx); err != nil {
@@ -939,16 +961,19 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 	_, decryptSpan := tr.Start(ctx, "decryptCol-doDecryption"+fieldName)
 
 	maxbatchInt := 1000 //TODO
-	maxbatch, ok := AEAD_CONFIG.Get("MAX_BATCHCOLROWS")
+	_, ok = AEAD_CONFIG.Get("MAX_BATCHCOLROWS")
 	if !ok {
-		hclog.L().Error("encryptCol: Could not find a MAX_BATCHCOLROWS in the config")
+		hclog.L().Error("decryptCol: Could not find a MAX_BATCHCOLROWS in the config")
+		maxbatchInt = len(data.Raw)
 	} else {
+		fnum := float64(len(data.Raw)) / float64(runtime.NumCPU())
+		maxbatchInt = int(math.Ceil(fnum))
 		// this is an integer value, masquerading as a string, but of type interface{} - go figure
-		maxbatchStr := maxbatch.(string)
-		maxbatchInt, err = strconv.Atoi(maxbatchStr)
-		if err != nil {
-			hclog.L().Error("encryptCol: Could not convert MAX_BATCHCOLROWS to integer")
-		}
+		// maxbatchStr := maxbatch.(string)
+		// maxbatchInt, err = strconv.Atoi(maxbatchStr)
+		// if err != nil {
+		// 	hclog.L().Error("encryptCol: Could not convert MAX_BATCHCOLROWS to integer")
+		// }
 	}
 	_, makesliceSpan := tr.Start(ctx, fmt.Sprintf("encryptCol-makeslice"))
 	mapSlice := createSliceOfMapsFromMapStrInt(data.Raw, maxbatchInt)
@@ -986,6 +1011,15 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 func (b *backend) decryptColConcurrent(ctx context.Context, data map[string]interface{}, keyFound bool, deterministic bool, tinkDetAead tink.DeterministicAEAD, tinkAead tink.AEAD, additionalDataBytes []byte, ch chan map[string]interface{}) {
 
 	ctx, span := tr.Start(ctx, "decryptColConcurrent")
+	rt_ngor := strconv.Itoa(runtime.NumGoroutine())
+	rt_ngmp := strconv.Itoa(runtime.GOMAXPROCS(0))
+	rt_ncpu := strconv.Itoa(runtime.NumCPU())
+	lenData := strconv.Itoa(len(data))
+	span.SetAttributes(attribute.Key("NumGoroutine").String(rt_ngor))
+	span.SetAttributes(attribute.Key("GOMAXPROCS").String(rt_ngmp))
+	span.SetAttributes(attribute.Key("NumCPU").String(rt_ncpu))
+	span.SetAttributes(attribute.Key("DataLength").String(lenData))
+
 	defer span.End()
 
 	resp := make(map[string]interface{})
@@ -1155,6 +1189,13 @@ func (b *backend) pathAeadEncryptBulkColFarm(ctx context.Context, req *logical.R
 	tr = tp.Tracer("pathAeadEncryptBulkColFarm-" + hostname)
 
 	ctx, span := tr.Start(ctx, "pathAeadEncryptBulkColFarm-"+hostname)
+	rt_ngor := strconv.Itoa(runtime.NumGoroutine())
+	rt_ngmp := strconv.Itoa(runtime.GOMAXPROCS(0))
+	rt_ncpu := strconv.Itoa(runtime.NumCPU())
+	span.SetAttributes(attribute.Key("NumGoroutine").String(rt_ngor))
+	span.SetAttributes(attribute.Key("GOMAXPROCS").String(rt_ngmp))
+	span.SetAttributes(attribute.Key("NumCPU").String(rt_ncpu))
+
 	defer func() {
 		span.End()
 		if err := tp.Shutdown(ctx); err != nil {
