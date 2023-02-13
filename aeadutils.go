@@ -625,13 +625,21 @@ func createSliceOfMapsFromMapStrInt(inputMap map[string]interface{}, maxSize int
 	// make the fist element of the slice and empty (but not nil) map
 	batchMaps = append(batchMaps, make(map[string]interface{}))
 
+	// if the map is les than or equal to the maxSize, then the map is the first and opnly element
+	if len(inputMap) <= maxSize {
+		batchMaps[0] = inputMap
+		return batchMaps
+	}
+
 	i, n := 0, 0
+	l := len(inputMap)
+
 	for k, v := range inputMap {
 		n++
 
 		batchMaps[i][k] = v
 
-		if n%maxSize == 0 && n != len(inputMap) {
+		if n%maxSize == 0 && n != l {
 			// create a new element of the slice if we are at max size but not at the last element
 			i++
 			batchMaps = append(batchMaps, make(map[string]interface{}))
