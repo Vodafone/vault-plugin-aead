@@ -61,6 +61,7 @@ type Options struct {
 	columnBased       bool
 	kubeStats         bool
 	farmBased         bool
+	fixData           string
 }
 
 type Results struct {
@@ -142,6 +143,7 @@ func main() {
 	columnBased := flag.Bool("col", false, "column based ops (only if batchMode = true)")
 	kubeStats := flag.Bool("k", false, "collect kube stat averages")
 	farmBased := flag.Bool("farm", false, "farm based column ops (only if batchMode = true)")
+	fixData := flag.String("fix", "", "fix the dta - no randomisation")
 
 	flag.Parse()
 
@@ -161,6 +163,7 @@ func main() {
 	options.columnBased = *columnBased
 	options.kubeStats = *kubeStats
 	options.farmBased = *farmBased
+	options.fixData = *fixData
 
 	doWaitIfRequired(options)
 
@@ -469,31 +472,43 @@ func makeRandomData(inputMap map[int]map[string]interface{}, options *Options) {
 
 	// fmt.Println("Options:", options)
 
-	for i := 0; i < options.rowNumber; i++ {
-		inputMap[i] = map[string]interface{}{}
+	if options.fixData == "" {
+		for i := 0; i < options.rowNumber; i++ {
+			inputMap[i] = map[string]interface{}{}
 
-		for j := 0; j < options.fieldNumber; j++ {
-			randomStr := ""
-			randomInt := rand.Intn(6)
-			switch randomInt {
-			case 0:
-				randomStr = lorem.New().Email()
-			case 1:
-				randomStr = lorem.New().FirstName(lorem.Female)
-			case 2:
-				randomStr = lorem.New().FullName(lorem.Male)
-			case 3:
-				randomStr = lorem.New().Host()
-			case 4:
-				randomStr = lorem.New().Url()
-			case 5:
-				randomStr = lorem.New().Word(0, 10)
-			default:
-				randomStr = lorem.New().Word(0, 10)
+			for j := 0; j < options.fieldNumber; j++ {
+				randomStr := ""
+				randomInt := rand.Intn(6)
+				switch randomInt {
+				case 0:
+					randomStr = lorem.New().Email()
+				case 1:
+					randomStr = lorem.New().FirstName(lorem.Female)
+				case 2:
+					randomStr = lorem.New().FullName(lorem.Male)
+				case 3:
+					randomStr = lorem.New().Host()
+				case 4:
+					randomStr = lorem.New().Url()
+				case 5:
+					randomStr = lorem.New().Word(0, 10)
+				default:
+					randomStr = lorem.New().Word(0, 10)
+				}
+
+				inputMap[i][options.baseFieldName+fmt.Sprint(j)] = randomStr
+
 			}
+		}
+	} else {
+		for i := 0; i < options.rowNumber; i++ {
+			inputMap[i] = map[string]interface{}{}
 
-			inputMap[i][options.baseFieldName+fmt.Sprint(j)] = randomStr
+			for j := 0; j < options.fieldNumber; j++ {
 
+				inputMap[i][options.baseFieldName+fmt.Sprint(j)] = options.fixData
+
+			}
 		}
 	}
 }
