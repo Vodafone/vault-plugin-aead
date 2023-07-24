@@ -26,7 +26,7 @@ func (b *backend) pathConfigOverwrite(ctx context.Context, req *logical.Request,
 func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwriteConfig bool, overwriteKV bool) (*logical.Response, error) {
 
 	// hclog.L().Info("mountpoint - " + req.MountPoint)
-	fmt.Printf("\nmountpoint - %s", req.MountPoint)
+	// fmt.Printf("\nmountpoint - %s", req.MountPoint)
 
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)

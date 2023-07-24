@@ -13,33 +13,38 @@ import (
 
 func (b *backend) pathSyncKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	m, _ := b.readKV(ctx, req.Storage, false)
-
-	gcmcount := 0
-	sivcount := 0
-	aadcount := 0
-	for k, _ := range m {
-		if strings.HasPrefix(k, "ADDITIONAL") {
-			aadcount++
-		} else if strings.HasPrefix(k, "gcm/") {
-			gcmcount++
-		} else if strings.HasPrefix(k, "siv/") {
-			sivcount++
-		}
-	}
-
+	m, err := b.readKV(ctx, req.Storage, false)
 	rtnMap := make(map[string]interface{})
-	rtnMap["ADDITIONAL DATA SYNCED"] = aadcount
-	rtnMap["GCM KEYS SYNCED"] = gcmcount
-	rtnMap["SIV KEYS SYNCED"] = sivcount
 
-	data.Raw = m
-	if _, err := b.configWriteOverwriteCheck(ctx, req, data, true, false); err != nil {
-		return &logical.Response{
-			Data: rtnMap,
-		}, err
+	if err != nil {
+		rtnMap["error"] = err.Error()
+	} else {
+
+		gcmcount := 0
+		sivcount := 0
+		aadcount := 0
+		for k, _ := range m {
+			if strings.HasPrefix(k, "ADDITIONAL") {
+				aadcount++
+			} else if strings.HasPrefix(k, "gcm/") {
+				gcmcount++
+			} else if strings.HasPrefix(k, "siv/") {
+				sivcount++
+			}
+		}
+
+		rtnMap["ADDITIONAL DATA SYNCED"] = aadcount
+		rtnMap["GCM KEYS SYNCED"] = gcmcount
+		rtnMap["SIV KEYS SYNCED"] = sivcount
+
+		data.Raw = m
+		if _, err := b.configWriteOverwriteCheck(ctx, req, data, true, false); err != nil {
+			return &logical.Response{
+				Data: rtnMap,
+			}, err
+		}
+
 	}
-
 	return &logical.Response{
 		Data: rtnMap,
 	}, nil
@@ -47,7 +52,14 @@ func (b *backend) pathSyncKV(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) pathReadKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	m, _ := b.readKV(ctx, req.Storage)
+	// m := map[string]interface{}{}
+	// var err error
+	m, err := b.readKV(ctx, req.Storage)
+
+	if err != nil {
+		m = map[string]interface{}{}
+		m["error"] = err.Error()
+	}
 
 	return &logical.Response{
 		Data: m,
