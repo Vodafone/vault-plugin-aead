@@ -434,6 +434,19 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
+
+			// aead/synckv
+			&framework.Path{
+				Pattern:         "synckv",
+				HelpSynopsis:    "Sync kv",
+				HelpDescription: "Sync kv",
+				Fields:          map[string]*framework.FieldSchema{},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathSyncKV,
+					},
+				},
+			},
 		},
 	}
 	return &b

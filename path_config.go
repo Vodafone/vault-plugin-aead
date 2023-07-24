@@ -17,13 +17,16 @@ import (
 var AEAD_CONFIG = cmap.New()
 
 func (b *backend) pathConfigWrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.configWriteOverwriteCheck(ctx, req, data, false)
+	return b.configWriteOverwriteCheck(ctx, req, data, false, true)
 }
 func (b *backend) pathConfigOverwrite(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	return b.configWriteOverwriteCheck(ctx, req, data, true)
+	return b.configWriteOverwriteCheck(ctx, req, data, true, true)
 
 }
-func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
+func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwriteConfig bool, overwriteKV bool) (*logical.Response, error) {
+
+	// hclog.L().Info("mountpoint - " + req.MountPoint)
+	fmt.Printf("\nmountpoint - %s", req.MountPoint)
 
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)
@@ -33,7 +36,11 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 
 	// iterate through the supplied map, adding it to the config map
 	for k, v := range data.Raw {
-		if !overwrite {
+
+		prefix := GetKeyPrefix(k, fmt.Sprintf("%v", v), nil)
+		k = prefix + k
+
+		if !overwriteConfig {
 			// don't do this if we already have a key in the config - prevents overwrite
 			_, ok := AEAD_CONFIG.Get(k)
 			if ok {
@@ -42,6 +49,16 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 			}
 		}
 		AEAD_CONFIG.Set(k, v)
+		if overwriteKV {
+			ok, err := saveToKV(k, v)
+			if !ok || err != nil {
+				hclog.L().Error("failed to save to KV:" + k + " Error:" + err.Error())
+			} else {
+				hclog.L().Info("pathConfigWrite - SYNC TO KV " + k)
+			}
+		} else {
+			hclog.L().Info("pathConfigWrite - DO NOT RE_SYNC BACK TO KV " + k)
+		}
 	}
 
 	entry, err := logical.StorageEntryJSON("config", AEAD_CONFIG)
@@ -68,11 +85,10 @@ func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, da
 	// iterate through the supplied map, deleting from the store
 	for k, _ := range data.Raw {
 		AEAD_CONFIG.Remove(k)
-		// err := req.Storage.Delete(ctx, k)
-		// if err != nil {
-		// 	hclog.L().Error("failed to delete config")
-		// 	return nil, fmt.Errorf("failed to delete config: %w", err)
-		// }
+		ok, err := deleteFromKV(k)
+		if !ok || err != nil {
+			hclog.L().Error("failed to delete from KV " + k)
+		}
 	}
 
 	entry, err := logical.StorageEntryJSON("config", AEAD_CONFIG)
@@ -102,6 +118,7 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 		}
 		result[k] = v
 	}
+	result["MountPoint"] = req.MountPoint
 	return &logical.Response{
 		Data: result,
 	}, nil
@@ -213,14 +230,15 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 		}
 	}
 
-	entry, err := logical.StorageEntryJSON("config", AEAD_CONFIG)
-	if err != nil {
-		return nil, err
-	}
+	// TODO poss not needed
+	// entry, err := logical.StorageEntryJSON("config", AEAD_CONFIG)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	if err := req.Storage.Put(ctx, entry); err != nil {
-		return nil, err
-	}
+	// if err := req.Storage.Put(ctx, entry); err != nil {
+	// 	return nil, err
+	// }
 
 	return nil, nil
 }
@@ -239,7 +257,7 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := AEAD_CONFIG.Get(fieldName)
+		encryptionkey, ok := getEncryptionKey(fieldName)
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
 		}
@@ -301,7 +319,8 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := AEAD_CONFIG.Get(fieldName)
+		encryptionkey, ok := getEncryptionKey(fieldName)
+
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
 		}
@@ -363,7 +382,8 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := AEAD_CONFIG.Get(fieldName)
+		encryptionkey, ok := getEncryptionKey(fieldName)
+
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
 		}
@@ -423,7 +443,8 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := AEAD_CONFIG.Get(fieldName)
+		encryptionkey, ok := getEncryptionKey(fieldName)
+
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
 		}
@@ -481,7 +502,7 @@ func (b *backend) pathImportKey(ctx context.Context, req *logical.Request, data 
 		jSonKeyset := fmt.Sprintf("%s", v)
 
 		// is the json a valid key
-		err := ValidateKeySetJson(jSonKeyset)
+		_, err := ValidateKeySetJson(jSonKeyset)
 		if err != nil {
 			hclog.L().Error("pathImportKey Invaid Json as key", err.Error())
 			return &logical.Response{
@@ -490,7 +511,7 @@ func (b *backend) pathImportKey(ctx context.Context, req *logical.Request, data 
 		}
 	}
 	// ok, its ALL valid, save it
-	_, err := b.configWriteOverwriteCheck(ctx, req, data, true)
+	_, err := b.configWriteOverwriteCheck(ctx, req, data, true, true)
 	if err != nil {
 		hclog.L().Error("save key failed", err.Error())
 		return &logical.Response{
@@ -632,6 +653,9 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 }
 
 func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string, ctx context.Context, req *logical.Request, overwrite bool) {
+
+	prefix := GetKeyPrefix(fieldName, "", keysetHandle)
+	fieldName = prefix + fieldName
 
 	// retrive the config from  storage
 	err := b.getAeadConfig(ctx, req)

@@ -628,44 +628,126 @@ func TestAeadUtils(t *testing.T) {
 		if ok {
 			t.Errorf("shouldn't find the key as it was not set: %s", key.(string))
 		}
-		AEAD_CONFIG.Set("test", "foo")
-		key, ok = getEncryptionKey("test")
+		AEAD_CONFIG.Set("test1", "foo")
+		key, ok = getEncryptionKey("test1")
 		if ok {
 			t.Errorf("shouldn't find the value \"foo\", as there is no key set. got: %s", key.(string))
 		}
 
-		AEAD_CONFIG.Set("test", rawKeyset)
-		key, ok = getEncryptionKey("test")
+		AEAD_CONFIG.Set("test2", rawKeyset)
+		key, ok = getEncryptionKey("test2")
 		if !ok {
 			t.Errorf("should find the keyset. got: %s", key.(string))
 		}
 
-		AEAD_CONFIG.Set("test", "cat1")
-		AEAD_CONFIG.Set("cat1", rawKeyset)
+		AEAD_CONFIG.Set("test3", "cat3")
+		AEAD_CONFIG.Set("cat3", rawKeyset)
 
-		key, ok = getEncryptionKey("test")
+		key, ok = getEncryptionKey("test3")
 		if !ok {
 			t.Errorf("should find the keyset. got: %s", key.(string))
 		}
 
-		AEAD_CONFIG.Set("test", "cat1")
-		AEAD_CONFIG.Set("cat1", "cat2")
-		AEAD_CONFIG.Set("cat2", "cat3")
-		AEAD_CONFIG.Set("cat3", "cat4")
-		AEAD_CONFIG.Set("cat4", "cat5")
-		AEAD_CONFIG.Set("cat5", "cat6")
-		AEAD_CONFIG.Set("cat6", "cat7")
-		AEAD_CONFIG.Set("cat7", rawKeyset)
+		AEAD_CONFIG.Set("test4", "cat4-1")
+		AEAD_CONFIG.Set("cat4-1", "cat4-2")
+		AEAD_CONFIG.Set("cat4-2", "cat4-3")
+		AEAD_CONFIG.Set("cat4-3", "cat4-4")
+		AEAD_CONFIG.Set("cat4-4", "cat4-5")
+		AEAD_CONFIG.Set("cat4-5", "cat4-6")
+		AEAD_CONFIG.Set("cat4-6", "cat4-7")
+		AEAD_CONFIG.Set("cat4-7", rawKeyset)
 
-		key, ok = getEncryptionKey("test")
+		key, ok = getEncryptionKey("test4")
 		if ok {
 			t.Errorf("shouldn't find the keyset. got: %s", key.(string))
 		}
 
-		key, ok = getEncryptionKey("test", 10)
+		key, ok = getEncryptionKey("test4", 10)
 		if !ok {
 			t.Errorf("should find the keyset. got: %s", key.(string))
 		}
 
+		AEAD_CONFIG.Set("test5", "cat5-1")
+		AEAD_CONFIG.Set("cat5-1", "cat5-2")
+		AEAD_CONFIG.Set("cat5-2", "cat5-3")
+		AEAD_CONFIG.Set("cat5-3", "cat5-4")
+		AEAD_CONFIG.Set("cat5-4", "cat5-5")
+		AEAD_CONFIG.Set("cat5-5", rawKeyset)
+
+		key, ok = getEncryptionKey("test5")
+		if ok {
+			t.Errorf("shouldn't find the keyset. got: %s", key.(string))
+		}
+
+		AEAD_CONFIG.Set("test6", "cat6-1")
+		AEAD_CONFIG.Set("cat6-1", "cat6-2")
+		AEAD_CONFIG.Set("cat6-2", "cat6-3")
+		AEAD_CONFIG.Set("cat6-3", "cat6-4")
+		AEAD_CONFIG.Set("cat6-4", rawKeyset)
+
+		key, ok = getEncryptionKey("test6")
+		if !ok {
+			t.Errorf("should find the keyset. got: %s", key.(string))
+		}
+	})
+
+	t.Run("test getEncryptionKey with prefix", func(t *testing.T) {
+		rawGcmKeyset := `{"primaryKeyId":3987026049,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiB5m/rHV+xmMiRngaWWi6zel8IjlOPCdEpGnEsb8RfrMQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1456486908,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCRExtHflcWVUbmk0mwB5TzqSGc3GVMu6Hk+HbL4oH61A==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3987026049,"outputPrefixType":"TINK"}]}`
+		rawSivKeyset := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
+
+		/*
+		   search	key	value
+		   test1	gcm/test1	AEAD
+		   test2	siv/test2	AEAD
+		   test3	test3	AEAD
+		   	gcm/test3	AEAD
+		   	siv/test3	AEAD
+		   test4	test4	cat4-1
+		   	cat4-1	cat4-2
+		   	gcm/cat4-2	AEAD
+		*/
+
+		// search for test99, should not find a key
+		key, ok := getEncryptionKey("test99")
+		if ok {
+			t.Errorf("shouldn't find the keyset. got: %s", key.(string))
+		}
+
+		// search for test100, should find a key
+		AEAD_CONFIG.Set("test100", rawGcmKeyset)
+		key, ok = getEncryptionKey("test100")
+		if !ok {
+			t.Errorf("should find the keyset. got: %s", key.(string))
+		}
+		// search for test101, should find 2 keys, but return the GCM one
+		AEAD_CONFIG.Set("test101", "siv/test101") // this shouldn't be possible any more, but if it is, we need to deal with it
+		AEAD_CONFIG.Set("gcm/test101", rawGcmKeyset)
+		AEAD_CONFIG.Set("siv/test101", rawSivKeyset)
+		key, ok = getEncryptionKey("test101")
+		if !ok {
+			t.Errorf("should find the keyset")
+		}
+		//search for gcm/test101, should find 1 key
+		key, ok = getEncryptionKey("gcm/test101")
+		if !ok {
+			t.Errorf("should find the keyset. got: %s", key.(string))
+		}
+		// search for test103, should find 3 keys
+		AEAD_CONFIG.Set("test103", "gcm/test103") // this shouldn't be possible any more, but if it is, we need to deal with it
+		AEAD_CONFIG.Set("gcm/test103", rawGcmKeyset)
+		AEAD_CONFIG.Set("siv/test103", rawSivKeyset)
+		key, ok = getEncryptionKey("test103")
+		if !ok {
+			t.Errorf("should find the keyset. got: %s", key.(string))
+		}
+		// seasrch for test104, should find 3 keys
+		AEAD_CONFIG.Set("test104", "cat104-1")
+		AEAD_CONFIG.Set("cat104-1", "gcm/cat104-2")
+		AEAD_CONFIG.Set("gcm/cat104-2", rawGcmKeyset)
+		AEAD_CONFIG.Set("siv/cat104-2", rawSivKeyset)
+		key, ok = getEncryptionKey("test104")
+		if !ok {
+			t.Errorf("should find the keyset. got: %s", key.(string))
+		}
 	})
 }

@@ -18,6 +18,22 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 )
 
+const vault_kv_url = ""
+const vault_kv_active = "false"
+const vault_kv_approle_id = ""
+const vault_kv_secret_id = ""
+const vault_kv_engine = ""
+const vault_kv_version = ""
+const vault_transit_active = "false"
+const vault_transit_url = ""
+const vault_transit_approle_id = ""
+const vault_transit_secret_id = ""
+const vault_transit_kv_engine = ""
+const vault_transit_kv_version = ""
+const vault_transit_namespace = ""
+const vault_transit_engine = ""
+const vault_transit_tokenname = ""
+
 func testBackend(tb testing.TB) (*backend, logical.Storage) {
 	tb.Helper()
 
@@ -28,6 +44,7 @@ func testBackend(tb testing.TB) (*backend, logical.Storage) {
 	if err != nil {
 		tb.Fatal("20", err)
 	}
+
 	return b.(*backend), config.StorageView
 }
 
@@ -76,11 +93,18 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		encryptionJsonKey := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
 		// set up some encryption keys to be used
 		encryptionMap := map[string]interface{}{
-			"test4-address": encryptionJsonKey,
-			"test4-phone":   encryptionJsonKey,
+			"test4-address":     "siv/test4-address",
+			"siv/test4-address": encryptionJsonKey,
+			"test4-phone":       "siv/test4-phone",
+			"siv/test4-phone":   encryptionJsonKey,
 		}
 
 		// store the config
@@ -96,9 +120,14 @@ func TestBackend(t *testing.T) {
 
 		// now we need to use the same key to encrypt the same data to get the expected value
 		// create key from string
-		_, d, err := CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
+		h, d, err := CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
 		if err != nil {
 			log.Fatal(err)
+		}
+
+		ki := h.KeysetInfo().KeyInfo
+		for k, v := range ki {
+			fmt.Printf("k=%v; v=%vXX", k, v.GetTypeUrl())
 		}
 
 		// encrypt it
@@ -123,11 +152,17 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		// Since we now mask material from the response, we will use existing key to make sure string is encrypted correctly
 		encryptionJsonKey := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
 		// set up some encryption keys to be used
 		encryptionMap := map[string]interface{}{
-			"test5-address2": encryptionJsonKey,
+			"test5-address2":     "siv/test5-address2",
+			"siv/test5-address2": encryptionJsonKey,
 		}
 		// store the config
 		saveConfig(b, storage, encryptionMap, false, t)
@@ -153,7 +188,7 @@ func TestBackend(t *testing.T) {
 		configResp := readConfig(b, storage, t)
 
 		// get the actual Json key used from teh config for address
-		actualJSonKey := configResp.Data["test5-address2"].(string)
+		actualJSonKey := configResp.Data["siv/test5-address2"].(string)
 		type jsonKey struct {
 			Key []struct {
 				KeyData struct {
@@ -197,6 +232,11 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		// create a dynamic AEAD key for a field
 		// set some data to be encrypted using the keys
 		data := map[string]interface{}{
@@ -204,6 +244,12 @@ func TestBackend(t *testing.T) {
 		}
 
 		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
+
+		keyMap := map[string]interface{}{
+			"test6-address3": "gcm/test6-address3",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		// encrypt the data
 		resp := encryptData(b, storage, data, t)
@@ -219,7 +265,7 @@ func TestBackend(t *testing.T) {
 		configResp := readConfig(b, storage, t)
 
 		// get the actual Json key used from teh config for address
-		actualJSonKey := configResp.Data["test6-address3"].(string)
+		actualJSonKey := configResp.Data["gcm/test6-address3"].(string)
 
 		if !strings.Contains(actualJSonKey, "AesGcmKey") {
 			t.Error("key is not a AesGcmKey")
@@ -230,6 +276,11 @@ func TestBackend(t *testing.T) {
 	t.Run("test7 non-deterministic encryption with supplied AEAD key", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		rawKeyset := `{"primaryKeyId":1416257722,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBa0wZ4ACjtW137qTVSY2ofQBCffdzkzhNkktlMtDFazA==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1416257722,"outputPrefixType":"TINK"}]}`
 		// jsonKeyset := `{
@@ -254,6 +305,12 @@ func TestBackend(t *testing.T) {
 
 		saveConfig(b, storage, configData, false, t)
 
+		keyMap := map[string]interface{}{
+			"test7-address4": "gcm/test7-address4",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
+
 		data := map[string]interface{}{
 			"test7-address4": "my address",
 		}
@@ -267,7 +324,7 @@ func TestBackend(t *testing.T) {
 		// create an aead keyhandle from the provided json as string
 		_, a, err := CreateInsecureHandleAndAead(rawKeyset)
 		if err != nil {
-			log.Fatal(err)
+			t.Errorf("Failed to create aead from %s", rawKeyset)
 		}
 
 		// set up some data
@@ -278,7 +335,7 @@ func TestBackend(t *testing.T) {
 		// decrypt the encrypted data
 		pt, err := a.Decrypt(ct, aad)
 		if err != nil {
-			log.Fatal(err)
+			t.Errorf("Failed to decrypt %s", encryptedData)
 		}
 
 		// does the decrypted data match the original data
@@ -290,6 +347,11 @@ func TestBackend(t *testing.T) {
 	t.Run("test8 encrypt and decrypt deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		// create a dynamic AEAD key for a field
 		// set some data to be encrypted using the keys
@@ -319,6 +381,11 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		// create a dynamic AEAD key for a field
 		// set some data to be encrypted using the keys
 
@@ -346,6 +413,11 @@ func TestBackend(t *testing.T) {
 	t.Run("test10 encrypt and decrypt non-deterministic AND deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		// create a dynamic AEAD key for a field
 		// set some data to be encrypted using the keys
@@ -397,6 +469,11 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		rawKeyset := `{"primaryKeyId":1416257722,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBa0wZ4ACjtW137qTVSY2ofQBCffdzkzhNkktlMtDFazA==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1416257722,"outputPrefixType":"TINK"}]}`
 		primaryKey := "1416257722"
 		fieldName := "aeadkeyset1"
@@ -408,6 +485,12 @@ func TestBackend(t *testing.T) {
 	t.Run("test12 rotate the DetAEAD keys within a keyset", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		rawKeyset := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
 		primaryKey := "42267057"
 		fieldName := "daeadkeyset1"
@@ -424,6 +507,12 @@ func TestBackend(t *testing.T) {
 	t.Run("test14 check keyType non deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		fieldName := "test14-nondetfield1"
 		fieldValue := "nondetvalue1"
 
@@ -437,13 +526,19 @@ func TestBackend(t *testing.T) {
 
 		resp := readKeyTypes(b, storage, t)
 
-		compareStrings(resp, fieldName, "NON DETERMINISTIC", t)
+		compareStrings(resp, "gcm/"+fieldName, "NON DETERMINISTIC", t)
 
 	})
 
 	t.Run("test15 check keyType deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		fieldName := "test15-detfield1"
 		fieldValue := "detvalue1"
 
@@ -456,13 +551,18 @@ func TestBackend(t *testing.T) {
 
 		resp := readKeyTypes(b, storage, t)
 
-		compareStrings(resp, fieldName, "DETERMINISTIC", t)
+		compareStrings(resp, "siv/"+fieldName, "DETERMINISTIC", t)
 
 	})
 
 	t.Run("test16 bulk data ", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		// curl -sk --header "X-Vault-Token: "${VAULT_PLUGIN_TOKEN} --request POST ${VAULT_PLUGIN_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d '{"0":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"},"1":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"},"2":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"}}'
 
@@ -531,6 +631,11 @@ func TestBackend(t *testing.T) {
 	t.Run("test17 bulk data columns", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		// curl -sk --header "X-Vault-Token: "${VAULT_PLUGIN_TOKEN} --request POST ${VAULT_PLUGIN_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d '{"0":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"},"1":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"},"2":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"}}'
 
@@ -673,6 +778,11 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		aeadRequest := make(map[string]interface{})
 
 		// set up some config
@@ -687,6 +797,12 @@ func TestBackend(t *testing.T) {
 		if err != nil {
 			t.Fatal("create AEAD key", err)
 		}
+
+		keyMap := map[string]interface{}{
+			"test19-aead": "gcm/test19-aead",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		daeadRequest := make(map[string]interface{})
 
@@ -704,6 +820,7 @@ func TestBackend(t *testing.T) {
 		}
 
 		configRequest := map[string]interface{}{
+			"test19-daead":  "siv/test19-daead",
 			"test19-config": "someconfig",
 		}
 
@@ -715,11 +832,11 @@ func TestBackend(t *testing.T) {
 			t.Fatal("read back storage", err)
 		}
 
-		baselineAeadValue, ok := resp.Data["test19-aead"]
+		baselineAeadValue, ok := resp.Data["gcm/test19-aead"]
 		if !ok {
 			t.Fatal("read back baselineAeadValue", err)
 		}
-		baselineDaeadValue, ok := resp.Data["test19-daead"]
+		baselineDaeadValue, ok := resp.Data["siv/test19-daead"]
 		if !ok {
 			t.Fatal("read back baselineDaeadValue", err)
 		}
@@ -743,11 +860,11 @@ func TestBackend(t *testing.T) {
 			t.Fatal("read back storage", err)
 		}
 
-		newAeadValue, ok := resp.Data["test19-aead"]
+		newAeadValue, ok := resp.Data["gcm/test19-aead"]
 		if !ok {
 			t.Fatal("read back baselineAeadValue", err)
 		}
-		newDaeadValue, ok := resp.Data["test19-daead"]
+		newDaeadValue, ok := resp.Data["siv/test19-daead"]
 		if !ok {
 			t.Fatal("read back baselineDaeadValue", err)
 		}
@@ -776,11 +893,11 @@ func TestBackend(t *testing.T) {
 			t.Fatal("read back storage", err)
 		}
 
-		newAeadValue, ok = resp.Data["test19-aead"]
+		newAeadValue, ok = resp.Data["gcm/test19-aead"]
 		if !ok {
 			t.Fatal("read back baselineAeadValue", err)
 		}
-		newDaeadValue, ok = resp.Data["test19-daead"]
+		newDaeadValue, ok = resp.Data["siv/test19-daead"]
 		if !ok {
 			t.Fatal("read back baselineDaeadValue", err)
 		}
@@ -955,6 +1072,11 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		keyData := make(map[string]interface{})
 		keyData["test21-key"] = DeterministicSingleKey
 
@@ -973,6 +1095,12 @@ func TestBackend(t *testing.T) {
 			t.Fatal("importKey - no data returned")
 
 		}
+
+		keyMap := map[string]interface{}{
+			"test21-key": "siv/test21-key",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		updData := make(map[string]interface{})
 		upDataInner := make(map[string]interface{})
@@ -1006,6 +1134,12 @@ func TestBackend(t *testing.T) {
 	t.Run("test22 pathUpdateKeyMaterial non-deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		keyData := make(map[string]interface{})
 		keyData["test22-key"] = DeterministicKeyset
 
@@ -1025,6 +1159,12 @@ func TestBackend(t *testing.T) {
 			t.Fatal("importKey - no data returned")
 
 		}
+
+		keyMap := map[string]interface{}{
+			"test22-key": "siv/test22-key",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		// encrypt data with deterministic key
 		data := map[string]interface{}{
@@ -1059,6 +1199,10 @@ func TestBackend(t *testing.T) {
 				t.Fatal("updateKeyMaterial - no data returned")
 			}
 			str = fmt.Sprintf("%s", resp.Data["test22-key"])
+			if str == "failed to update the material" {
+				t.Errorf("updateKeyMaterial returned: %s", str)
+				t.FailNow()
+			}
 			reconstructedKey = strings.Replace(str, "***", keyMaterialUpdate, -1)
 
 		}
@@ -1109,6 +1253,12 @@ func TestBackend(t *testing.T) {
 	t.Run("test23 pathUpdateKeyID non-deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		keyData := make(map[string]interface{})
 		keyData["test23-key"] = NonDeterministicKeyset
 
@@ -1127,6 +1277,12 @@ func TestBackend(t *testing.T) {
 			t.Fatal("importKey - no data returned")
 
 		}
+
+		keyMap := map[string]interface{}{
+			"test23-key": "gcm/test23-key",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		updData := make(map[string]interface{})
 		upDataInner := make(map[string]interface{})
@@ -1161,6 +1317,12 @@ func TestBackend(t *testing.T) {
 	t.Run("test24 pathUpdatePrimaryKeyID deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		keyData := make(map[string]interface{})
 		keyData["test24-key"] = DeterministicKeyset
 
@@ -1178,7 +1340,11 @@ func TestBackend(t *testing.T) {
 		if len(keyResp.Data) == 0 {
 			t.Fatal("importKey - no data returned")
 		}
-
+		keyMap := map[string]interface{}{
+			"test24-key": "siv/test24-key",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 		updData := make(map[string]interface{})
 		updData["test24-key"] = "2568362933"
 
@@ -1206,6 +1372,12 @@ func TestBackend(t *testing.T) {
 
 	t.Run("test25 pathImportKey", func(t *testing.T) {
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		keyData := make(map[string]interface{})
 		keyData["test25-key"] = DeterministicKeyset
 
@@ -1229,6 +1401,11 @@ func TestBackend(t *testing.T) {
 	t.Run("test26 set AD", func(t *testing.T) {
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		// create a key
 		keyData := make(map[string]interface{})
 		keyData["test26-key"] = DeterministicKeyset
@@ -1247,6 +1424,12 @@ func TestBackend(t *testing.T) {
 		if len(keyResp.Data) == 0 {
 			t.Fatal("importKey - no data returned")
 		}
+
+		keyMap := map[string]interface{}{
+			"test26-key": "siv/test26-key",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		// encrypt something, save the encrypted value
 		dataForEncryption := map[string]interface{}{
@@ -1277,6 +1460,11 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		_, err := b.HandleRequest(context.Background(), &logical.Request{
 			Storage:   storage,
 			Operation: logical.UpdateOperation,
@@ -1300,6 +1488,13 @@ func TestBackend(t *testing.T) {
 		if err != nil {
 			t.Fatal("saveConfig", err)
 		}
+
+		keyMap := map[string]interface{}{
+			"ADDRESS_FAMILY": "siv/ADDRESS_FAMILY",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
+
 		// storeKeyValue("test27-address2", "ADDRESS_FAMILY", t)
 		// storeKeyValue("test27-phone2", "ADDRESS_FAMILY", t)
 		// saveConfig(b, storage, , false, t)
@@ -1340,6 +1535,30 @@ func TestBackend(t *testing.T) {
 
 		}
 
+	})
+
+	t.Run("test28 ckv read", func(t *testing.T) {
+		// t.Parallel()
+		b, storage := testBackend(t)
+
+		resp := readKV(b, storage, t)
+
+		for k, v := range resp.Data {
+			fmt.Printf("\nresp-k=%v resp-v=%v", k, v)
+
+		}
+	})
+
+	t.Run("test29 kv sync", func(t *testing.T) {
+		// t.Parallel()
+		b, storage := testBackend(t)
+
+		resp := syncKV(b, storage, t)
+
+		for k, v := range resp.Data {
+			fmt.Printf("\nresp-k=%v resp-v=%v", k, v)
+
+		}
 	})
 }
 
@@ -1496,6 +1715,30 @@ func readConfig(b *backend, storage logical.Storage, t *testing.T) *logical.Resp
 	return resp
 }
 
+func readKV(b *backend, storage logical.Storage, t *testing.T) *logical.Response {
+	resp, err := b.HandleRequest(context.Background(), &logical.Request{
+		Storage:   storage,
+		Operation: logical.ReadOperation,
+		Path:      "readkv",
+	})
+	if err != nil {
+		t.Fatal("readkv", err)
+	}
+	return resp
+}
+
+func syncKV(b *backend, storage logical.Storage, t *testing.T) *logical.Response {
+	resp, err := b.HandleRequest(context.Background(), &logical.Request{
+		Storage:   storage,
+		Operation: logical.ReadOperation,
+		Path:      "synckv",
+	})
+	if err != nil {
+		t.Fatal("synckv", err)
+	}
+	return resp
+}
+
 func readKeyTypes(b *backend, storage logical.Storage, t *testing.T) *logical.Response {
 	resp, err := b.HandleRequest(context.Background(), &logical.Request{
 		Storage:   storage,
@@ -1568,4 +1811,28 @@ func rotateConfigKeys(b *backend, storage logical.Storage, data map[string]inter
 	if err != nil {
 		t.Fatal("rotateConfigKeys", err)
 	}
+}
+
+func createVaultConfig() map[string]interface{} {
+	configMap := map[string]interface{}{
+		"VAULT_KV_ACTIVE": vault_kv_active,
+		"VAULT_KV_URL":    vault_kv_url,
+		// "VAULT_KV_PWD":             vault_test_pwd,
+		"VAULT_KV_ENGINE":      vault_kv_engine,
+		"VAULT_KV_VERSION":     vault_kv_version,
+		"VAULT_KV_APPROLE_ID":  vault_kv_approle_id,
+		"VAULT_KV_SECRET_ID":   vault_kv_secret_id,
+		"VAULT_TRANSIT_ACTIVE": vault_transit_active,
+		"VAULT_TRANSIT_URL":    vault_transit_url,
+		// "VAULT_TRANSIT_PWD":        vault_transit_pwd,
+		"VAULT_TRANSIT_APPROLE_ID": vault_transit_approle_id,
+		"VAULT_TRANSIT_SECRET_ID":  vault_transit_secret_id,
+		"VAULT_TRANSIT_KV_ENGINE":  vault_transit_kv_engine,
+		"VAULT_TRANSIT_KV_VERSION": vault_transit_kv_version,
+		"VAULT_TRANSIT_NAMESPACE":  vault_transit_namespace,
+		"VAULT_TRANSIT_ENGINE":     vault_transit_engine,
+		"VAULT_TRANSIT_TOKENNAME":  vault_transit_tokenname,
+	}
+	return configMap
+
 }
