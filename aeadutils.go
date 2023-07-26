@@ -107,25 +107,6 @@ func IsKeyHandleDeterministic(kh *keyset.Handle) bool {
 		return false
 	}
 	return false // technically correct but could also be an error TODO
-
-	// the alt to this is to convert the key info tom json and trawl through it
-	// i hate this, but i don't see an alternative atm
-
-	// also, it seems you cannot have a keyset that has both deterministic and non deterministic types
-	// deterministic := false
-
-	// // is the key AEAD
-	// _, err := aead.New(kh)
-	// if err != nil {
-	// 	// is the key DAEAD
-	// 	_, err := daead.New(kh)
-	// 	if err != nil {
-	// 		panic(err)
-	// 	} else {
-	// 		deterministic = true
-	// 	}
-	// }
-	// return deterministic
 }
 
 func PivotMap(originalMap map[string]map[string]string, newMap map[string]map[string]string) {
@@ -499,31 +480,6 @@ func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
 
 	return key, found
 }
-
-// func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
-// 	maxDepth := 5
-// 	if len(setDepth) > 0 {
-// 		maxDepth = setDepth[0]
-// 	}
-// 	possiblyEncryptionKey, ok := AEAD_CONFIG.Get(fieldName)
-// 	if !ok {
-// 		return nil, ok
-// 	}
-// 	for i := 0; i < maxDepth; i++ {
-// 		possiblyEncryptionKeyStr := possiblyEncryptionKey.(string)
-// 		if !isEncryptionJsonKey(possiblyEncryptionKeyStr) {
-// 			possiblyEncryptionKey, ok = AEAD_CONFIG.Get(possiblyEncryptionKeyStr)
-// 			if !ok {
-// 				return nil, ok
-// 			}
-// 		} else {
-// 			return possiblyEncryptionKey, true
-// 		}
-// 	}
-
-// 	isKeysetFound := false
-// 	return nil, isKeysetFound
-// }
 
 func muteKeyMaterial(theKey string) string {
 	type jsonKey struct {

@@ -18,12 +18,12 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 )
 
-const vault_kv_url = ""
+const vault_kv_url = "http://127.0.0.1:8200"
 const vault_kv_active = "false"
 const vault_kv_approle_id = ""
 const vault_kv_secret_id = ""
-const vault_kv_engine = ""
-const vault_kv_version = ""
+const vault_kv_engine = "secret"
+const vault_kv_version = "v2"
 const vault_transit_active = "false"
 const vault_transit_url = ""
 const vault_transit_approle_id = ""
@@ -33,6 +33,7 @@ const vault_transit_kv_version = ""
 const vault_transit_namespace = ""
 const vault_transit_engine = ""
 const vault_transit_tokenname = ""
+const vault_transit_kek = ""
 
 func testBackend(tb testing.TB) (*backend, logical.Storage) {
 	tb.Helper()
@@ -1560,6 +1561,43 @@ func TestBackend(t *testing.T) {
 
 		}
 	})
+
+	t.Run("test30 transit kv sync", func(t *testing.T) {
+		// t.Parallel()
+		b, storage := testBackend(t)
+		configMap := createVaultConfig()
+
+		// store the config and create 3 keys
+		saveConfig(b, storage, configMap, true, t)
+		// set up config (sync to transit = false)
+
+		keyMap := map[string]interface{}{
+			"gcm/test30-key1": NonDeterministicKeyset,
+			"gcm/test30-key2": NonDeterministicKeyset,
+			"gcm/test30-key3": NonDeterministicKeyset,
+		}
+		saveConfig(b, storage, keyMap, true, t)
+
+		// set up config (sync to transit = true)
+		newMap := map[string]interface{}{
+			"VAULT_TRANSIT_ACTIVE": "true",
+		}
+		saveConfig(b, storage, newMap, true, t)
+
+		syncMap := map[string]interface{}{
+			"gcm/test30-key1": "true",
+			"gcm/test30-key2": "false",
+			"gcm/test30-key3": "true",
+		}
+
+		// sync 2 of them
+		resp := syncTransitKV(b, storage, syncMap, t)
+
+		for k, v := range resp.Data {
+			fmt.Printf("\nresp-k=%v resp-v=%v", k, v)
+
+		}
+	})
 }
 
 func assertEqual(str1 string, str2 string, t *testing.T) {
@@ -1739,6 +1777,20 @@ func syncKV(b *backend, storage logical.Storage, t *testing.T) *logical.Response
 	return resp
 }
 
+func syncTransitKV(b *backend, storage logical.Storage, data map[string]interface{}, t *testing.T) *logical.Response {
+
+	resp, err := b.HandleRequest(context.Background(), &logical.Request{
+		Storage:   storage,
+		Operation: logical.UpdateOperation,
+		Path:      "synctransitkv",
+		Data:      data,
+	})
+	if err != nil {
+		t.Fatal("synctransitkv", err)
+	}
+	return resp
+}
+
 func readKeyTypes(b *backend, storage logical.Storage, t *testing.T) *logical.Response {
 	resp, err := b.HandleRequest(context.Background(), &logical.Request{
 		Storage:   storage,
@@ -1832,6 +1884,7 @@ func createVaultConfig() map[string]interface{} {
 		"VAULT_TRANSIT_NAMESPACE":  vault_transit_namespace,
 		"VAULT_TRANSIT_ENGINE":     vault_transit_engine,
 		"VAULT_TRANSIT_TOKENNAME":  vault_transit_tokenname,
+		"VAULT_TRANSIT_KEK":        vault_transit_kek,
 	}
 	return configMap
 

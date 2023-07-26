@@ -11,39 +11,92 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 )
 
-func (b *backend) pathSyncKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+func (b *backend) pathSyncTransitKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	m, err := b.readKV(ctx, req.Storage, false)
 	rtnMap := make(map[string]interface{})
 
+	var kvOptions KVOptions
+	err := resolveKvOptions(&kvOptions)
 	if err != nil {
-		rtnMap["error"] = err.Error()
-	} else {
+		hclog.L().Error("\nfailed to read vault config")
+		return nil, err
+	}
 
-		gcmcount := 0
-		sivcount := 0
-		aadcount := 0
-		for k, _ := range m {
-			if strings.HasPrefix(k, "ADDITIONAL") {
-				aadcount++
-			} else if strings.HasPrefix(k, "gcm/") {
-				gcmcount++
-			} else if strings.HasPrefix(k, "siv/") {
-				sivcount++
+	if kvOptions.vault_kv_active == "true" {
+
+		// get all the keys in KV
+		kvMap, err := b.readKV(ctx, req.Storage, false)
+
+		if err != nil || kvMap == nil {
+			rtnMap["Error"] = err.Error()
+		} else {
+
+			for keyName, v := range data.Raw {
+				if "true" == fmt.Sprintf("%s", v) {
+					jsonIntf, ok := kvMap[keyName]
+					if !ok {
+						rtnMap[keyName] = "Error: key not found in KV: " + keyName
+					} else {
+						// ok we have the key in KV, lets extract the json as a string and send it to transitkv
+						keyJson := fmt.Sprint(jsonIntf)
+						_, err := saveToTransitKV(RemoveKeyPrefix(keyName), keyJson)
+						if err != nil {
+							rtnMap[keyName] = "Error saving to transit: " + err.Error()
+						}
+					}
+				}
 			}
 		}
+	}
+	return &logical.Response{
+		Data: rtnMap,
+	}, nil
+}
 
-		rtnMap["ADDITIONAL DATA SYNCED"] = aadcount
-		rtnMap["GCM KEYS SYNCED"] = gcmcount
-		rtnMap["SIV KEYS SYNCED"] = sivcount
+func (b *backend) pathSyncKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-		data.Raw = m
-		if _, err := b.configWriteOverwriteCheck(ctx, req, data, true, false); err != nil {
-			return &logical.Response{
-				Data: rtnMap,
-			}, err
+	kvMap := map[string]interface{}{}
+	rtnMap := make(map[string]interface{})
+
+	var kvOptions KVOptions
+	err := resolveKvOptions(&kvOptions)
+	if err != nil {
+		hclog.L().Error("\nfailed to read vault config")
+		return nil, err
+	}
+
+	if kvOptions.vault_kv_active == "true" {
+
+		kvMap, err = b.readKV(ctx, req.Storage, false)
+
+		if err != nil {
+			rtnMap["error"] = err.Error()
+		} else {
+
+			gcmcount := 0
+			sivcount := 0
+			aadcount := 0
+			for k, _ := range kvMap {
+				if strings.HasPrefix(k, "ADDITIONAL") {
+					aadcount++
+				} else if strings.HasPrefix(k, "gcm/") {
+					gcmcount++
+				} else if strings.HasPrefix(k, "siv/") {
+					sivcount++
+				}
+			}
+
+			rtnMap["ADDITIONAL DATA SYNCED"] = aadcount
+			rtnMap["GCM KEYS SYNCED"] = gcmcount
+			rtnMap["SIV KEYS SYNCED"] = sivcount
+
+			data.Raw = kvMap
+			if _, err := b.configWriteOverwriteCheck(ctx, req, data, true, false); err != nil {
+				return &logical.Response{
+					Data: rtnMap,
+				}, err
+			}
 		}
-
 	}
 	return &logical.Response{
 		Data: rtnMap,
@@ -52,15 +105,24 @@ func (b *backend) pathSyncKV(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) pathReadKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	// m := map[string]interface{}{}
-	// var err error
-	m, err := b.readKV(ctx, req.Storage)
+	m := map[string]interface{}{}
 
+	var kvOptions KVOptions
+	err := resolveKvOptions(&kvOptions)
 	if err != nil {
-		m = map[string]interface{}{}
-		m["error"] = err.Error()
+		hclog.L().Error("\nfailed to read vault config")
+		return nil, err
 	}
 
+	if kvOptions.vault_kv_active == "true" {
+
+		m, err = b.readKV(ctx, req.Storage)
+
+		if err != nil {
+			m = map[string]interface{}{}
+			m["error"] = err.Error()
+		}
+	}
 	return &logical.Response{
 		Data: m,
 	}, nil
@@ -68,23 +130,22 @@ func (b *backend) pathReadKV(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (map[string]interface{}, error) {
 
-	// get a client
-	client, err := KvGetClient("VAULT_KV_URL", "", "VAULT_KV_APPROLE_ID", "VAULT_KV_SECRET_ID")
+	var kvOptions KVOptions
+	err := resolveKvOptions(&kvOptions)
 	if err != nil {
-		hclog.L().Error("\nfailed to initialize Vault client1")
+		hclog.L().Error("\nfailed to read vault config")
 		return nil, err
 	}
 
-	kv_engineInf, ok := AEAD_CONFIG.Get("VAULT_KV_ENGINE")
-	kv_engine := "secret" // default
-	if ok {
-		kv_engine = fmt.Sprintf("%v", kv_engineInf)
+	if kvOptions.vault_kv_active == "false" {
+		return nil, nil
 	}
+	// get a client
+	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id)
 
-	kv_versionInf, ok := AEAD_CONFIG.Get("VAULT_KV_VERSION")
-	kv_version := "v2" // default
-	if ok {
-		kv_version = fmt.Sprintf("%v", kv_versionInf)
+	if err != nil {
+		hclog.L().Error("\nfailed to initialize Vault client1")
+		return nil, err
 	}
 
 	// we are looking for:
@@ -93,7 +154,8 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 	// data and aad
 
 	// read the paths
-	paths, err := KvGetSecretPaths(client, kv_engine, kv_version, "")
+	paths, err := KvGetSecretPaths(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, "")
+
 	if err != nil || paths == nil {
 		hclog.L().Error("failed to read paths")
 	}
@@ -101,24 +163,22 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 
 	// iterate through the paths
 	for _, path := range paths {
-		// hclog.L().Info("found path: " + path)
 		keyFound := false
 		if strings.HasPrefix(path, "gcm/") || strings.HasPrefix(path, "siv/") {
-			kvsecret, err := KvGetSecret(client, kv_engine, kv_version, path)
+			kvsecret, err := KvGetSecret(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, path)
 			if err != nil || kvsecret.Data == nil {
-				hclog.L().Error("failed to read the secrets in folder %s", path)
+				hclog.L().Error("failed to read the secrets in folder " + path)
 			}
 
 			keyFound = true
 
 			jsonKey, ok := kvsecret.Data["data"]
 			if !ok {
-				hclog.L().Error("failed to read back the aead key 'gcm/test4f1/data'")
+				hclog.L().Error("failed to read back the aead key " + path)
 			}
-			// jsonKeyStr := fmt.Sprintf("%v", jsonKey)
-			// hclog.L().Info("found jsonKeyStr: " + jsonKeyStr)
+
 			if extractedKeySet, err := isSecretAnAEADKeyset(jsonKey, path); err != nil {
-				hclog.L().Error("failed to read vailid secret key 'gcm/test4f1/aad'")
+				hclog.L().Error("failed to read vailid secret key " + path)
 			} else {
 				// hclog.L().Info("valid secret key")
 				if mask == nil || mask[0] == true {
@@ -131,34 +191,110 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 
 			jsonAad, ok := kvsecret.Data["aad"]
 			if !ok {
-				hclog.L().Error("failed to read back the aad key 'gcm/test4f1/aad'")
+				hclog.L().Error("failed to read back the aad key " + path)
 			}
 			if extractedAD, err := extractADFromSecret(jsonAad, path); err != nil {
-				hclog.L().Error("failed to read vailid secret key 'gcm/test4f1/aad'")
+				hclog.L().Error("failed to read vailid secret key " + path)
 			} else {
 				consulKV["ADDITIONAL_DATA-"+path] = extractedAD
 			}
-			// hclog.L().Info("found jsonAadStr: " + jsonAadStr)
-
 		}
 
 		if !keyFound {
-			hclog.L().Error("failed to read back the secret 'gcm/test4f1'")
+			hclog.L().Error("failed to read back the secret " + path)
 		}
 
 	}
 
 	return consulKV, nil
 }
+func resolveKvOptions(kvOptions *KVOptions) error {
 
+	kvOptions.vault_kv_active = "false" // default
+	kv_active, ok := AEAD_CONFIG.Get("VAULT_KV_ACTIVE")
+	if ok {
+		kvOptions.vault_kv_active = fmt.Sprintf("%v", kv_active)
+	}
+
+	vault_url, ok := AEAD_CONFIG.Get("VAULT_KV_URL")
+	if ok {
+		kvOptions.vault_kv_url = fmt.Sprintf("%v", vault_url)
+	}
+
+	vault_approleid, ok := AEAD_CONFIG.Get("VAULT_KV_APPROLE_ID")
+	if ok {
+		kvOptions.vault_kv_approle_id = fmt.Sprintf("%v", vault_approleid)
+	}
+
+	vault_secretid, ok := AEAD_CONFIG.Get("VAULT_KV_SECRET_ID")
+	if ok {
+		kvOptions.vault_kv_secret_id = fmt.Sprintf("%v", vault_secretid)
+	}
+
+	kv_engine, ok := AEAD_CONFIG.Get("VAULT_KV_ENGINE")
+	if ok {
+		kvOptions.vault_kv_engine = fmt.Sprintf("%v", kv_engine)
+	}
+
+	kv_version, ok := AEAD_CONFIG.Get("VAULT_KV_VERSION")
+	if ok {
+		kvOptions.vault_kv_version = fmt.Sprintf("%v", kv_version)
+	}
+
+	kvOptions.vault_transit_active = "false" // default
+	vault_transit_active, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_ACTIVE")
+	if ok {
+		kvOptions.vault_transit_active = fmt.Sprintf("%v", vault_transit_active)
+	}
+	vault_transit_url, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_URL")
+	if ok {
+		kvOptions.vault_transit_url = fmt.Sprintf("%v", vault_transit_url)
+	}
+	vault_transit_approle_id, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_APPROLE_ID")
+	if ok {
+		kvOptions.vault_transit_approle_id = fmt.Sprintf("%v", vault_transit_approle_id)
+	}
+	vault_transit_secret_id, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_SECRET_ID")
+	if ok {
+		kvOptions.vault_transit_secret_id = fmt.Sprintf("%v", vault_transit_secret_id)
+	}
+	vault_transit_kv_engine, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_ENGINE")
+	if ok {
+		kvOptions.vault_transit_kv_engine = fmt.Sprintf("%v", vault_transit_kv_engine)
+	}
+	vault_transit_engine, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_ENGINE")
+	if ok {
+		kvOptions.vault_transit_engine = fmt.Sprintf("%v", vault_transit_engine)
+	}
+	vault_transit_kv_version, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_VERSION")
+	if ok {
+		kvOptions.vault_transit_kv_version = fmt.Sprintf("%v", vault_transit_kv_version)
+	}
+	vault_transit_namespace, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_NAMESPACE")
+	if ok {
+		kvOptions.vault_transit_namespace = fmt.Sprintf("%v", vault_transit_namespace)
+	}
+	vault_transit_tokenname, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_TOKENNAME")
+	if ok {
+		kvOptions.vault_transit_tokenname = fmt.Sprintf("%v", vault_transit_tokenname)
+	}
+	vault_transit_kek, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KEK")
+	if ok {
+		kvOptions.vault_transit_kek = fmt.Sprintf("%v", vault_transit_kek)
+	}
+
+	return nil
+}
 func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 
-	kv_activeIntf, ok := AEAD_CONFIG.Get("VAULT_KV_ACTIVE")
-	kv_active := "false" // default
-	if ok {
-		kv_active = fmt.Sprintf("%v", kv_activeIntf)
+	var kvOptions KVOptions
+	err := resolveKvOptions(&kvOptions)
+	if err != nil {
+		hclog.L().Error("\nfailed to read vault config")
+		return false, err
 	}
-	if kv_active == "false" {
+
+	if kvOptions.vault_kv_active == "false" {
 		return true, nil
 	}
 
@@ -179,7 +315,7 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 	hclog.L().Info("saveToKV:" + keyNameIn + " Type: " + keyTypeURL)
 
 	// get a client
-	client, err := KvGetClient("VAULT_KV_URL", "", "VAULT_KV_APPROLE_ID", "VAULT_KV_SECRET_ID")
+	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id)
 	if err != nil {
 		hclog.L().Error("\nfailed to initialize Vault client2")
 		return false, err
@@ -194,11 +330,6 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 		fmt.Println(err.Error())
 	}
 	jsonKeyStr := string(keyData)
-
-	// _, err = ValidateKeySetJson(jsonKeyStr)
-	// if err != nil {
-	// 	hclog.L().Error("failed to recreate a key handle from the json")
-	// }
 
 	aadMap := make(map[string]interface{})
 	aadMap[RemoveKeyPrefix(keyNameIn)] = RemoveKeyPrefix(keyNameIn)
@@ -262,7 +393,10 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 	if _, err := isSecretAnAEADKeyset(secret, RemoveKeyPrefix(keyNameIn)); err != nil {
 		return false, err
 	}
-	saveToTransitKV(RemoveKeyPrefix(keyNameIn), fmt.Sprintf("%s", keyJsonIn))
+	_, err = saveToTransitKV(RemoveKeyPrefix(keyNameIn), fmt.Sprintf("%s", keyJsonIn))
+	if err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
@@ -296,71 +430,36 @@ func saveToTransitKV(keyname string, keyjson string) (bool, error) {
 	   ```
 	*/
 
-	kv_activeIntf, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_ACTIVE")
-	kv_active := "false" // default
-	if ok {
-		kv_active = fmt.Sprintf("%v", kv_activeIntf)
+	var kvOptions KVOptions
+	err := resolveKvOptions(&kvOptions)
+	if err != nil {
+		hclog.L().Error("\nfailed to read vault config")
+		return false, err
 	}
-	if kv_active == "false" {
+
+	if kvOptions.vault_transit_active == "false" {
 		return true, nil
 	}
 
 	// get a client
-	client, err := KvGetClient("VAULT_TRANSIT_URL", "kms/IT", "VAULT_TRANSIT_APPROLE_ID", "VAULT_TRANSIT_SECRET_ID")
+	client, err := KvGetClient(kvOptions.vault_transit_url, kvOptions.vault_transit_namespace, kvOptions.vault_transit_approle_id, kvOptions.vault_transit_secret_id)
 	if err != nil {
 		hclog.L().Error("\nfailed to initialize Vault client3")
 		return false, err
 	}
 
-	// "VAULT_TRANSIT_KV_ENGINE":  vault_transit_kv_engine,
-	// "VAULT_TRANSIT_NAMESPACE":  vault_transit_namespace,
-	// "VAULT_TRANSIT_ENGINE":     vault_transit_engine,
-	// "VAULT_TRANSIT_TOKENNAME":  vault_transit_tokenname,
-
-	vault_transit_namespace := "" // default
-	vault_transit_namespaceIntf, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_NAMESPACE")
-	if ok {
-		vault_transit_namespace = fmt.Sprintf("%v", vault_transit_namespaceIntf)
-	}
-
-	vault_transit_kv_engine := "" // default
-	vault_transit_kv_engineIntf, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_ENGINE")
-	if ok {
-		vault_transit_kv_engine = fmt.Sprintf("%v", vault_transit_kv_engineIntf)
-	}
-
-	vault_transit_engine := "" // default
-	vault_transit_engineIntf, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_ENGINE")
-	if ok {
-		vault_transit_engine = fmt.Sprintf("%v", vault_transit_engineIntf)
-	}
-	kv_transit_versionInf, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_VERSION")
-	kv_transit_version := "v2" // default
-	if ok {
-		kv_transit_version = fmt.Sprintf("%v", kv_transit_versionInf)
-	}
-
-	vault_transit_tokenname := "" // default
-	vault_transit_tokennameIntf, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_TOKENNAME")
-	if ok {
-		vault_transit_tokenname = fmt.Sprintf("%v", vault_transit_tokennameIntf)
-	}
-
-	if vault_transit_tokenname == vault_transit_engine {
-		hclog.L().Error("failed to read paths")
-	}
 	// read the secrets in the transit wrapped secret store
 	keyStr := ""
 	transitTokenStr := ""
-	paths, err := KvGetSecretPaths(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, kv_transit_version, "")
+	paths, err := KvGetSecretPaths(client.WithNamespace(kvOptions.vault_transit_namespace), kvOptions.vault_transit_kv_engine, kvOptions.vault_transit_kv_version, "")
 	if err != nil {
 		hclog.L().Error("failed to read paths")
 	}
 	for _, path := range paths {
-		kvsecret, _ := KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, kv_transit_version, path)
+		kvsecret, _ := KvGetSecret(client.WithNamespace(kvOptions.vault_transit_namespace), kvOptions.vault_transit_kv_engine, kvOptions.vault_transit_kv_version, path)
 		secret, ok := kvsecret.Data["key"]
 		if ok {
-			if path == vault_transit_tokenname {
+			if path == kvOptions.vault_transit_tokenname {
 				transitTokenStr = fmt.Sprintf("%v", secret)
 			}
 		}
@@ -371,19 +470,27 @@ func saveToTransitKV(keyname string, keyjson string) (bool, error) {
 	}
 
 	// make a new keyname
-	newkeyname, err := DeriveKeyName("kms/IT", keyname, keyjson)
+	newkeyname, err := DeriveKeyName(kvOptions.vault_transit_namespace, keyname, keyjson)
 	hclog.L().Info("newkeyname: " + newkeyname)
 
 	//wrap the key
-	url := "https://poc2.vault.neuron.bdp.vodafone.com/v1/kms/IT/IT_transit/encrypt/IT_KEK"
 
-	wrappedkey, _ := WrapKeyset(url, transitTokenStr, keyjson)
+	url := kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_namespace + "/" + kvOptions.vault_transit_engine + "/encrypt/" + kvOptions.vault_transit_kek
 
-	UnwrapKeyset(url, transitTokenStr, wrappedkey)
+	wrappedkey, err := WrapKeyset(url, transitTokenStr, keyjson)
+	if err != nil {
+		hclog.L().Error("failed to wrap key")
+	}
+
+	url = kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_namespace + "/" + kvOptions.vault_transit_engine + "/decrypt/" + kvOptions.vault_transit_kek
+	_, err = UnwrapKeyset(url, transitTokenStr, wrappedkey)
+	if err != nil {
+		hclog.L().Error("failed to unwrap key")
+	}
 
 	secretMap := map[string]interface{}{}
-	secretMap["key"] = keyjson
-	_, err = KvPutSecret(client.WithNamespace("kms/IT"), vault_transit_kv_engine, kv_transit_version, newkeyname, secretMap)
+	secretMap["key"] = wrappedkey
+	_, err = KvPutSecret(client.WithNamespace(kvOptions.vault_transit_namespace), kvOptions.vault_transit_kv_engine, kvOptions.vault_transit_kv_version, newkeyname, secretMap)
 	if err != nil {
 		hclog.L().Error("failed to write to transit")
 	}
