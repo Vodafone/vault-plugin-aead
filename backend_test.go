@@ -757,23 +757,57 @@ func TestBackend(t *testing.T) {
 
 	})
 
-	// t.Run("test-bqsync fake test to debug bqsync ", func(t *testing.T) {
 	// un comment this if you need to debug bqsync
-	// 	// t.Parallel()
-	// 	b, storage := testBackend(t)
+	t.Run("test-bqsync fake test to debug bqsync ", func(t *testing.T) {
 
-	// 	data := make(map[string]interface{})
+		// t.Parallel()
+		b, storage := testBackend(t)
 
-	// 	_, err := b.HandleRequest(context.Background(), &logical.Request{
-	// 		Storage:   storage,
-	// 		Operation: logical.UpdateOperation,
-	// 		Path:      "bqsync",
-	// 		Data:      data,
-	// 	})
-	// 	if err != nil {
-	// 		t.Fatal("bqsync", err)
-	// 	}
-	// })
+		configMap := map[string]interface{}{
+
+			"BQ_KMSKEY":                  "projects/vf-cis-rubik-tst-kms/locations/<region>/keyRings/hsm-key-tink-pf1-<region>/cryptoKeys/bq-key",
+			"BQ_PROJECT":                 "vf-pf1-datahub-b14b",
+			"BQ_DEFAULT_ENCRYPT_DATASET": "vfpf1_dh_lake_aead_encrypt_<region>_lv_s",
+			"BQ_DEFAULT_DECRYPT_DATASET": "vfpf1_dh_lake_<category>_aead_decrypt_<region>_lv_s",
+			"BQ_ROUTINE_DET_PREFIX":      "siv",
+			"BQ_ROUTINE_NONDET_PREFIX":   "gcm",
+		}
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
+		key := "testbqsync-address"
+		value := "my address"
+
+		nondetkey := map[string]interface{}{
+			key: value,
+		}
+
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, nondetkey, false, t)
+
+		key = "testbqsync-postcode"
+		value = "my postcode"
+		key1 := "name"
+		value1 := "my name"
+
+		detkey := map[string]interface{}{
+			key:  value,
+			key1: value1,
+		}
+
+		encryptDataDetermisticallyAndCreateKey(b, storage, detkey, false, t)
+
+		data := make(map[string]interface{})
+
+		_, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "bqsync",
+			Data:      data,
+		})
+		if err != nil {
+			t.Fatal("bqsync", err)
+		}
+	})
 
 	t.Run("test19 test config and bq override-no-override ", func(t *testing.T) {
 		// t.Parallel()
