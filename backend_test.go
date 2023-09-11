@@ -3,14 +3,21 @@ package aeadplugin
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"cloud.google.com/go/bigquery"
 	version "github.com/Vodafone/vault-plugin-aead/version"
 	"github.com/google/tink/go/daead"
 	"github.com/google/tink/go/insecurecleartextkeyset"
@@ -18,22 +25,60 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 )
 
+/*
+how to set up a local vault for testing
+run the make file - this starts a local vault
+then in another shell
+export VAULT_ADDR=http://localhost:8200
+export VAULT_TOKEN=root
+vault login
+
+create the policy file for the approle and secret:
+cat policy.json
+path "secret/*" {
+  capabilities = ["create", "read", "update", "patch", "delete", "list"]
+}
+path "transit/*" {
+  capabilities = ["create", "read", "update", "patch", "delete", "list"]
+}
+
+vault secrets enable -path=aead-secrets vault-plugin-aead
+vault secrets enable transit
+vault write -f transit/keys/my-key
+vault auth enable approle
+vault policy write my-policy ./policy.json
+vault write auth/approle/role/my-approle token_policies="my-policy"
+vault read -field=role_id auth/approle/role/my-approle/role-id
+vault write -f -field=secret_id auth/approle/role/my-approle/secret-id
+vault kv put -mount=secret transit-token key=root
+*/
+
+// NOTE THE BELOW VALUES ARE FOR A LOCAL VAULT, INSTRUCTIONS ABOVE
+// YOU WILL NEED TO ADJUST YOUR VALUES ACCORDINGLY
+// YOU WILL HAVE DIFFERENT approle AND secret id
 const vault_kv_url = "http://127.0.0.1:8200"
-const vault_kv_active = "false"
-const vault_kv_approle_id = ""
-const vault_kv_secret_id = ""
+const vault_kv_active = "true"
+const vault_kv_approle_id = "f5e0c7fd-2014-be3c-dbd2-dfd61db47a44"
+const vault_kv_secret_id = "5209ad47-c7f9-e669-963e-2161ed950889"
 const vault_kv_engine = "secret"
 const vault_kv_version = "v2"
-const vault_transit_active = "false"
-const vault_transit_url = ""
-const vault_transit_approle_id = ""
-const vault_transit_secret_id = ""
-const vault_transit_kv_engine = ""
-const vault_transit_kv_version = ""
+const vault_transit_active = "true"
+
+const vault_transit_url = "http://localhost:8200"
+const vault_transit_approle_id = "f5e0c7fd-2014-be3c-dbd2-dfd61db47a44"
+const vault_transit_secret_id = "5209ad47-c7f9-e669-963e-2161ed950889"
+const vault_transit_kv_engine = "secret"
+const vault_transit_kv_version = "v2"
 const vault_transit_namespace = ""
-const vault_transit_engine = ""
-const vault_transit_tokenname = ""
-const vault_transit_kek = ""
+const vault_transit_engine = "transit"
+const vault_transit_tokenname = "transit-token"
+const vault_transit_kek = "my-key"
+
+const bq_active = "false"
+
+const DeterministicKeyset = `{"primaryKeyId":97978150,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkCXhcXHvfUMj8DWgWjfnxyWFz3GcOw8G1xB2PTcfPdbl93idxHTcmANzYLYW3KmsU0putTRfi3vxySALhSHaHl0","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3647454112,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDeUHhnPioOIETPIbKfEcifAjnhxaeUJbRwT/TB6AurJG/qmhsbpGaHKFdhDHn6VtJ7I/tMWX7gFZTr1Db9f/3v","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":4039363563,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkAqIqBlB7q0W/bhp9RtivX770+nAYkEWxBkYjfPzbWiBWJZbM7YypfHbkOyyWPtkBc0yVK0YTUmqbWD0JpEJ63u","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3167099089,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDfF2JLaeZPvRwMncPw8ZKhsoGDMvFDriu7RtdF1pgHvRefGKbAa56pU7IFQCzA+UWy+dBNtsLW2H5rbHsxM2FC","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2568362933,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkC9CVw73BjO+OSjo3SFvUV7SUszpJnuKGnLWMbmD7cO3WFCIy2unxoyNPCHFDlzle1zU35vTZtoecnlsWScQUVl","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":97978150,"outputPrefixType":"TINK"}]}`
+const NonDeterministicKeyset = `{"primaryKeyId":3192631270,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBf14hIKBzJYUGjc4LXzaG3dT3aVsvv0vpyZJVZNh02MQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2832419897,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCW0m5ElDr8RznAl4ef3bXqgHgu9PL/js7K6NAZIjkDJw==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2233686170,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiChGSKGi7odjL3mdwhQ03X5SGiVXTarRSKPZUn+xCUYyQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1532149397,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3192631270,"outputPrefixType":"TINK"}]}`
+const DeterministicSingleKey = `{"primaryKeyId":1481824018,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"}]}`
 
 func testBackend(tb testing.TB) (*backend, logical.Storage) {
 	tb.Helper()
@@ -128,7 +173,7 @@ func TestBackend(t *testing.T) {
 
 		ki := h.KeysetInfo().KeyInfo
 		for k, v := range ki {
-			fmt.Printf("k=%v; v=%vXX", k, v.GetTypeUrl())
+			fmt.Printf("k=%v; v=%v", k, v.GetTypeUrl())
 		}
 
 		// encrypt it
@@ -757,58 +802,6 @@ func TestBackend(t *testing.T) {
 
 	})
 
-	// un comment this if you need to debug bqsync
-	t.Run("test-bqsync fake test to debug bqsync ", func(t *testing.T) {
-
-		// t.Parallel()
-		b, storage := testBackend(t)
-
-		configMap := map[string]interface{}{
-
-			"BQ_KMSKEY":                  "projects/vf-cis-rubik-tst-kms/locations/<region>/keyRings/hsm-key-tink-pf1-<region>/cryptoKeys/bq-key",
-			"BQ_PROJECT":                 "vf-pf1-datahub-b14b",
-			"BQ_DEFAULT_ENCRYPT_DATASET": "vfpf1_dh_lake_aead_encrypt_<region>_lv_s",
-			"BQ_DEFAULT_DECRYPT_DATASET": "vfpf1_dh_lake_<category>_aead_decrypt_<region>_lv_s",
-			"BQ_ROUTINE_DET_PREFIX":      "siv",
-			"BQ_ROUTINE_NONDET_PREFIX":   "gcm",
-		}
-		// store the config
-		saveConfig(b, storage, configMap, false, t)
-
-		key := "testbqsync-address"
-		value := "my address"
-
-		nondetkey := map[string]interface{}{
-			key: value,
-		}
-
-		encryptDataNonDetermisticallyAndCreateKey(b, storage, nondetkey, false, t)
-
-		key = "testbqsync-postcode"
-		value = "my postcode"
-		key1 := "name"
-		value1 := "my name"
-
-		detkey := map[string]interface{}{
-			key:  value,
-			key1: value1,
-		}
-
-		encryptDataDetermisticallyAndCreateKey(b, storage, detkey, false, t)
-
-		data := make(map[string]interface{})
-
-		_, err := b.HandleRequest(context.Background(), &logical.Request{
-			Storage:   storage,
-			Operation: logical.UpdateOperation,
-			Path:      "bqsync",
-			Data:      data,
-		})
-		if err != nil {
-			t.Fatal("bqsync", err)
-		}
-	})
-
 	t.Run("test19 test config and bq override-no-override ", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
@@ -1099,9 +1092,9 @@ func TestBackend(t *testing.T) {
 	// 	]
 	//   }
 
-	const DeterministicKeyset = `{"primaryKeyId":97978150,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkCXhcXHvfUMj8DWgWjfnxyWFz3GcOw8G1xB2PTcfPdbl93idxHTcmANzYLYW3KmsU0putTRfi3vxySALhSHaHl0","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3647454112,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDeUHhnPioOIETPIbKfEcifAjnhxaeUJbRwT/TB6AurJG/qmhsbpGaHKFdhDHn6VtJ7I/tMWX7gFZTr1Db9f/3v","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":4039363563,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkAqIqBlB7q0W/bhp9RtivX770+nAYkEWxBkYjfPzbWiBWJZbM7YypfHbkOyyWPtkBc0yVK0YTUmqbWD0JpEJ63u","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3167099089,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDfF2JLaeZPvRwMncPw8ZKhsoGDMvFDriu7RtdF1pgHvRefGKbAa56pU7IFQCzA+UWy+dBNtsLW2H5rbHsxM2FC","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2568362933,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkC9CVw73BjO+OSjo3SFvUV7SUszpJnuKGnLWMbmD7cO3WFCIy2unxoyNPCHFDlzle1zU35vTZtoecnlsWScQUVl","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":97978150,"outputPrefixType":"TINK"}]}`
-	const NonDeterministicKeyset = `{"primaryKeyId":3192631270,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBf14hIKBzJYUGjc4LXzaG3dT3aVsvv0vpyZJVZNh02MQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2832419897,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCW0m5ElDr8RznAl4ef3bXqgHgu9PL/js7K6NAZIjkDJw==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2233686170,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiChGSKGi7odjL3mdwhQ03X5SGiVXTarRSKPZUn+xCUYyQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1532149397,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3192631270,"outputPrefixType":"TINK"}]}`
-	const DeterministicSingleKey = `{"primaryKeyId":1481824018,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"}]}`
+	// const DeterministicKeyset = `{"primaryKeyId":97978150,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkCXhcXHvfUMj8DWgWjfnxyWFz3GcOw8G1xB2PTcfPdbl93idxHTcmANzYLYW3KmsU0putTRfi3vxySALhSHaHl0","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3647454112,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDeUHhnPioOIETPIbKfEcifAjnhxaeUJbRwT/TB6AurJG/qmhsbpGaHKFdhDHn6VtJ7I/tMWX7gFZTr1Db9f/3v","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":4039363563,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkAqIqBlB7q0W/bhp9RtivX770+nAYkEWxBkYjfPzbWiBWJZbM7YypfHbkOyyWPtkBc0yVK0YTUmqbWD0JpEJ63u","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3167099089,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDfF2JLaeZPvRwMncPw8ZKhsoGDMvFDriu7RtdF1pgHvRefGKbAa56pU7IFQCzA+UWy+dBNtsLW2H5rbHsxM2FC","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2568362933,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkC9CVw73BjO+OSjo3SFvUV7SUszpJnuKGnLWMbmD7cO3WFCIy2unxoyNPCHFDlzle1zU35vTZtoecnlsWScQUVl","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":97978150,"outputPrefixType":"TINK"}]}`
+	// const NonDeterministicKeyset = `{"primaryKeyId":3192631270,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBf14hIKBzJYUGjc4LXzaG3dT3aVsvv0vpyZJVZNh02MQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2832419897,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCW0m5ElDr8RznAl4ef3bXqgHgu9PL/js7K6NAZIjkDJw==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2233686170,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiChGSKGi7odjL3mdwhQ03X5SGiVXTarRSKPZUn+xCUYyQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1532149397,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3192631270,"outputPrefixType":"TINK"}]}`
+	// const DeterministicSingleKey = `{"primaryKeyId":1481824018,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"}]}`
 
 	t.Run("test21 pathUpdateKeyStatus deterministic", func(t *testing.T) {
 		// t.Parallel()
@@ -1571,33 +1564,327 @@ func TestBackend(t *testing.T) {
 		}
 
 	})
+}
 
-	t.Run("test28 ckv read", func(t *testing.T) {
+func TestBQ(t *testing.T) {
+
+	// un comment this if you need to debug bqsync
+	t.Run("test-bqsync fake test to debug bqsync ", func(t *testing.T) {
+
+		if bq_active == "false" {
+			t.SkipNow()
+		}
+
+		// t.Parallel()
+		b, storage := testBackend(t)
+
+		configMap := map[string]interface{}{
+
+			"BQ_KMSKEY":                  "projects/vf-cis-rubik-tst-kms/locations/<region>/keyRings/hsm-key-tink-pf1-<region>/cryptoKeys/bq-key",
+			"BQ_PROJECT":                 "vf-pf1-datahub-b14b",
+			"BQ_DEFAULT_ENCRYPT_DATASET": "vfpf1_dh_lake_aead_encrypt_<region>_lv_s",
+			"BQ_DEFAULT_DECRYPT_DATASET": "vfpf1_dh_lake_<category>_aead_decrypt_<region>_lv_s",
+			"BQ_ROUTINE_DET_PREFIX":      "siv",
+			"BQ_ROUTINE_NONDET_PREFIX":   "gcm",
+		}
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
+		key := "testbqsync-address"
+		value := "my address"
+
+		nondetkey := map[string]interface{}{
+			key: value,
+		}
+
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, nondetkey, false, t)
+
+		key = "testbqsync-postcode"
+		value = "my postcode"
+		key1 := "name"
+		value1 := "my name"
+
+		detkey := map[string]interface{}{
+			key:  value,
+			key1: value1,
+		}
+
+		encryptDataDetermisticallyAndCreateKey(b, storage, detkey, false, t)
+
+		data := make(map[string]interface{})
+
+		tn := time.Now()
+
+		_, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "bqsync",
+			Data:      data,
+		})
+		if err != nil {
+			t.Fatal("bqsync", err)
+		}
+
+		projectId := "vf-pf1-datahub-b14b"
+		datasetName := "vfpf1_dh_lake_aead_encrypt_eu_lv_s"
+		routineName := "testbqsync_postcode_siv_encrypt"
+		checkBQRoutine(projectId, t, datasetName, routineName, tn)
+	})
+}
+
+func checkBQRoutine(projectId string, t *testing.T, datasetName string, routineName string, tn time.Time) {
+	ctx := context.Background()
+	bigqueryClient, err := bigquery.NewClient(ctx, projectId)
+	if err != nil {
+		t.Fatal("Failed to create a bigquery client: " + err.Error())
+
+	}
+	defer bigqueryClient.Close()
+	routineEncryptRef := bigqueryClient.Dataset(datasetName).Routine(routineName)
+	var rm *bigquery.RoutineMetadata
+	rm, err = routineEncryptRef.Metadata(ctx)
+	if err != nil {
+		t.Fatal("Failed to find routine: " + datasetName + ":" + routineName + ": " + err.Error())
+	}
+	if tn.After(rm.LastModifiedTime) {
+		t.Error(datasetName + ":" + routineName + " did not change")
+	} else {
+		t.Log(datasetName + ":" + routineName + " did change")
+	}
+}
+
+func TestKV(t *testing.T) {
+
+	t.Run("testkv1 ckv read", func(t *testing.T) {
+
+		if vault_kv_active == "false" {
+			t.SkipNow()
+		}
+
 		// t.Parallel()
 		b, storage := testBackend(t)
 
 		resp := readKV(b, storage, t)
 
-		for k, v := range resp.Data {
-			fmt.Printf("\nresp-k=%v resp-v=%v", k, v)
-
+		if resp == nil || resp.Data == nil {
+			t.Error("nothing returned from KV")
 		}
 	})
 
-	t.Run("test29 kv sync", func(t *testing.T) {
-		// t.Parallel()
+	t.Run("testkv2 kv sync", func(t *testing.T) {
+
+		if vault_kv_active == "false" {
+			t.SkipNow()
+		}
+
 		b, storage := testBackend(t)
 
-		resp := syncKV(b, storage, t)
+		configMap := createVaultConfig()
 
-		for k, v := range resp.Data {
-			fmt.Printf("\nresp-k=%v resp-v=%v", k, v)
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
+		// create a dynamic AEAD key for a field
+		// set some data to be encrypted using the keys
+		data := map[string]interface{}{
+			"testkv2-address": "my address",
 		}
-	})
 
-	t.Run("test30 transit kv sync", func(t *testing.T) {
+		// create a key - should get synced as gcm/testkv2-address
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
+
+		resp := readKV(b, storage, t)
+
+		_, ok := resp.Data["gcm/testkv2-address"]
+		if !ok {
+			t.Error("did not find entry for gcm/testkv2-address")
+		}
+
+		// OK its in KV and it looks ok, lets double -check the format by reading kv directly
+
+		// check kv secret
+		fullName := "gcm/testkv2-address"
+
+		checkKVSecret(fullName, t)
+
+		// create a key - should get synced as gcm/testkv2-address
+		encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
+
+		resp = readKV(b, storage, t)
+
+		_, ok = resp.Data["siv/testkv2-address"]
+		if !ok {
+			t.Error("did not find entry for siv/testkv2-address")
+		}
+
+		// OK its in KV and it looks ok, lets double -check the format by reading kv directly
+
+		// check kv secret
+		fullName = "siv/testkv2-address"
+
+		checkKVSecret(fullName, t)
+
+	})
+}
+func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*keyset.Handle, error) {
+
+	proxyurlStr := os.Getenv("https_proxy")
+
+	var tr *http.Transport
+	if proxyurlStr != "" && !strings.Contains(transiturl, "localhost") {
+		proxyUrl, _ := url.Parse(proxyurlStr)
+
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			Proxy:           http.ProxyURL(proxyUrl),
+		}
+	} else {
+
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
+
+	client := &http.Client{Transport: tr}
+	keyToDecode := `{"ciphertext":"` + keyStr + `"}`
+	var data = strings.NewReader(keyToDecode)
+	// var data = strings.NewReader(`{"ciphertext":"vault:v1:quY+4KUQo6JhfhD5Aac7nyFwApoMRGn44jKKOO2IJpw/KXtjG+kATRE5Gc03sxIt/qnXX6CmKah9tSIVxSbCIW0xdfJ65wB9QETl81kDUiwLzC0eImrm48p2ozG99RoYTuPedusIuur2mFKhMIPEGQloJQeyDXeWcdOkdDcVNnWW1rRb11i43NDjrzloaST9LwHLOrMibXDpC8uHyTMkry0XOYSVlXnJqV/6uKWgXj/0WX72J4jWOkgwOIpT0xBCGJmdBKD18izIq/CYH7pupjwfWt+Yi5jiZUFqQs75hyc/HV7V2fqWW6FXFHGVL2R5EW79CaZC+Q/yyBbnDQTcfjuX41QVGNRI65NjsUEEfo6OpF6OcqDNHweOnLEmwrAzCLg="}`)
+
+	req, err := http.NewRequest("POST", transiturl, data)
+	if err != nil {
+		log.Fatal(err)
+	}
+	req.Header.Set("X-Vault-Token", transitTokenStr)
+	// req.Header.Set("X-Vault-Token", "hvs.CAESIDyhl6QeFmqY36dVSiDIaxpnBu-e3PRMNqWjzPLwrANdGicKImh2cy55SHBTbW1JWkFZTTFmckhpQ1dTNlppc00udWYzNE4Q3QE")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+	bodyText, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// fmt.Printf("\n\nBODYTEXT: %s\n", bodyText)
+
+	respBody := map[string]interface{}{}
+	err = json.Unmarshal(bodyText, &respBody)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	unwrappedKeyIntf := respBody["data"]
+	unwrappedKeyMap := unwrappedKeyIntf.(map[string]interface{})
+	base64Keyset := fmt.Sprintf("%v", unwrappedKeyMap["plaintext"])
+	// fmt.Printf("\n\nbase64Keyset: %v\n", base64Keyset)
+	// byteBase64Keyset := []byte(base64Keyset)
+	keysetByte, _ := b64.StdEncoding.DecodeString(base64Keyset)
+	keysetStr := string(keysetByte)
+	// fmt.Printf("\n\nkeysetStr: %s\n", keysetStr)
+
+	// validate the key
+	kh, err := ValidateKeySetJson(keysetStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ksi := kh.KeysetInfo()
+	ki := ksi.KeyInfo[len(ksi.KeyInfo)-1]
+	keyTypeURL := ki.GetTypeUrl()
+	if keyTypeURL == "" {
+		return nil, fmt.Errorf("failed to determine the keyType")
+	}
+
+	return kh, nil
+}
+
+func checkKVSecret(fullName string, t *testing.T) {
+	fieldName := RemoveKeyPrefix(fullName)
+
+	client, err := KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id)
+	if err != nil {
+		t.Error("\nfailed to initialize Vault client")
+	}
+
+	kvsecret, err := KvGetSecret(client, vault_kv_engine, vault_kv_version, fullName)
+	if err != nil || kvsecret.Data == nil {
+		t.Errorf("failed to read the secrets in folder %v", fullName)
+	}
+
+	jsonKey, ok := kvsecret.Data["data"]
+	if !ok {
+		t.Errorf("failed to read back the aead key  %v", fullName)
+	}
+	secretStr := fmt.Sprintf("%v", jsonKey)
+	var jMap map[string]KeySetStruct
+	if err := json.Unmarshal([]byte(secretStr), &jMap); err != nil {
+		t.Errorf("failed to unmarshall the secret  %v", fullName)
+	}
+	keysetAsMap := jMap[fieldName]
+	keysetAsByteArray, err := json.Marshal(keysetAsMap)
+	if err != nil {
+		t.Error("failed to marshall ")
+	}
+	jsonToValidate := string(keysetAsByteArray)
+	_, err = ValidateKeySetJson(jsonToValidate)
+	if err != nil {
+		t.Errorf("failed to recreate a key handle from the json for  %v", fullName)
+	}
+
+	jsonAad, ok := kvsecret.Data["aad"]
+	if !ok {
+		t.Errorf("failed to read back the aead aad  %v", fullName)
+	}
+	secretStr = fmt.Sprintf("%v", jsonAad)
+	var jMapAad map[string]interface{}
+	if err := json.Unmarshal([]byte(secretStr), &jMapAad); err != nil {
+		t.Errorf("failed to unmarshall the secret aad  %v", fullName)
+	}
+	jMapAadValue, ok := jMapAad[fieldName]
+	if !ok {
+		t.Error("failed to find aad value")
+	}
+	jMapAadValueStr := fmt.Sprintf("%v", jMapAadValue)
+	if jMapAadValueStr != fieldName {
+		t.Error("aad value is incorrect")
+	}
+}
+
+func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
+
+	client, err := KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id)
+	if err != nil {
+		t.Error("\nfailed to initialize Vault client")
+	}
+
+	kvsecret, err := KvGetSecret(client, vault_kv_engine, vault_kv_version, fullName)
+	if err != nil || kvsecret.Data == nil {
+		t.Errorf("failed to read the secrets in folder %v", fullName)
+	}
+
+	wrappedKeyIntf, ok := kvsecret.Data["key"]
+	if !ok {
+		t.Errorf("failed to read back the wrapped aead key  %v", fullName)
+	}
+
+	wrappedKeyStr := fmt.Sprintf("%v", wrappedKeyIntf)
+	_, err = unwrapKeyset("http://localhost:8200/v1/transit/decrypt/my-key", "root", wrappedKeyStr)
+
+	if err != nil {
+		t.Error("failed to unwrap keyset and confirm type of aead key")
+	}
+
+}
+func TestTransitKV(t *testing.T) {
+
+	t.Run("testtransitkv1 transit kv sync", func(t *testing.T) {
 		// t.Parallel()
+
+		if vault_transit_active == "false" {
+			t.SkipNow()
+		}
+
 		b, storage := testBackend(t)
 		configMap := createVaultConfig()
 
@@ -1631,6 +1918,10 @@ func TestBackend(t *testing.T) {
 			fmt.Printf("\nresp-k=%v resp-v=%v", k, v)
 
 		}
+		// we should have a wrapped secret in kv called XXX_DEK_TEST30-KEY1_AES256_GCM
+		checkKVTransitWrappedSecret("XXX_DEK_TEST30-KEY1_AES256_GCM", t)
+		checkKVTransitWrappedSecret("XXX_DEK_TEST30-KEY3_AES256_GCM", t)
+
 	})
 }
 

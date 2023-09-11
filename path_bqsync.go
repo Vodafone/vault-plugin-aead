@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/bigquery"
 	kms "cloud.google.com/go/kms/apiv1"
@@ -250,9 +251,16 @@ func doBQRoutineCreateOrUpdate(ctx context.Context, options Options, escapedWrap
 
 		routineEncryptRef := bigqueryClient.Dataset(options.encryptDatasetId).Routine(options.encryptRoutineId)
 		routineExists := true
-		rm, err := routineEncryptRef.Metadata(ctx)
+		var rm *bigquery.RoutineMetadata
+		rm, err = routineEncryptRef.Metadata(ctx)
 		if err != nil {
-			routineExists = false
+			// try again - api's seem a bit flakey
+			time.Sleep(1 * time.Second)
+			routineEncryptRef := bigqueryClient.Dataset(options.encryptDatasetId).Routine(options.encryptRoutineId)
+			rm, err = routineEncryptRef.Metadata(ctx)
+			if err != nil {
+				routineExists = false
+			}
 		}
 
 		if !routineExists {

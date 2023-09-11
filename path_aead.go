@@ -215,7 +215,7 @@ func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}
 		}
 	} else {
 		// we didn't find a key - return original data
-		hclog.L().Info("did not find a key for field " + fieldName)
+		// hclog.L().Info("did not find a key for field " + fieldName)
 		resp[fieldName] = fmt.Sprintf("%s", unencryptedData)
 	}
 	ch <- resp
@@ -362,7 +362,7 @@ func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interfa
 		}
 	} else {
 		// we didn't find a key - return original data
-		hclog.L().Info("did not find a key for field " + fieldName)
+		// hclog.L().Info("did not find a key for field " + fieldName)
 		resp[fieldName] = fmt.Sprintf("%s", encryptedDataBase64)
 	}
 	ch <- resp
@@ -714,7 +714,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 			}
 		} else {
 			// we didn't find a key - return original data
-			hclog.L().Info("did not find a key for field " + fieldName)
+			// hclog.L().Info("did not find a key for field " + fieldName)
 			resp[rowNumber] = fmt.Sprintf("%s", encryptedDataBase64)
 		}
 	}

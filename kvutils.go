@@ -288,7 +288,7 @@ func UnwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*ke
 	proxyurlStr := os.Getenv("https_proxy")
 
 	var tr *http.Transport
-	if proxyurlStr != "" {
+	if proxyurlStr != "" && !strings.Contains(transiturl, "localhost") {
 		proxyUrl, _ := url.Parse(proxyurlStr)
 
 		tr = &http.Transport{
@@ -361,7 +361,7 @@ func WrapKeyset(transiturl string, transitTokenStr string, rawKeyset string) (st
 	proxyurlStr := os.Getenv("https_proxy")
 
 	var tr *http.Transport
-	if proxyurlStr != "" {
+	if proxyurlStr != "" && !strings.Contains(transiturl, "localhost") {
 		proxyUrl, _ := url.Parse(proxyurlStr)
 
 		tr = &http.Transport{

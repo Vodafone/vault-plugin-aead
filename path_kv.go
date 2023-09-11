@@ -461,7 +461,7 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 	syncMap, err := readKeysTobeSynced(kvOptions)
 	if err != nil {
 		// not an error just means we won't sync to the transit kv
-		hclog.L().Error("\nfailed to read keys to be synced" + err.Error())
+		hclog.L().Info("\nfailed to read keys to be synced" + err.Error())
 		return true, nil
 	}
 
@@ -515,14 +515,30 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 
 	//wrap the key
 
-	url := kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_namespace + "/" + kvOptions.vault_transit_engine + "/encrypt/" + kvOptions.vault_transit_kek
+	//url = "http://localhost:8200/v1/transit/encrypt/my-key"
+
+	url := ""
+	if kvOptions.vault_transit_namespace != "" {
+		url = kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_namespace + "/" + kvOptions.vault_transit_engine + "/encrypt/" + kvOptions.vault_transit_kek
+	} else {
+		// no namespace
+		url = kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_engine + "/encrypt/" + kvOptions.vault_transit_kek
+	}
 
 	wrappedkey, err := WrapKeyset(url, transitTokenStr, keyjson)
 	if err != nil {
 		hclog.L().Error("failed to wrap key")
 	}
 
-	url = kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_namespace + "/" + kvOptions.vault_transit_engine + "/decrypt/" + kvOptions.vault_transit_kek
+	//url = "http://localhost:8200/v1/transit/decrypt/my-key"
+
+	if kvOptions.vault_transit_namespace != "" {
+		url = kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_namespace + "/" + kvOptions.vault_transit_engine + "/decrypt/" + kvOptions.vault_transit_kek
+	} else {
+		url = kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_engine + "/decrypt/" + kvOptions.vault_transit_kek
+
+	}
+
 	_, err = UnwrapKeyset(url, transitTokenStr, wrappedkey)
 	if err != nil {
 		hclog.L().Error("failed to unwrap key")
@@ -574,7 +590,7 @@ func extractADFromSecret(secret interface{}, fName string) (string, error) {
 }
 
 func deleteFromKV(k string) (bool, error) {
-	hclog.L().Info("deleteFromKV:" + k)
+	hclog.L().Info("deleteFromKV: NOT IMPLEMENTED: " + k)
 	return true, nil
 }
 
@@ -630,7 +646,7 @@ func readKeysTobeSynced(kvOptions KVOptions) (map[string]interface{}, error) {
 	// read the synclist secret
 	kvsecret, err := KvGetSecret(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, "synclist")
 	if err != nil || kvsecret.Data == nil {
-		hclog.L().Error("Failed to read the synclist secret:" + err.Error())
+		hclog.L().Info("Failed to read the synclist secret:" + err.Error())
 		return nil, err
 	}
 

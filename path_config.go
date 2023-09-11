@@ -44,7 +44,7 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 			// don't do this if we already have a key in the config - prevents overwrite
 			_, ok := AEAD_CONFIG.Get(k)
 			if ok {
-				hclog.L().Info("pathConfigWrite - key already exists " + k)
+				hclog.L().Info("configWriteOverwriteCheck - key already exists " + k)
 				continue
 			}
 		}
@@ -52,12 +52,8 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 		if overwriteKV {
 			ok, err := saveToKV(k, v)
 			if !ok || err != nil {
-				hclog.L().Error("failed to save to KV:" + k + " Error:" + err.Error())
-			} else {
-				hclog.L().Info("pathConfigWrite - SYNC TO KV " + k)
+				hclog.L().Error("configWriteOverwriteCheck failed to save to KV:" + k + " Error:" + err.Error())
 			}
-		} else {
-			hclog.L().Info("pathConfigWrite - DO NOT RE_SYNC BACK TO KV " + k)
 		}
 	}
 
