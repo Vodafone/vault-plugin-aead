@@ -57,16 +57,16 @@ vault kv put -mount=secret transit-token key=root
 // YOU WILL NEED TO ADJUST YOUR VALUES ACCORDINGLY
 // YOU WILL HAVE DIFFERENT approle AND secret id
 const vault_kv_url = "http://127.0.0.1:8200"
-const vault_kv_active = "true"
-const vault_kv_approle_id = "f5e0c7fd-2014-be3c-dbd2-dfd61db47a44"
-const vault_kv_secret_id = "5209ad47-c7f9-e669-963e-2161ed950889"
+const vault_kv_active = "false"
+const vault_kv_approle_id = ""
+const vault_kv_secret_id = ""
 const vault_kv_engine = "secret"
 const vault_kv_version = "v2"
-const vault_transit_active = "true"
 
+const vault_transit_active = "false"
 const vault_transit_url = "http://localhost:8200"
-const vault_transit_approle_id = "f5e0c7fd-2014-be3c-dbd2-dfd61db47a44"
-const vault_transit_secret_id = "5209ad47-c7f9-e669-963e-2161ed950889"
+const vault_transit_approle_id = ""
+const vault_transit_secret_id = ""
 const vault_transit_kv_engine = "secret"
 const vault_transit_kv_version = "v2"
 const vault_transit_namespace = ""
