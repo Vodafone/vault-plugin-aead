@@ -22,6 +22,7 @@ import (
 	"github.com/google/tink/go/daead"
 	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
+	vault "github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/logical"
 )
 
@@ -56,25 +57,43 @@ vault kv put -mount=secret transit-token key=root
 // NOTE THE BELOW VALUES ARE FOR A LOCAL VAULT, INSTRUCTIONS ABOVE
 // YOU WILL NEED TO ADJUST YOUR VALUES ACCORDINGLY
 // YOU WILL HAVE DIFFERENT approle AND secret id
-const vault_kv_url = "http://127.0.0.1:8200"
-const vault_kv_active = "false"
-const vault_kv_approle_id = ""
-const vault_kv_secret_id = ""
-const vault_kv_engine = "secret"
-const vault_kv_version = "v2"
+// const vault_kv_url string = "https://zzz.vodafone.com"
+// const vault_kv_active string = "true"
+// const vault_kv_approle_id string = "xxxxxx"
+// const vault_kv_secret_id string = "yyyyyy"
+// const vault_kv_engine string = "secret"
+// const vault_kv_version string = "v2"
 
-const vault_transit_active = "false"
-const vault_transit_url = "http://localhost:8200"
-const vault_transit_approle_id = ""
-const vault_transit_secret_id = ""
-const vault_transit_kv_engine = "secret"
-const vault_transit_kv_version = "v2"
-const vault_transit_namespace = ""
-const vault_transit_engine = "transit"
-const vault_transit_tokenname = "transit-token"
-const vault_transit_kek = "my-key"
+// const vault_transit_active string = "true"
+// const vault_transit_url string = "https://zzz.vodafone.com"
+// const vault_transit_kv_approle_id string = "xxxxxx"
+// const vault_transit_kv_secret_id string = "yyyyyy"
+// const vault_transit_kv_engine string = "IT_secrets"
+// const vault_transit_kv_version string = "v2"
+// const vault_transit_namespace string = "kms/LM"
+// const vault_transit_engine string = "LM_transit"
+// const vault_transit_tokenname string = "token_ML"
+// const vault_transit_kek string = "LM_KEK"
 
-const bq_active = "false"
+const vault_kv_url string = "http://localhost:8200"
+const vault_kv_active string = "true"
+const vault_kv_approle_id string = "xxxxxx"
+const vault_kv_secret_id string = "yyyyyy"
+const vault_kv_engine string = "secret"
+const vault_kv_version string = "v2"
+
+const vault_transit_active string = "true"
+const vault_transit_url string = "http://localhost:8200"
+const vault_transit_kv_approle_id string = "xxxxxx"
+const vault_transit_kv_secret_id string = "yyyyyy"
+const vault_transit_kv_engine string = "secret"
+const vault_transit_kv_version string = "v2"
+const vault_transit_namespace string = ""
+const vault_transit_engine string = "transit"
+const vault_transit_tokenname string = "transit-token"
+const vault_transit_kek string = "my-key"
+
+const bq_active string = "false"
 
 const DeterministicKeyset = `{"primaryKeyId":97978150,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkCXhcXHvfUMj8DWgWjfnxyWFz3GcOw8G1xB2PTcfPdbl93idxHTcmANzYLYW3KmsU0putTRfi3vxySALhSHaHl0","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3647454112,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDeUHhnPioOIETPIbKfEcifAjnhxaeUJbRwT/TB6AurJG/qmhsbpGaHKFdhDHn6VtJ7I/tMWX7gFZTr1Db9f/3v","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":4039363563,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkAqIqBlB7q0W/bhp9RtivX770+nAYkEWxBkYjfPzbWiBWJZbM7YypfHbkOyyWPtkBc0yVK0YTUmqbWD0JpEJ63u","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3167099089,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDfF2JLaeZPvRwMncPw8ZKhsoGDMvFDriu7RtdF1pgHvRefGKbAa56pU7IFQCzA+UWy+dBNtsLW2H5rbHsxM2FC","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2568362933,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkC9CVw73BjO+OSjo3SFvUV7SUszpJnuKGnLWMbmD7cO3WFCIy2unxoyNPCHFDlzle1zU35vTZtoecnlsWScQUVl","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":97978150,"outputPrefixType":"TINK"}]}`
 const NonDeterministicKeyset = `{"primaryKeyId":3192631270,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBf14hIKBzJYUGjc4LXzaG3dT3aVsvv0vpyZJVZNh02MQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2832419897,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCW0m5ElDr8RznAl4ef3bXqgHgu9PL/js7K6NAZIjkDJw==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2233686170,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiChGSKGi7odjL3mdwhQ03X5SGiVXTarRSKPZUn+xCUYyQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1532149397,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3192631270,"outputPrefixType":"TINK"}]}`
@@ -1564,6 +1583,77 @@ func TestBackend(t *testing.T) {
 		}
 
 	})
+
+	t.Run("testkv1 ckv read", func(t *testing.T) {
+
+		// t.Parallel()
+		b, storage := testBackend(t)
+
+		if vault_kv_active == "false" {
+			t.SkipNow()
+		}
+
+		resp := readKV(b, storage, t)
+
+		if resp == nil || resp.Data == nil {
+			t.Error("nothing returned from KV")
+		}
+	})
+
+	t.Run("testkv2 kv sync", func(t *testing.T) {
+
+		b, storage := testBackend(t)
+
+		if vault_kv_active == "false" {
+			t.SkipNow()
+		}
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
+		// create a dynamic AEAD key for a field
+		// set some data to be encrypted using the keys
+		data := map[string]interface{}{
+			"testkv2-address": "my address",
+		}
+
+		// create a key - should get synced as gcm/testkv2-address
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
+
+		resp := readKV(b, storage, t)
+
+		_, ok := resp.Data["gcm/testkv2-address"]
+		if !ok {
+			t.Error("did not find entry for gcm/testkv2-address")
+		}
+
+		// OK its in KV and it looks ok, lets double -check the format by reading kv directly
+
+		// check kv secret
+		fullName := "gcm/testkv2-address"
+
+		checkKVSecret(fullName, t)
+
+		// create a key - should get synced as gcm/testkv2-address
+		encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
+
+		resp = readKV(b, storage, t)
+
+		_, ok = resp.Data["siv/testkv2-address"]
+		if !ok {
+			t.Error("did not find entry for siv/testkv2-address")
+		}
+
+		// OK its in KV and it looks ok, lets double -check the format by reading kv directly
+
+		// check kv secret
+		fullName = "siv/testkv2-address"
+
+		checkKVSecret(fullName, t)
+	})
+
 }
 
 func TestBQ(t *testing.T) {
@@ -1630,6 +1720,7 @@ func TestBQ(t *testing.T) {
 		routineName := "testbqsync_postcode_siv_encrypt"
 		checkBQRoutine(projectId, t, datasetName, routineName, tn)
 	})
+
 }
 
 func checkBQRoutine(projectId string, t *testing.T, datasetName string, routineName string, tn time.Time) {
@@ -1653,79 +1744,79 @@ func checkBQRoutine(projectId string, t *testing.T, datasetName string, routineN
 	}
 }
 
-func TestKV(t *testing.T) {
+// func TestKV(t *testing.T) {
 
-	t.Run("testkv1 ckv read", func(t *testing.T) {
+// t.Run("testkv1 ckv read", func(t *testing.T) {
 
-		if vault_kv_active == "false" {
-			t.SkipNow()
-		}
+// 	if vault_kv_active == "false" {
+// 		t.SkipNow()
+// 	}
 
-		// t.Parallel()
-		b, storage := testBackend(t)
+// 	// t.Parallel()
+// 	b, storage := testBackend(t)
 
-		resp := readKV(b, storage, t)
+// 	resp := readKV(b, storage, t)
 
-		if resp == nil || resp.Data == nil {
-			t.Error("nothing returned from KV")
-		}
-	})
+// 	if resp == nil || resp.Data == nil {
+// 		t.Error("nothing returned from KV")
+// 	}
+// })
 
-	t.Run("testkv2 kv sync", func(t *testing.T) {
+// t.Run("testkv2 kv sync", func(t *testing.T) {
 
-		if vault_kv_active == "false" {
-			t.SkipNow()
-		}
+// 	if vault_kv_active == "false" {
+// 		t.SkipNow()
+// 	}
 
-		b, storage := testBackend(t)
+// 	b, storage := testBackend(t)
 
-		configMap := createVaultConfig()
+// 	configMap := createVaultConfig()
 
-		// store the config
-		saveConfig(b, storage, configMap, false, t)
+// 	// store the config
+// 	saveConfig(b, storage, configMap, false, t)
 
-		// create a dynamic AEAD key for a field
-		// set some data to be encrypted using the keys
-		data := map[string]interface{}{
-			"testkv2-address": "my address",
-		}
+// 	// create a dynamic AEAD key for a field
+// 	// set some data to be encrypted using the keys
+// 	data := map[string]interface{}{
+// 		"testkv2-address": "my address",
+// 	}
 
-		// create a key - should get synced as gcm/testkv2-address
-		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
+// 	// create a key - should get synced as gcm/testkv2-address
+// 	encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
 
-		resp := readKV(b, storage, t)
+// 	resp := readKV(b, storage, t)
 
-		_, ok := resp.Data["gcm/testkv2-address"]
-		if !ok {
-			t.Error("did not find entry for gcm/testkv2-address")
-		}
+// 	_, ok := resp.Data["gcm/testkv2-address"]
+// 	if !ok {
+// 		t.Error("did not find entry for gcm/testkv2-address")
+// 	}
 
-		// OK its in KV and it looks ok, lets double -check the format by reading kv directly
+// 	// OK its in KV and it looks ok, lets double -check the format by reading kv directly
 
-		// check kv secret
-		fullName := "gcm/testkv2-address"
+// 	// check kv secret
+// 	fullName := "gcm/testkv2-address"
 
-		checkKVSecret(fullName, t)
+// 	checkKVSecret(fullName, t)
 
-		// create a key - should get synced as gcm/testkv2-address
-		encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
+// 	// create a key - should get synced as gcm/testkv2-address
+// 	encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
 
-		resp = readKV(b, storage, t)
+// 	resp = readKV(b, storage, t)
 
-		_, ok = resp.Data["siv/testkv2-address"]
-		if !ok {
-			t.Error("did not find entry for siv/testkv2-address")
-		}
+// 	_, ok = resp.Data["siv/testkv2-address"]
+// 	if !ok {
+// 		t.Error("did not find entry for siv/testkv2-address")
+// 	}
 
-		// OK its in KV and it looks ok, lets double -check the format by reading kv directly
+// 	// OK its in KV and it looks ok, lets double -check the format by reading kv directly
 
-		// check kv secret
-		fullName = "siv/testkv2-address"
+// 	// check kv secret
+// 	fullName = "siv/testkv2-address"
 
-		checkKVSecret(fullName, t)
+// 	checkKVSecret(fullName, t)
 
-	})
-}
+//		})
+//	}
 func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*keyset.Handle, error) {
 
 	proxyurlStr := os.Getenv("https_proxy")
@@ -1853,12 +1944,18 @@ func checkKVSecret(fullName string, t *testing.T) {
 
 func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 
-	client, err := KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id)
+	client, err := KvGetClient(vault_kv_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id)
 	if err != nil {
 		t.Error("\nfailed to initialize Vault client")
 	}
 
-	kvsecret, err := KvGetSecret(client, vault_kv_engine, vault_kv_version, fullName)
+	var kvsecret *vault.KVSecret
+
+	if vault_transit_namespace != "" {
+		kvsecret, err = KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, vault_transit_kv_version, fullName)
+	} else {
+		kvsecret, err = KvGetSecret(client, vault_transit_kv_engine, vault_transit_kv_version, fullName)
+	}
 	if err != nil || kvsecret.Data == nil {
 		t.Errorf("failed to read the secrets in folder %v", fullName)
 	}
@@ -1869,7 +1966,30 @@ func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 	}
 
 	wrappedKeyStr := fmt.Sprintf("%v", wrappedKeyIntf)
-	_, err = unwrapKeyset("http://localhost:8200/v1/transit/decrypt/my-key", "root", wrappedKeyStr)
+
+	var kvsecretToken *vault.KVSecret
+
+	if vault_transit_namespace != "" {
+		kvsecretToken, err = KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, vault_transit_kv_version, vault_transit_tokenname)
+	} else {
+		kvsecretToken, err = KvGetSecret(client, vault_transit_kv_engine, vault_transit_kv_version, vault_transit_tokenname)
+	}
+	if err != nil || kvsecretToken.Data == nil {
+		t.Errorf("failed to read the secrets in folder %v", fullName)
+	}
+
+	transitTokenIntf, ok := kvsecretToken.Data["key"]
+	if !ok {
+		t.Errorf("failed to read back the transitToken  %v", fullName)
+	}
+	transitToken := fmt.Sprintf("%v", transitTokenIntf)
+
+	if strings.Contains(vault_kv_url, "localhost") {
+		// ${VAULT_SERVER}/v1/kms/${LM}/${LM}_transit/decrypt/${LM}_KEK
+		_, err = unwrapKeyset(vault_kv_url+"/v1/"+vault_transit_engine+"/decrypt/"+vault_transit_kek, transitToken, wrappedKeyStr)
+	} else {
+		_, err = unwrapKeyset(vault_kv_url+"/v1/"+vault_transit_namespace+"/"+vault_transit_engine+"/decrypt/"+vault_transit_kek, transitToken, wrappedKeyStr)
+	}
 
 	if err != nil {
 		t.Error("failed to unwrap keyset and confirm type of aead key")
@@ -1880,12 +2000,12 @@ func TestTransitKV(t *testing.T) {
 
 	t.Run("testtransitkv1 transit kv sync", func(t *testing.T) {
 		// t.Parallel()
+		b, storage := testBackend(t)
 
 		if vault_transit_active == "false" {
 			t.SkipNow()
 		}
 
-		b, storage := testBackend(t)
 		configMap := createVaultConfig()
 
 		// store the config and create 3 keys
@@ -1918,9 +2038,14 @@ func TestTransitKV(t *testing.T) {
 			fmt.Printf("\nresp-k=%v resp-v=%v", k, v)
 
 		}
+
 		// we should have a wrapped secret in kv called XXX_DEK_TEST30-KEY1_AES256_GCM
-		checkKVTransitWrappedSecret("XXX_DEK_TEST30-KEY1_AES256_GCM", t)
-		checkKVTransitWrappedSecret("XXX_DEK_TEST30-KEY3_AES256_GCM", t)
+		ns := "XXX"
+		if vault_transit_namespace != "" && strings.Contains(vault_transit_namespace, "kms/") {
+			ns = strings.TrimPrefix(vault_transit_namespace, "kms/")
+		}
+		checkKVTransitWrappedSecret(ns+"_DEK_TEST30-KEY1_AES256_GCM", t)
+		checkKVTransitWrappedSecret(ns+"_DEK_TEST30-KEY3_AES256_GCM", t)
 
 	})
 }
@@ -2202,8 +2327,8 @@ func createVaultConfig() map[string]interface{} {
 		"VAULT_TRANSIT_ACTIVE": vault_transit_active,
 		"VAULT_TRANSIT_URL":    vault_transit_url,
 		// "VAULT_TRANSIT_PWD":        vault_transit_pwd,
-		"VAULT_TRANSIT_APPROLE_ID": vault_transit_approle_id,
-		"VAULT_TRANSIT_SECRET_ID":  vault_transit_secret_id,
+		"VAULT_TRANSIT_APPROLE_ID": vault_transit_kv_approle_id,
+		"VAULT_TRANSIT_SECRET_ID":  vault_transit_kv_secret_id,
 		"VAULT_TRANSIT_KV_ENGINE":  vault_transit_kv_engine,
 		"VAULT_TRANSIT_KV_VERSION": vault_transit_kv_version,
 		"VAULT_TRANSIT_NAMESPACE":  vault_transit_namespace,

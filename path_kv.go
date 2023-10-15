@@ -202,22 +202,10 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 			} else {
 				consulKV["ADDITIONAL_DATA-"+path] = extractedAD
 			}
-		} else {
-			// var jMap map[string]interface{}
-			// jsonKey, ok := kvsecret.Data["data"]
-			// if !ok {
-			// 	continue
-			// }
-			// if err := json.Unmarshal([]byte(fmt.Sprint("%v", jsonKey)), &jMap); err != nil {
-			// 	hclog.L().Error("failed to unmarshall the secret 'tmp/foo'")
-			// 	continue
-			// }
-			// consulKV["ADDITIONAL_DATA-"+path] =
-
 		}
 
 		if !keyFound {
-			hclog.L().Error("failed to read back any keys in KV secret " + path)
+			hclog.L().Info("failed to read back any gcm or siv AEAD keys in KV secret " + path)
 		}
 
 	}
@@ -324,16 +312,18 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 		return true, nil
 	}
 
-	kh, err := ValidateKeySetJson(potentialAEADKey)
+	// kh, err := ValidateKeySetJson(potentialAEADKey)
+	_, err = ValidateKeySetJson(potentialAEADKey)
+
 	if err != nil {
 		return true, nil
 	}
 
-	ksi := kh.KeysetInfo()
-	ki := ksi.KeyInfo[len(ksi.KeyInfo)-1]
-	keyTypeURL := ki.GetTypeUrl()
+	// ksi := kh.KeysetInfo()
+	// ki := ksi.KeyInfo[len(ksi.KeyInfo)-1]
+	// keyTypeURL := ki.GetTypeUrl()
 
-	hclog.L().Info("saveToKV:" + keyNameIn + " Type: " + keyTypeURL)
+	// hclog.L().Info("saveToKV:" + keyNameIn + " Type: " + keyTypeURL)
 
 	// get a client
 	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id)
@@ -469,12 +459,12 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 	toSyncIntf, ok := syncMap[keyNameIn]
 	if !ok {
 		// not an error just means we won't sync to the transit kv
-		hclog.L().Info("\ndon't sync this key" + keyNameIn)
+		hclog.L().Info("don't sync this key" + keyNameIn)
 		return true, nil
 	}
 	toSync := fmt.Sprintf("%v", toSyncIntf)
 	if toSync != "true" {
-		hclog.L().Info("\ndon't sync this key" + keyNameIn)
+		hclog.L().Info("don't sync this key" + keyNameIn)
 		return true, nil
 	}
 
