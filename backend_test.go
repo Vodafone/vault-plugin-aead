@@ -76,13 +76,13 @@ vault kv put -mount=secret transit-token key=root
 // const vault_transit_kek string = "LM_KEK"
 
 const vault_kv_url string = "http://localhost:8200"
-const vault_kv_active string = "true"
+const vault_kv_active string = "false"
 const vault_kv_approle_id string = "xxxxxx"
 const vault_kv_secret_id string = "yyyyyy"
 const vault_kv_engine string = "secret"
 const vault_kv_version string = "v2"
 
-const vault_transit_active string = "true"
+const vault_transit_active string = "false"
 const vault_transit_url string = "http://localhost:8200"
 const vault_transit_kv_approle_id string = "xxxxxx"
 const vault_transit_kv_secret_id string = "yyyyyy"
