@@ -1899,8 +1899,16 @@ func checkKVSecret(fullName string, t *testing.T) {
 	}
 
 	kvsecret, err := KvGetSecret(client, vault_kv_engine, vault_kv_version, fullName)
-	if err != nil || kvsecret.Data == nil {
-		t.Errorf("failed to read the secrets in folder %v", fullName)
+	if err != nil {
+		t.Errorf("failed to read the secrets in folder %s: %s", fullName, err)
+	}
+	
+	if kvsecret == nil {
+		t.Errorf("failed to read the secrets in folder %s: secret not found", fullName)
+	}
+	
+	if kvsecret.Data == nil {
+		t.Errorf("failed to read the secrets in folder %s: data not found", fullName)
 	}
 
 	jsonKey, ok := kvsecret.Data["data"]
