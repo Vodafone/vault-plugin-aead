@@ -170,8 +170,22 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 
 		keyFound := false
 		kvsecret, err := KvGetSecret(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, path)
-		if err != nil || kvsecret.Data == nil {
-			hclog.L().Error("failed to read the secrets in folder " + path)
+		if err != nil {
+			errMsg := fmt.Sprintf("failed to read the secrets in folder %s: %s", path, err)
+			hclog.L().Error(errMsg)
+			return nil, fmt.Errorf(errMsg)
+		}
+		
+		if kvsecret == nil {
+			errMsg := fmt.Sprintf("failed to read the secrets in folder %s: secret not found", path)
+			hclog.L().Error(errMsg)
+			return nil, fmt.Errorf(errMsg)
+		}
+		
+		if kvsecret.Data == nil {
+			errMsg := fmt.Sprintf("failed to read the secrets in folder %s: data not found", path)
+			hclog.L().Error(errMsg)
+			return nil, fmt.Errorf(errMsg)
 		}
 
 		if strings.HasPrefix(path, "gcm/") || strings.HasPrefix(path, "siv/") {
@@ -394,9 +408,22 @@ func putAndCheckKvSecret(client *vault.Client, vault_kv_engine string, vault_kv_
 	}
 
 	kvsecret, err := KvGetSecret(client, vault_kv_engine, vault_kv_version, keyNameIn)
-	if err != nil || kvsecret.Data == nil {
-		hclog.L().Error("failed to read the secrets in folder:" + keyNameIn)
-		return nil, err
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: %s", keyNameIn, err)
+		hclog.L().Error(errMsg)
+		return nil, fmt.Errorf(errMsg)
+	}
+	
+	if kvsecret == nil {
+		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: secret not found", keyNameIn)
+		hclog.L().Error(errMsg)
+		return nil, fmt.Errorf(errMsg)
+	}
+	
+	if kvsecret.Data == nil {
+		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: data not found", keyNameIn)
+		hclog.L().Error(errMsg)
+		return nil, fmt.Errorf(errMsg)
 	}
 
 	secret, ok := kvsecret.Data["data"]
@@ -635,9 +662,22 @@ func readKeysTobeSynced(kvOptions KVOptions) (map[string]interface{}, error) {
 
 	// read the synclist secret
 	kvsecret, err := KvGetSecret(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, "synclist")
-	if err != nil || kvsecret.Data == nil {
-		hclog.L().Info("Failed to read the synclist secret:" + err.Error())
-		return nil, err
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: %s", "synclist", err)
+		hclog.L().Error(errMsg)
+		return nil, fmt.Errorf(errMsg)
+	}
+	
+	if kvsecret == nil {
+		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: secret not found", "synclist")
+		hclog.L().Error(errMsg)
+		return nil, fmt.Errorf(errMsg)
+	}
+	
+	if kvsecret.Data == nil {
+		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: data not found", "synclist")
+		hclog.L().Error(errMsg)
+		return nil, fmt.Errorf(errMsg)
 	}
 
 	// return the map of keys to be synced
