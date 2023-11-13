@@ -109,7 +109,8 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 	}
 	result := make(map[string]interface{}, len(AEAD_CONFIG.Items()))
 	for k, v := range AEAD_CONFIG.Items() {
-		if isEncryptionJsonKey(v.(string)) {
+		_, err := ValidateKeySetJson(v.(string))
+		if err != nil {
 			v = muteKeyMaterial(v.(string))
 		}
 		result[k] = v
@@ -197,8 +198,9 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 	for keyField, encryptionKey := range AEAD_CONFIG.Items() {
 		fieldName := fmt.Sprintf("%v", keyField)
 		keyStr := fmt.Sprintf("%v", encryptionKey)
-		if !isEncryptionJsonKey(keyStr) {
-			// AEAD_CONFIG.Set(keyFieldStr, encryptionKey)
+		_, err := ValidateKeySetJson(keyStr)
+		if err != nil {
+			// not a valid key
 			continue
 		} else {
 			encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionKey)
@@ -292,7 +294,9 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 
 	mutedResult := make(map[string]interface{}, len(resp))
 	for k, v := range resp {
-		if isEncryptionJsonKey(v.(string)) {
+		_, err := ValidateKeySetJson(v.(string))
+		if err == nil {
+			// we do have a valid key
 			v = muteKeyMaterial(v.(string))
 		}
 		mutedResult[k] = v
@@ -355,7 +359,9 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 
 	mutedResult := make(map[string]interface{}, len(resp))
 	for k, v := range resp {
-		if isEncryptionJsonKey(v.(string)) {
+		_, err := ValidateKeySetJson(v.(string))
+		if err != nil {
+			// valid key
 			v = muteKeyMaterial(v.(string))
 		}
 		mutedResult[k] = v
@@ -416,7 +422,9 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 
 	mutedResult := make(map[string]interface{}, len(resp))
 	for k, v := range resp {
-		if isEncryptionJsonKey(v.(string)) {
+		_, err := ValidateKeySetJson(v.(string))
+		if err != nil {
+			// valid key
 			v = muteKeyMaterial(v.(string))
 		}
 		mutedResult[k] = v
@@ -479,7 +487,9 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 
 	mutedResult := make(map[string]interface{}, len(resp))
 	for k, v := range resp {
-		if isEncryptionJsonKey(v.(string)) {
+		_, err := ValidateKeySetJson(v.(string))
+		if err != nil {
+			// valid key
 			v = muteKeyMaterial(v.(string))
 		}
 		mutedResult[k] = v

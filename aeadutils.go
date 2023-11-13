@@ -370,9 +370,9 @@ func UpdatePrimaryKeyID(kh *keyset.Handle, keyId string) (*keyset.Handle, error)
 
 func ValidateKeySetJson(keySetJson string) (*keyset.Handle, error) {
 
-	if !isEncryptionJsonKey(keySetJson) {
-		return nil, fmt.Errorf("Not a key %s", keySetJson)
-	}
+	// if !isEncryptionJsonKey(keySetJson) {
+	// 	return nil, fmt.Errorf("Not a key %s", keySetJson)
+	// }
 	r := keyset.NewJSONReader(bytes.NewBufferString(string(keySetJson)))
 	kh, err := insecurecleartextkeyset.Read(r)
 	if err != nil {
@@ -382,10 +382,10 @@ func ValidateKeySetJson(keySetJson string) (*keyset.Handle, error) {
 	return kh, nil
 }
 
-func isEncryptionJsonKey(keyStr string) bool {
-	//TODO find better way to check this
-	return strings.Contains(keyStr, "primaryKeyId")
-}
+// func isEncryptionJsonKey(keyStr string) bool {
+// 	//TODO find better way to check this
+// 	return strings.Contains(keyStr, "primaryKeyId")
+// }
 
 func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
@@ -415,7 +415,8 @@ func getEncryptionKeyMultiple(fieldName string, setDepth ...int) (interface{}, b
 		configValue, ok := AEAD_CONFIG.Get(fieldName)
 		if ok {
 			configValueStr := configValue.(string)
-			if isEncryptionJsonKey(configValueStr) {
+			_, err := ValidateKeySetJson(configValueStr)
+			if err != nil {
 				keySliceRtn = append(keySliceRtn, configValue) // append the found element to keySliceRtn
 			} else {
 				// make a recursive call with the new 'root'
@@ -465,7 +466,9 @@ func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
 		configValue, ok := AEAD_CONFIG.Get(fieldName)
 		if ok {
 			configValueStr := configValue.(string)
-			if isEncryptionJsonKey(configValueStr) {
+			_, err := ValidateKeySetJson(configValueStr)
+			if err == nil {
+				// this is a valid key
 				return configValue, true
 			} else {
 				// make a recursive call with the new 'root'
