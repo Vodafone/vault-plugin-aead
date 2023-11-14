@@ -370,9 +370,9 @@ func UpdatePrimaryKeyID(kh *keyset.Handle, keyId string) (*keyset.Handle, error)
 
 func ValidateKeySetJson(keySetJson string) (*keyset.Handle, error) {
 
-	// if !isEncryptionJsonKey(keySetJson) {
-	// 	return nil, fmt.Errorf("Not a key %s", keySetJson)
-	// }
+	if !isEncryptionJsonKey(keySetJson) {
+		return nil, fmt.Errorf("Not a key %s", keySetJson)
+	}
 	r := keyset.NewJSONReader(bytes.NewBufferString(string(keySetJson)))
 	kh, err := insecurecleartextkeyset.Read(r)
 	if err != nil {
@@ -382,10 +382,10 @@ func ValidateKeySetJson(keySetJson string) (*keyset.Handle, error) {
 	return kh, nil
 }
 
-// func isEncryptionJsonKey(keyStr string) bool {
-// 	//TODO find better way to check this
-// 	return strings.Contains(keyStr, "primaryKeyId")
-// }
+func isEncryptionJsonKey(keyStr string) bool {
+	//TODO find better way to check this
+	return strings.Contains(keyStr, "primaryKeyId")
+}
 
 func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
