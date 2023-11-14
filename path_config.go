@@ -110,7 +110,8 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 	result := make(map[string]interface{}, len(AEAD_CONFIG.Items()))
 	for k, v := range AEAD_CONFIG.Items() {
 		_, err := ValidateKeySetJson(v.(string))
-		if err != nil {
+		if err == nil {
+			// key is valid
 			v = muteKeyMaterial(v.(string))
 		}
 		result[k] = v
@@ -360,7 +361,7 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 	mutedResult := make(map[string]interface{}, len(resp))
 	for k, v := range resp {
 		_, err := ValidateKeySetJson(v.(string))
-		if err != nil {
+		if err == nil {
 			// valid key
 			v = muteKeyMaterial(v.(string))
 		}
@@ -423,7 +424,7 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 	mutedResult := make(map[string]interface{}, len(resp))
 	for k, v := range resp {
 		_, err := ValidateKeySetJson(v.(string))
-		if err != nil {
+		if err == nil {
 			// valid key
 			v = muteKeyMaterial(v.(string))
 		}
@@ -488,7 +489,7 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 	mutedResult := make(map[string]interface{}, len(resp))
 	for k, v := range resp {
 		_, err := ValidateKeySetJson(v.(string))
-		if err != nil {
+		if err == nil {
 			// valid key
 			v = muteKeyMaterial(v.(string))
 		}
