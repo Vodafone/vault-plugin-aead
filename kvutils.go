@@ -22,6 +22,7 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	vault "github.com/hashicorp/vault/api"
 	auth "github.com/hashicorp/vault/api/auth/approle"
+	authgcp "github.com/hashicorp/vault/api/auth/gcp"
 )
 
 type KVOptions struct {
@@ -45,12 +46,51 @@ type KVOptions struct {
 
 var aead_engine = "aead-secrets"
 
+func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string, vault_kv_writer_role string, vault_secretgenerator_iam_role string) (string, error) {
+
+	if vault_writer_secret_id != "" {
+		// we already have the secret id, no need to generate one
+		return "", nil
+	}
+	// 1. Get the SA we are working as
+	saEmail, projectId, err := getMetadataInfo()
+	if err != nil {
+		fmt.Printf("oops error from getMetadataInfo=%s", err.Error())
+		log.Fatal()
+	}
+	fmt.Printf("\nsaEmail=%s ProjectId=%s\n", saEmail, projectId)
+
+	// 2. use the SA and IAM role to generate a token for vault
+	_, token, err := getVaultTokenGCPAuthIAM(saEmail, vault_addr, vault_secretgenerator_iam_role)
+	if err != nil {
+		fmt.Printf("oops error from getVaultTokenGCPAuthIAM=%s", err.Error())
+		log.Fatal()
+	}
+	fmt.Printf("\ntoken from getVaultTokenGCPAuthIAM=%s\n", token)
+
+	// 3. use the token (scoped to only be able to generate a secret for an app role, to create a new secretid)
+	newSecretId, err := createSecretIdForRole(vault_addr, token, vault_kv_writer_role)
+	if err != nil {
+		fmt.Printf("oops error from createSecretIdForRole=%s", err.Error())
+		log.Fatal()
+	}
+	fmt.Printf("\nnewSecretId from createSecretIdForRole=%s\n", newSecretId)
+	return newSecretId, nil
+}
+
 // Fetches a key-value secret (kv-v2) after authenticating via AppRole.
-func KvGetClient(vault_addr string, namespace string, vault_approle_id string, vault_secret_id string) (*vault.Client, error) {
+func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id string, vault_writer_secret_id string, vault_writer_approle string, vault_secretgenerator_iam_role string) (*vault.Client, error) {
+
+	generated_secret_id, err := getGeneratedVaultSecretId(vault_addr, vault_writer_approle, vault_writer_secret_id, vault_secretgenerator_iam_role)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to generate a secret id")
+	} else {
+		vault_writer_secret_id = generated_secret_id
+	}
 
 	os.Setenv("VAULT_ADDR", vault_addr)
-	os.Setenv("APPROLE_ROLE_ID", vault_approle_id)
-	os.Setenv("APPROLE_SECRET_ID", vault_secret_id)
+	os.Setenv("APPROLE_ROLE_ID", vault_writer_approle_id)
+	os.Setenv("APPROLE_SECRET_ID", vault_writer_secret_id)
 
 	config := vault.DefaultConfig() // modify for more granular configuration
 
@@ -76,7 +116,7 @@ func KvGetClient(vault_addr string, namespace string, vault_approle_id string, v
 	secretID := &auth.SecretID{FromEnv: "APPROLE_SECRET_ID"}
 
 	appRoleAuth, err := auth.NewAppRoleAuth(
-		vault_approle_id,
+		vault_writer_approle_id,
 		secretID,
 		// auth.WithWrappingToken(), // Only required if the secret ID is response-wrapped.
 	)
@@ -451,4 +491,205 @@ func DeriveKeyName(namespace string, keyname string, keyjson string) (string, er
 	newkeyname = lmUpper + "_DEK_" + keynameUpper + "_AES256_" + keyType
 
 	return newkeyname, nil
+}
+
+// func kvGetClientWithIAMrole(vault_addr string, namespace string, vaultApproleId string, vault_iam_role string, vault_kv_role string) (*vault.Client, string, error) {
+
+// 	// 1. Get the SA we are working as
+// 	saEmail, projectId, err := getMetadataInfo()
+// 	if err != nil {
+// 		fmt.Printf("oops error from getMetadataInfo=%s", err.Error())
+// 		log.Fatal()
+// 	}
+// 	fmt.Printf("\nsaEmail=%s ProjectId=%s\n", saEmail, projectId)
+
+// 	// 2. use the SA and IAM role to generate a token for vault
+// 	_, token, err := getVaultTokenGCPAuthIAM(saEmail, vault_addr, vault_iam_role)
+// 	if err != nil {
+// 		fmt.Printf("oops error from getVaultTokenGCPAuthIAM=%s", err.Error())
+// 		log.Fatal()
+// 	}
+// 	fmt.Printf("\ntoken from getVaultTokenGCPAuthIAM=%s\n", token)
+
+// 	// 3. use the token (scoped to only be able to generate a secret for an app role, to create a new secretid)
+// 	newSecretId, err := createSecretIdForRole(vault_addr, token, vault_kv_role)
+// 	if err != nil {
+// 		fmt.Printf("oops error from createSecretIdForRole=%s", err.Error())
+// 		log.Fatal()
+// 	}
+// 	fmt.Printf("\nnewSecretId from createSecretIdForRole=%s\n", newSecretId)
+
+// 	// 4. use the original approle and new secret id to generate a new token
+// 	_, newtoken, err := kvGetClientWithApprole(vault_addr, "", vaultApproleId, newSecretId)
+// 	if err != nil {
+// 		fmt.Printf("oops error from kvGetClientWithApprole=%s", err.Error())
+// 		log.Fatal()
+// 	}
+
+// 	fmt.Printf("\nNEW Token=%v", newtoken)
+
+// 	//5. manually check the scope of the new token
+// 	// vault login (new token)
+// 	return nil, newtoken, nil
+// }
+
+func getMetadataInfo() (string, string, error) {
+	url := "http://metadata.google.internal/computeMetadata/v1/project/project-id"
+	projectID, err := callMetadataServer(url)
+	if err != nil {
+		return "", "", fmt.Errorf("Error: unable to contact http://metadata.google.internal: %s", err)
+	}
+
+	url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email"
+	saEmail, err := callMetadataServer(url)
+	if err != nil {
+		return "", "", fmt.Errorf("Error: unable to contact http://metadata.google.internal: %s", err)
+	}
+
+	return saEmail, projectID, nil
+}
+func callMetadataServer(metadata_url string) (string, error) {
+	req, err := http.NewRequest("GET", metadata_url, nil)
+	req.Header.Set("Metadata-Flavor", "Google")
+
+	proxyurlStr := os.Getenv("https_proxy")
+	proxyurlStr = ""
+
+	var tr *http.Transport
+	if proxyurlStr != "" {
+		proxyUrl, _ := url.Parse(proxyurlStr)
+
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			Proxy:           http.ProxyURL(proxyUrl),
+		}
+	} else {
+
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
+
+	client := &http.Client{Transport: tr}
+
+	// client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	return string(body), nil
+}
+
+func getVaultTokenGCPAuthIAM(serviceAccount string, vaultAddress string, vaultIAM string) (*vault.Client, string, error) {
+	config := vault.DefaultConfig()
+
+	// Override default vaultAddress
+	config.Address = vaultAddress
+
+	// Initialise Vault client
+	client, err := vault.NewClient(config)
+	if err != nil {
+		return nil, "", fmt.Errorf("unable to initialize Vault client: %w", err)
+	}
+
+	// Use passed serviceAccount email
+	svcAccountEmail := serviceAccount
+
+	// auth.WithIAMAuth option uses the IAM-style authentication
+	gcpAuth, err := authgcp.NewGCPAuth(
+		vaultIAM,
+		authgcp.WithIAMAuth(svcAccountEmail),
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("unable to initialize GCP auth method: %w", err)
+	}
+
+	// Login to Vault to retrieve valid token
+	authInfo, err := client.Auth().Login(context.Background(), gcpAuth)
+	if err != nil {
+		return nil, "", fmt.Errorf("unable to login to GCP auth method: %w", err)
+	}
+	if authInfo == nil {
+		return nil, "", fmt.Errorf("login response did not return client token")
+	}
+
+	ti, err := authInfo.TokenID()
+
+	client.SetToken(ti)
+	return client, ti, nil
+}
+
+func createSecretIdForRole(vaulturl string, token string, approle string) (string, error) {
+
+	var tr *http.Transport
+	proxyurlStr := os.Getenv("https_proxy")
+
+	if proxyurlStr != "" {
+		proxyUrl, _ := url.Parse(proxyurlStr)
+
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			Proxy:           http.ProxyURL(proxyUrl),
+		}
+	} else {
+
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
+
+	httpClient := &http.Client{Transport: tr}
+	client := retryablehttp.NewClient()
+	client.HTTPClient = httpClient
+	client.RetryMax = 10                    // max 10 retries
+	client.RetryWaitMax = 300 * time.Second // max 5 mins between retries
+
+	url := vaulturl + "/v1/auth/approle/role/" + approle + "/secret-id"
+	req, err := retryablehttp.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		fmt.Printf("oops error from retryablehttp.NewRequest=%s", err.Error())
+		log.Fatal()
+	}
+	req.Header.Set("X-Vault-Token", token)
+	// req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("oops error from client.Do=%s", err.Error())
+		log.Fatal()
+	}
+
+	defer resp.Body.Close()
+
+	log.Printf("resp=%v", resp)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("goDoHttp io.ReadAll Error=%v\n", err)
+		log.Fatal()
+	}
+
+	bodyMap := map[string]interface{}{}
+
+	err = json.Unmarshal([]byte(body), &bodyMap)
+	if err != nil {
+		fmt.Printf("goDoHttp Unmarshall Error=%v\n", err)
+		log.Fatal()
+	}
+	log.Printf("\nbodymap=%v", bodyMap)
+
+	dataMap := bodyMap["data"]
+	// dataMapDeets := map[string]interface{}{}
+	dataMapDeets := dataMap.(map[string]interface{})
+
+	log.Printf("\nnewSecretId=%v", dataMapDeets["secret_id"])
+
+	si := fmt.Sprintf("%s", dataMapDeets["secret_id"])
+
+	return si, nil
 }

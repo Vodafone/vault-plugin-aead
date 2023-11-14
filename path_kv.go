@@ -145,7 +145,7 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 		return nil, nil
 	}
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id)
+	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, "", "")
 
 	if err != nil {
 		hclog.L().Error("\nfailed to initialize Vault client1")
@@ -175,13 +175,13 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 			hclog.L().Error(errMsg)
 			return nil, fmt.Errorf(errMsg)
 		}
-		
+
 		if kvsecret == nil {
 			errMsg := fmt.Sprintf("failed to read the secrets in folder %s: secret not found", path)
 			hclog.L().Error(errMsg)
 			return nil, fmt.Errorf(errMsg)
 		}
-		
+
 		if kvsecret.Data == nil {
 			errMsg := fmt.Sprintf("failed to read the secrets in folder %s: data not found", path)
 			hclog.L().Error(errMsg)
@@ -340,7 +340,7 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 	// hclog.L().Info("saveToKV:" + keyNameIn + " Type: " + keyTypeURL)
 
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id)
+	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, "", "")
 	if err != nil {
 		hclog.L().Error("\nfailed to initialize Vault client2")
 		return false, err
@@ -413,13 +413,13 @@ func putAndCheckKvSecret(client *vault.Client, vault_kv_engine string, vault_kv_
 		hclog.L().Error(errMsg)
 		return nil, fmt.Errorf(errMsg)
 	}
-	
+
 	if kvsecret == nil {
 		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: secret not found", keyNameIn)
 		hclog.L().Error(errMsg)
 		return nil, fmt.Errorf(errMsg)
 	}
-	
+
 	if kvsecret.Data == nil {
 		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: data not found", keyNameIn)
 		hclog.L().Error(errMsg)
@@ -498,7 +498,7 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 	// OK, we want to sync this key
 
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_transit_url, kvOptions.vault_transit_namespace, kvOptions.vault_transit_approle_id, kvOptions.vault_transit_secret_id)
+	client, err := KvGetClient(kvOptions.vault_transit_url, kvOptions.vault_transit_namespace, kvOptions.vault_transit_approle_id, kvOptions.vault_transit_secret_id, "", "")
 	if err != nil {
 		hclog.L().Error("\nfailed to initialize Vault client3")
 		return false, err
@@ -613,7 +613,7 @@ func deleteFromKV(k string) (bool, error) {
 
 func storeKeysTobeSynced(kvOptions KVOptions, keyMap map[string]interface{}) error {
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id)
+	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, "", "")
 	if err != nil {
 		hclog.L().Error("Failed to initialise kv:" + err.Error())
 		return err
@@ -654,7 +654,7 @@ func storeKeysTobeSynced(kvOptions KVOptions, keyMap map[string]interface{}) err
 
 func readKeysTobeSynced(kvOptions KVOptions) (map[string]interface{}, error) {
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id)
+	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, "", "")
 	if err != nil {
 		hclog.L().Error("Failed to initialise kv:" + err.Error())
 		return nil, err
@@ -667,13 +667,13 @@ func readKeysTobeSynced(kvOptions KVOptions) (map[string]interface{}, error) {
 		hclog.L().Error(errMsg)
 		return nil, fmt.Errorf(errMsg)
 	}
-	
+
 	if kvsecret == nil {
 		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: secret not found", "synclist")
 		hclog.L().Error(errMsg)
 		return nil, fmt.Errorf(errMsg)
 	}
-	
+
 	if kvsecret.Data == nil {
 		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: data not found", "synclist")
 		hclog.L().Error(errMsg)
