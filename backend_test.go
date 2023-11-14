@@ -1893,7 +1893,7 @@ func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*ke
 func checkKVSecret(fullName string, t *testing.T) {
 	fieldName := RemoveKeyPrefix(fullName)
 
-	client, err := KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id)
+	client, err := KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id, "", "")
 	if err != nil {
 		t.Error("\nfailed to initialize Vault client")
 	}
@@ -1902,11 +1902,11 @@ func checkKVSecret(fullName string, t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to read the secrets in folder %s: %s", fullName, err)
 	}
-	
+
 	if kvsecret == nil {
 		t.Errorf("failed to read the secrets in folder %s: secret not found", fullName)
 	}
-	
+
 	if kvsecret.Data == nil {
 		t.Errorf("failed to read the secrets in folder %s: data not found", fullName)
 	}
@@ -1952,7 +1952,7 @@ func checkKVSecret(fullName string, t *testing.T) {
 
 func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 
-	client, err := KvGetClient(vault_kv_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id)
+	client, err := KvGetClient(vault_kv_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id, "", "")
 	if err != nil {
 		t.Error("\nfailed to initialize Vault client")
 	}
