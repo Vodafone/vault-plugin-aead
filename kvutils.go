@@ -50,7 +50,7 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 
 	if vault_writer_secret_id != "" {
 		// we already have the secret id, no need to generate one
-		return "", nil
+		return vault_writer_secret_id, nil
 	}
 	// 1. Get the SA we are working as
 	saEmail, projectId, err := getMetadataInfo()
@@ -79,9 +79,9 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 }
 
 // Fetches a key-value secret (kv-v2) after authenticating via AppRole.
-func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id string, vault_writer_secret_id string, vault_writer_approle string, vault_secretgenerator_iam_role string) (*vault.Client, error) {
+func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id string, vault_writer_secret_id string, vault_writer_approle_name string, vault_secretgenerator_iam_role_name string) (*vault.Client, error) {
 
-	generated_secret_id, err := getGeneratedVaultSecretId(vault_addr, vault_writer_approle, vault_writer_secret_id, vault_secretgenerator_iam_role)
+	generated_secret_id, err := getGeneratedVaultSecretId(vault_addr, vault_writer_approle_name, vault_writer_secret_id, vault_secretgenerator_iam_role_name)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to generate a secret id")
 	} else {
