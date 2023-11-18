@@ -1,0 +1,9 @@
+# Use a minimal base image
+FROM alpine:latest
+
+# Create a directory to store the binary
+RUN mkdir /vault_binaries
+
+# Copy the binary into the container
+COPY vault-plugin-aead /vault_binaries/
+

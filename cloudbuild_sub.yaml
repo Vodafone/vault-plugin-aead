@@ -21,10 +21,10 @@ steps:
     waitFor: ['go-build']
     args:
       - build
-      - '--build-arg'
-      - 'FQ_BASE_IMAGE=${_FQ_BASE_IMAGE}'
       - '-t'
       - '${_TARGET}:${_TARGET_TAG}'
+      - '-f'
+      - 'Dockerfile.plugin'
       - .
     dir: docker
     
