@@ -48,6 +48,11 @@ var aead_engine = "aead-secrets"
 
 func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string, vault_kv_writer_role string, vault_secretgenerator_iam_role string) (string, error) {
 
+	// MASSIVE HACK
+	vault_writer_secret_id = ""
+	vault_kv_writer_role = "tink-test-nonlive-kv-write"
+	vault_secretgenerator_iam_role = "tink-test-nonlive-secretgenerator-iam"
+
 	if vault_writer_secret_id != "" {
 		// we already have the secret id, no need to generate one
 		return vault_writer_secret_id, nil
@@ -56,7 +61,9 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 	saEmail, projectId, err := getMetadataInfo()
 	if err != nil {
 		fmt.Printf("oops error from getMetadataInfo=%s", err.Error())
-		log.Fatal()
+		saEmail = "restricted-zone-restricted@vf-grp-neuronenabler-nonlive.iam.gserviceaccount.com"
+		projectId = "vf-grp-neuronenabler-nonlive"
+		// log.Fatal()
 	}
 	fmt.Printf("\nsaEmail=%s ProjectId=%s\n", saEmail, projectId)
 
@@ -81,7 +88,7 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 // Fetches a key-value secret (kv-v2) after authenticating via AppRole.
 func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id string, vault_writer_secret_id string, vault_writer_approle_name string, vault_secretgenerator_iam_role_name string) (*vault.Client, error) {
 
-	generated_secret_id, err := getGeneratedVaultSecretId(vault_addr, vault_writer_approle_name, vault_writer_secret_id, vault_secretgenerator_iam_role_name)
+	generated_secret_id, err := getGeneratedVaultSecretId(vault_addr, vault_writer_secret_id, vault_writer_approle_name, vault_secretgenerator_iam_role_name)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to generate a secret id")
 	} else {
@@ -552,23 +559,23 @@ func callMetadataServer(metadata_url string) (string, error) {
 	req, err := http.NewRequest("GET", metadata_url, nil)
 	req.Header.Set("Metadata-Flavor", "Google")
 
-	proxyurlStr := os.Getenv("https_proxy")
-	proxyurlStr = ""
+	// proxyurlStr := os.Getenv("https_proxy")
+	// proxyurlStr = ""
 
 	var tr *http.Transport
-	if proxyurlStr != "" {
-		proxyUrl, _ := url.Parse(proxyurlStr)
+	// if proxyurlStr != "" {
+	// 	proxyUrl, _ := url.Parse(proxyurlStr)
 
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			Proxy:           http.ProxyURL(proxyUrl),
-		}
-	} else {
+	// 	tr = &http.Transport{
+	// 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	// 		Proxy:           http.ProxyURL(proxyUrl),
+	// 	}
+	// } else {
 
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
+	tr = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
+	// }
 
 	client := &http.Client{Transport: tr}
 
