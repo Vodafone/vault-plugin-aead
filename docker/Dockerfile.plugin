@@ -3,6 +3,4 @@ FROM alpine:latest
 RUN mkdir /vault_binaries
 ARG P_VERSION="default"
 ENV VERSION_PLUGIN=${P_VERSION}
-COPY vault-plugin-aead /vault_binaries/
-RUN ln -s /vault_binaries/vault-plugin-aead /vault_binaries/vault-plugin-aead_${VERSION_PLUGIN}
-RUN chmod +x /vault_binaries/vault-plugin-aead
+COPY vault-plugin-aead /vault_binaries/vault-plugin-aead_${VERSION_PLUGIN}
