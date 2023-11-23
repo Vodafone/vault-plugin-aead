@@ -1,0 +1,54 @@
+steps:
+  - name: 'gcr.io/cloud-builders/go:1.19'
+    id: 'go-test'
+    args:
+      - '-c'
+      - |
+        go test -v -race
+    entrypoint: /bin/sh
+  - name: 'gcr.io/cloud-builders/go:1.19'
+    id: 'go-build'
+    waitFor: ['go-test']
+    args:
+      - '-c'
+      - |
+        make build VERSION=$TAG_NAME-$BUILD_ID
+        cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
+    entrypoint: /bin/sh
+
+  - name: gcr.io/cloud-builders/docker
+    id: 'container-build'
+    env:
+      - 'P_VERSION=$TAG_NAME-$BUILD_ID'
+      - 'FQ_BASE_IMAGE=${_FQ_BASE_IMAGE}'
+    waitFor: ['go-build']
+    args:
+      - build
+      - '--build-arg'
+      - 'P_VERSION=$TAG_NAME-$BUILD_ID'  
+      - '-f'
+      - 'Dockerfile.plugin'
+      - '-t'
+      - '${_TARGET}:$TAG_NAME-$BUILD_ID'
+      - .
+    dir: docker
+    
+  - name: gcr.io/cloud-builders/docker
+    id: 'container-push'
+    waitFor: ['container-build']
+    entrypoint: /bin/bash
+    args:
+    - -c
+    - |
+      docker push ${_TARGET}:$TAG_NAME-$BUILD_ID
+
+timeout: 1200s      
+images: [ '${_TARGET}:$TAG_NAME-$BUILD_ID' ]
+logsBucket: 'gs://${_BUILD_PROJECT}-logging'
+options:
+  workerPool: projects/${_BUILD_PROJECT}/locations/europe-west1/workerPools/worker-pool2
+  env:
+    - 'GOPRIVATE=github.com/pierrec,google.golang.org'
+    - 'GOOS=linux'
+    - 'GOARCH=amd64'
+    - 'TAG_NAME=$TAG_NAME'
