@@ -1,5 +1,16 @@
+ARG VERSION
 ARG FQ_BASE_IMAGE 
 FROM ${FQ_BASE_IMAGE}
+ARG FQ_BASE_IMAGE
+ENV FQ_BASE_IMAGE=${FQ_BASE_IMAGE}
+ENV SOME_ENV_VAR_NAME=${FQ_BASE_IMAGE}
+
+RUN echo "g-${FQ_BASE_IMAGE}" 
+RUN echo "ju-${FQ_BASE_IMAGE}" 
+
+ENV VERSION_PLUGIN=${VERSION}
+RUN echo "o-${VERSION_PLUGIN}" 
+
 RUN mkdir /vault/plugins
 COPY vault-plugin-aead /vault/plugins/vault-plugin-aead
 ARG VERSION
