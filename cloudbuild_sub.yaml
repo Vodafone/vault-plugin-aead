@@ -18,6 +18,8 @@ steps:
 
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
+    env:
+      - VERSION=$TAG_NAME-${_TARGET_TAG}-rc  
     waitFor: ['go-build']
     args:
       - build
