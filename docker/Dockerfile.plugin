@@ -1,9 +1,11 @@
 # Use a minimal base image
-FROM alpine:latest
+FROM scratch:latest
 
 # Create a directory to store the binary
 RUN mkdir /vault_binaries
 
 # Copy the binary into the container
 COPY vault-plugin-aead /vault_binaries/
-
+ARG VERSION=latest
+# create the symlink 
+RUN ln -s /vault_binaries/vault-plugin-aead /vault_binaries/vault-plugin-aead_${VERSION}

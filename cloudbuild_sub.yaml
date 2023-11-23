@@ -1,18 +1,18 @@
 steps:
-  - name: 'gcr.io/cloud-builders/go:1.19'
+  - name: 'gcr.io/cloud-builders/go:1.17'
     id: 'go-test'
     args:
       - '-c'
       - |
         go test -v -race
     entrypoint: /bin/sh
-  - name: 'gcr.io/cloud-builders/go:1.19'
+  - name: 'gcr.io/cloud-builders/go:1.17'
     id: 'go-build'
     waitFor: ['go-test']
     args:
       - '-c'
       - |
-        make build
+        make build VERSION=$TAG_NAME
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
     entrypoint: /bin/sh
 
@@ -21,10 +21,12 @@ steps:
     waitFor: ['go-build']
     args:
       - build
+      - '--build-arg'
+      - 'FQ_BASE_IMAGE=${_FQ_BASE_IMAGE}'
+      - '--build-arg'
+      - 'VERSION=${TAG_NAME}'
       - '-t'
       - '${_TARGET}:${_TARGET_TAG}'
-      - '-f'
-      - 'Dockerfile.plugin'
       - .
     dir: docker
     
@@ -35,7 +37,7 @@ steps:
     args:
     - -c
     - |
-      BUILD_TAG=$(cat ./version/version.go | grep -E "const Version = " | sed -E 's/.*const Version = \"//' | sed -E 's/\"//')-${_TARGET_TAG}
+      BUILD_TAG=${TAG_NAME}-${_TARGET_TAG}
       docker tag ${_TARGET}:${_TARGET_TAG} ${_TARGET}:$${BUILD_TAG}-rc
       docker push ${_TARGET}:$${BUILD_TAG}-rc
 
@@ -48,3 +50,4 @@ options:
     - 'GOPRIVATE=github.com/pierrec,google.golang.org'
     - 'GOOS=linux'
     - 'GOARCH=amd64'
+    - 'TAG_NAME=$TAG_NAME'
