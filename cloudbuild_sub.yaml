@@ -1,12 +1,12 @@
 steps:
-  - name: 'gcr.io/cloud-builders/go:1.17'
+  - name: 'gcr.io/cloud-builders/go:1.19'
     id: 'go-test'
     args:
       - '-c'
       - |
         go test -v -race
     entrypoint: /bin/sh
-  - name: 'gcr.io/cloud-builders/go:1.17'
+  - name: 'gcr.io/cloud-builders/go:1.19'
     id: 'go-build'
     waitFor: ['go-test']
     args:
@@ -49,5 +49,6 @@ options:
   env:
     - 'GOPRIVATE=github.com/pierrec,google.golang.org'
     - 'GOOS=linux'
+    - 'GOPROXY=direct'
     - 'GOARCH=amd64'
     - 'TAG_NAME=$TAG_NAME'
