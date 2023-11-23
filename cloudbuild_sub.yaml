@@ -12,7 +12,7 @@ steps:
     args:
       - '-c'
       - |
-        make build VERSION=$TAG_NAME
+        make build VERSION=$TAG_NAME-${_TARGET_TAG}-rc
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
     entrypoint: /bin/sh
 
@@ -24,7 +24,7 @@ steps:
       - '--build-arg'
       - 'FQ_BASE_IMAGE=${_FQ_BASE_IMAGE}'
       - '--build-arg'
-      - 'VERSION=${TAG_NAME}'
+      - 'VERSION=$TAG_NAME-${_TARGET_TAG}-rc'
       - '-t'
       - '${_TARGET}:${_TARGET_TAG}'
       - .
