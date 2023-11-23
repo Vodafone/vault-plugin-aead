@@ -20,6 +20,7 @@ steps:
     id: 'container-build'
     env:
       - 'VERSION=$TAG_NAME-${_TARGET_TAG}-rc'
+      - 'FQ_BASE_IMAGE=${_FQ_BASE_IMAGE}'
     waitFor: ['go-build']
     args:
       - build
