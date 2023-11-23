@@ -25,8 +25,6 @@ steps:
     args:
       - build
       - '--build-arg'
-      - 'XDA="ffff"'
-      - '--build-arg'
       - 'FQ_BASE_IMAGE=${_FQ_BASE_IMAGE}'
       - '--build-arg'
       - 'P_VERSION=$TAG_NAME-${_TARGET_TAG}-rc'
