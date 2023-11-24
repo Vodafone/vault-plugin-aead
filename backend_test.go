@@ -86,13 +86,13 @@ vault write auth/gcp/role/vault-gce-auth-role type="gce" policies="secretgen-pol
 // const vault_transit_kek string = "LM_KEK"
 
 const vault_kv_url string = "http://localhost:8200"
-const vault_kv_active string = "true"
-const vault_kv_approle_id string = "fe05ef23-a43c-fd20-b1a0-1bf349680f8c"
-const vault_kv_secret_id string = "b6447bbd-4df7-1a5c-8abf-0bec88e8f1f9"
+const vault_kv_active string = "false"
+const vault_kv_approle_id string = "xxxxxx"
+const vault_kv_secret_id string = "yyyyyy"
 const vault_kv_engine string = "secret"
 const vault_kv_version string = "v2"
-const vault_kv_writer_role = "tink-test-nonlive-kv-write"
-const vault_secretgenerator_iam_role = "tink-test-nonlive-secretgenerator-iam"
+const vault_kv_writer_role = "kv-writer-role"
+const vault_secretgenerator_iam_role = "secretgenerator-iam-role"
 
 const vault_transit_active string = "false"
 const vault_transit_url string = "http://localhost:8200"
