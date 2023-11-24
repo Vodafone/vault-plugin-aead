@@ -26,32 +26,32 @@ import (
 )
 
 type KVOptions struct {
-	vault_kv_url             string
-	vault_kv_active          string
-	vault_kv_approle_id      string
-	vault_kv_secret_id       string
-	vault_kv_engine          string
-	vault_kv_version         string
-	vault_transit_active     string
-	vault_transit_url        string
-	vault_transit_approle_id string
-	vault_transit_secret_id  string
-	vault_transit_kv_engine  string
-	vault_transit_kv_version string
-	vault_transit_namespace  string
-	vault_transit_engine     string
-	vault_transit_tokenname  string
-	vault_transit_kek        string
+	vault_kv_url                   string
+	vault_kv_active                string
+	vault_kv_approle_id            string
+	vault_kv_secret_id             string
+	vault_kv_engine                string
+	vault_kv_version               string
+	vault_transit_active           string
+	vault_transit_url              string
+	vault_transit_approle_id       string
+	vault_transit_secret_id        string
+	vault_transit_kv_engine        string
+	vault_transit_kv_version       string
+	vault_transit_namespace        string
+	vault_transit_engine           string
+	vault_transit_tokenname        string
+	vault_transit_kek              string
+	vault_kv_writer_role           string
+	vault_secretgenerator_iam_role string
 }
 
 var aead_engine = "aead-secrets"
 
 func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string, vault_kv_writer_role string, vault_secretgenerator_iam_role string) (string, error) {
 
-	// MASSIVE HACK
-	vault_writer_secret_id = ""
-	vault_kv_writer_role = "tink-test-nonlive-kv-write"
-	vault_secretgenerator_iam_role = "tink-test-nonlive-secretgenerator-iam"
+	fmt.Printf("\nvault_kv_writer_role=%s", vault_kv_writer_role)
+	fmt.Printf("\nvault_secretgenerator_iam_role=%s", vault_secretgenerator_iam_role)
 
 	if vault_writer_secret_id != "" {
 		// we already have the secret id, no need to generate one
