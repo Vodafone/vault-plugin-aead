@@ -3,20 +3,113 @@ package aeadplugin
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"cloud.google.com/go/bigquery"
 	version "github.com/Vodafone/vault-plugin-aead/version"
 	"github.com/google/tink/go/daead"
 	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
+	vault "github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/logical"
 )
+
+/*
+how to set up a local vault for testing
+run the make file - this starts a local vault
+then in another shell
+export VAULT_ADDR=http://localhost:8200
+export VAULT_TOKEN=root
+vault login
+
+create the policy file for the approle and secret:
+cat policy.json
+path "secret/*" {
+  capabilities = ["create", "read", "update", "patch", "delete", "list"]
+}
+path "transit/*" {
+  capabilities = ["create", "read", "update", "patch", "delete", "list"]
+}
+
+cat secretgenpolicy.json
+path "auth/approle/role/my-approle/secret-id" {
+  capabilities = ["create", "update"]
+}
+
+
+vault secrets enable -path=aead-secrets vault-plugin-aead
+vault secrets enable transit
+vault write -f transit/keys/my-key
+vault auth enable approle
+vault policy write my-policy ./policy.json
+vault write auth/approle/role/my-approle token_policies="my-policy"
+vault read -field=role_id auth/approle/role/my-approle/role-id
+vault write -f -field=secret_id auth/approle/role/my-approle/secret-id
+vault kv put -mount=secret transit-token key=root
+
+vault auth enable gcp
+vault policy write secretgen-policy ./policy-secretgen.json
+vault write auth/gcp/role/vault-gce-auth-role type="gce" policies="secretgen-policy" bound_service_accounts="restricted-zone-restricted@vf-grp-neuronenabler-nonlive.iam.gserviceaccount.com"
+*/
+
+// NOTE THE BELOW VALUES ARE FOR A LOCAL VAULT, INSTRUCTIONS ABOVE
+// YOU WILL NEED TO ADJUST YOUR VALUES ACCORDINGLY
+// YOU WILL HAVE DIFFERENT approle AND secret id
+// const vault_kv_url string = "https://zzz.vodafone.com"
+// const vault_kv_active string = "true"
+// const vault_kv_approle_id string = "xxxxxx"
+// const vault_kv_secret_id string = "yyyyyy"
+// const vault_kv_engine string = "secret"
+// const vault_kv_version string = "v2"
+
+// const vault_transit_active string = "true"
+// const vault_transit_url string = "https://zzz.vodafone.com"
+// const vault_transit_kv_approle_id string = "xxxxxx"
+// const vault_transit_kv_secret_id string = "yyyyyy"
+// const vault_transit_kv_engine string = "IT_secrets"
+// const vault_transit_kv_version string = "v2"
+// const vault_transit_namespace string = "kms/LM"
+// const vault_transit_engine string = "LM_transit"
+// const vault_transit_tokenname string = "token_ML"
+// const vault_transit_kek string = "LM_KEK"
+
+const vault_kv_url string = "http://localhost:8200"
+const vault_kv_active string = "false"
+const vault_kv_approle_id string = "xxxxxx"
+const vault_kv_secret_id string = "yyyyyy"
+const vault_kv_engine string = "secret"
+const vault_kv_version string = "v2"
+const vault_kv_writer_role = "kv-writer-role"
+const vault_secretgenerator_iam_role = "secretgenerator-iam-role"
+
+const vault_transit_active string = "false"
+const vault_transit_url string = "http://localhost:8200"
+const vault_transit_kv_approle_id string = "xxxxxx"
+const vault_transit_kv_secret_id string = "yyyyyy"
+const vault_transit_kv_engine string = "secret"
+const vault_transit_kv_version string = "v2"
+const vault_transit_namespace string = ""
+const vault_transit_engine string = "transit"
+const vault_transit_tokenname string = "transit-token"
+const vault_transit_kek string = "my-key"
+
+const bq_active string = "false"
+
+const DeterministicKeyset = `{"primaryKeyId":97978150,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkCXhcXHvfUMj8DWgWjfnxyWFz3GcOw8G1xB2PTcfPdbl93idxHTcmANzYLYW3KmsU0putTRfi3vxySALhSHaHl0","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3647454112,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDeUHhnPioOIETPIbKfEcifAjnhxaeUJbRwT/TB6AurJG/qmhsbpGaHKFdhDHn6VtJ7I/tMWX7gFZTr1Db9f/3v","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":4039363563,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkAqIqBlB7q0W/bhp9RtivX770+nAYkEWxBkYjfPzbWiBWJZbM7YypfHbkOyyWPtkBc0yVK0YTUmqbWD0JpEJ63u","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3167099089,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDfF2JLaeZPvRwMncPw8ZKhsoGDMvFDriu7RtdF1pgHvRefGKbAa56pU7IFQCzA+UWy+dBNtsLW2H5rbHsxM2FC","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2568362933,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkC9CVw73BjO+OSjo3SFvUV7SUszpJnuKGnLWMbmD7cO3WFCIy2unxoyNPCHFDlzle1zU35vTZtoecnlsWScQUVl","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":97978150,"outputPrefixType":"TINK"}]}`
+const NonDeterministicKeyset = `{"primaryKeyId":3192631270,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBf14hIKBzJYUGjc4LXzaG3dT3aVsvv0vpyZJVZNh02MQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2832419897,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCW0m5ElDr8RznAl4ef3bXqgHgu9PL/js7K6NAZIjkDJw==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2233686170,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiChGSKGi7odjL3mdwhQ03X5SGiVXTarRSKPZUn+xCUYyQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1532149397,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3192631270,"outputPrefixType":"TINK"}]}`
+const DeterministicSingleKey = `{"primaryKeyId":1481824018,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"}]}`
 
 func testBackend(tb testing.TB) (*backend, logical.Storage) {
 	tb.Helper()
@@ -28,6 +121,7 @@ func testBackend(tb testing.TB) (*backend, logical.Storage) {
 	if err != nil {
 		tb.Fatal("20", err)
 	}
+
 	return b.(*backend), config.StorageView
 }
 
@@ -76,11 +170,18 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		encryptionJsonKey := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
 		// set up some encryption keys to be used
 		encryptionMap := map[string]interface{}{
-			"test4-address": encryptionJsonKey,
-			"test4-phone":   encryptionJsonKey,
+			"test4-address":     "siv/test4-address",
+			"siv/test4-address": encryptionJsonKey,
+			"test4-phone":       "siv/test4-phone",
+			"siv/test4-phone":   encryptionJsonKey,
 		}
 
 		// store the config
@@ -96,9 +197,14 @@ func TestBackend(t *testing.T) {
 
 		// now we need to use the same key to encrypt the same data to get the expected value
 		// create key from string
-		_, d, err := CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
+		h, d, err := CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
 		if err != nil {
 			log.Fatal(err)
+		}
+
+		ki := h.KeysetInfo().KeyInfo
+		for k, v := range ki {
+			fmt.Printf("k=%v; v=%v", k, v.GetTypeUrl())
 		}
 
 		// encrypt it
@@ -123,11 +229,17 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		// Since we now mask material from the response, we will use existing key to make sure string is encrypted correctly
 		encryptionJsonKey := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
 		// set up some encryption keys to be used
 		encryptionMap := map[string]interface{}{
-			"test5-address2": encryptionJsonKey,
+			"test5-address2":     "siv/test5-address2",
+			"siv/test5-address2": encryptionJsonKey,
 		}
 		// store the config
 		saveConfig(b, storage, encryptionMap, false, t)
@@ -153,7 +265,7 @@ func TestBackend(t *testing.T) {
 		configResp := readConfig(b, storage, t)
 
 		// get the actual Json key used from teh config for address
-		actualJSonKey := configResp.Data["test5-address2"].(string)
+		actualJSonKey := configResp.Data["siv/test5-address2"].(string)
 		type jsonKey struct {
 			Key []struct {
 				KeyData struct {
@@ -197,6 +309,11 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		// create a dynamic AEAD key for a field
 		// set some data to be encrypted using the keys
 		data := map[string]interface{}{
@@ -204,6 +321,12 @@ func TestBackend(t *testing.T) {
 		}
 
 		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
+
+		keyMap := map[string]interface{}{
+			"test6-address3": "gcm/test6-address3",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		// encrypt the data
 		resp := encryptData(b, storage, data, t)
@@ -219,7 +342,7 @@ func TestBackend(t *testing.T) {
 		configResp := readConfig(b, storage, t)
 
 		// get the actual Json key used from teh config for address
-		actualJSonKey := configResp.Data["test6-address3"].(string)
+		actualJSonKey := configResp.Data["gcm/test6-address3"].(string)
 
 		if !strings.Contains(actualJSonKey, "AesGcmKey") {
 			t.Error("key is not a AesGcmKey")
@@ -230,6 +353,11 @@ func TestBackend(t *testing.T) {
 	t.Run("test7 non-deterministic encryption with supplied AEAD key", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		rawKeyset := `{"primaryKeyId":1416257722,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBa0wZ4ACjtW137qTVSY2ofQBCffdzkzhNkktlMtDFazA==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1416257722,"outputPrefixType":"TINK"}]}`
 		// jsonKeyset := `{
@@ -254,6 +382,12 @@ func TestBackend(t *testing.T) {
 
 		saveConfig(b, storage, configData, false, t)
 
+		keyMap := map[string]interface{}{
+			"test7-address4": "gcm/test7-address4",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
+
 		data := map[string]interface{}{
 			"test7-address4": "my address",
 		}
@@ -267,7 +401,7 @@ func TestBackend(t *testing.T) {
 		// create an aead keyhandle from the provided json as string
 		_, a, err := CreateInsecureHandleAndAead(rawKeyset)
 		if err != nil {
-			log.Fatal(err)
+			t.Errorf("Failed to create aead from %s", rawKeyset)
 		}
 
 		// set up some data
@@ -278,7 +412,7 @@ func TestBackend(t *testing.T) {
 		// decrypt the encrypted data
 		pt, err := a.Decrypt(ct, aad)
 		if err != nil {
-			log.Fatal(err)
+			t.Errorf("Failed to decrypt %s", encryptedData)
 		}
 
 		// does the decrypted data match the original data
@@ -290,6 +424,11 @@ func TestBackend(t *testing.T) {
 	t.Run("test8 encrypt and decrypt deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		// create a dynamic AEAD key for a field
 		// set some data to be encrypted using the keys
@@ -319,6 +458,11 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		// create a dynamic AEAD key for a field
 		// set some data to be encrypted using the keys
 
@@ -346,6 +490,11 @@ func TestBackend(t *testing.T) {
 	t.Run("test10 encrypt and decrypt non-deterministic AND deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		// create a dynamic AEAD key for a field
 		// set some data to be encrypted using the keys
@@ -397,6 +546,11 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		rawKeyset := `{"primaryKeyId":1416257722,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBa0wZ4ACjtW137qTVSY2ofQBCffdzkzhNkktlMtDFazA==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1416257722,"outputPrefixType":"TINK"}]}`
 		primaryKey := "1416257722"
 		fieldName := "aeadkeyset1"
@@ -408,6 +562,12 @@ func TestBackend(t *testing.T) {
 	t.Run("test12 rotate the DetAEAD keys within a keyset", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		rawKeyset := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
 		primaryKey := "42267057"
 		fieldName := "daeadkeyset1"
@@ -424,6 +584,12 @@ func TestBackend(t *testing.T) {
 	t.Run("test14 check keyType non deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		fieldName := "test14-nondetfield1"
 		fieldValue := "nondetvalue1"
 
@@ -437,13 +603,19 @@ func TestBackend(t *testing.T) {
 
 		resp := readKeyTypes(b, storage, t)
 
-		compareStrings(resp, fieldName, "NON DETERMINISTIC", t)
+		compareStrings(resp, "gcm/"+fieldName, "NON DETERMINISTIC", t)
 
 	})
 
 	t.Run("test15 check keyType deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		fieldName := "test15-detfield1"
 		fieldValue := "detvalue1"
 
@@ -456,13 +628,18 @@ func TestBackend(t *testing.T) {
 
 		resp := readKeyTypes(b, storage, t)
 
-		compareStrings(resp, fieldName, "DETERMINISTIC", t)
+		compareStrings(resp, "siv/"+fieldName, "DETERMINISTIC", t)
 
 	})
 
 	t.Run("test16 bulk data ", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		// curl -sk --header "X-Vault-Token: "${VAULT_PLUGIN_TOKEN} --request POST ${VAULT_PLUGIN_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d '{"0":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"},"1":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"},"2":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"}}'
 
@@ -531,6 +708,11 @@ func TestBackend(t *testing.T) {
 	t.Run("test17 bulk data columns", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		// curl -sk --header "X-Vault-Token: "${VAULT_PLUGIN_TOKEN} --request POST ${VAULT_PLUGIN_URL}/v1/aead-secrets/encrypt -H "Content-Type: application/json" -d '{"0":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"},"1":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"},"2":{"bulkfield0":"bulkfieldvalue0","bulkfield1":"bulkfieldvalue1","bulkfield2":"bulkfieldvalue2"}}'
 
@@ -651,27 +833,14 @@ func TestBackend(t *testing.T) {
 
 	})
 
-	// t.Run("test-bqsync fake test to debug bqsync ", func(t *testing.T) {
-	// un comment this if you need to debug bqsync
-	// 	// t.Parallel()
-	// 	b, storage := testBackend(t)
-
-	// 	data := make(map[string]interface{})
-
-	// 	_, err := b.HandleRequest(context.Background(), &logical.Request{
-	// 		Storage:   storage,
-	// 		Operation: logical.UpdateOperation,
-	// 		Path:      "bqsync",
-	// 		Data:      data,
-	// 	})
-	// 	if err != nil {
-	// 		t.Fatal("bqsync", err)
-	// 	}
-	// })
-
 	t.Run("test19 test config and bq override-no-override ", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		aeadRequest := make(map[string]interface{})
 
@@ -687,6 +856,12 @@ func TestBackend(t *testing.T) {
 		if err != nil {
 			t.Fatal("create AEAD key", err)
 		}
+
+		keyMap := map[string]interface{}{
+			"test19-aead": "gcm/test19-aead",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		daeadRequest := make(map[string]interface{})
 
@@ -704,6 +879,7 @@ func TestBackend(t *testing.T) {
 		}
 
 		configRequest := map[string]interface{}{
+			"test19-daead":  "siv/test19-daead",
 			"test19-config": "someconfig",
 		}
 
@@ -715,11 +891,11 @@ func TestBackend(t *testing.T) {
 			t.Fatal("read back storage", err)
 		}
 
-		baselineAeadValue, ok := resp.Data["test19-aead"]
+		baselineAeadValue, ok := resp.Data["gcm/test19-aead"]
 		if !ok {
 			t.Fatal("read back baselineAeadValue", err)
 		}
-		baselineDaeadValue, ok := resp.Data["test19-daead"]
+		baselineDaeadValue, ok := resp.Data["siv/test19-daead"]
 		if !ok {
 			t.Fatal("read back baselineDaeadValue", err)
 		}
@@ -743,11 +919,11 @@ func TestBackend(t *testing.T) {
 			t.Fatal("read back storage", err)
 		}
 
-		newAeadValue, ok := resp.Data["test19-aead"]
+		newAeadValue, ok := resp.Data["gcm/test19-aead"]
 		if !ok {
 			t.Fatal("read back baselineAeadValue", err)
 		}
-		newDaeadValue, ok := resp.Data["test19-daead"]
+		newDaeadValue, ok := resp.Data["siv/test19-daead"]
 		if !ok {
 			t.Fatal("read back baselineDaeadValue", err)
 		}
@@ -776,11 +952,11 @@ func TestBackend(t *testing.T) {
 			t.Fatal("read back storage", err)
 		}
 
-		newAeadValue, ok = resp.Data["test19-aead"]
+		newAeadValue, ok = resp.Data["gcm/test19-aead"]
 		if !ok {
 			t.Fatal("read back baselineAeadValue", err)
 		}
-		newDaeadValue, ok = resp.Data["test19-daead"]
+		newDaeadValue, ok = resp.Data["siv/test19-daead"]
 		if !ok {
 			t.Fatal("read back baselineDaeadValue", err)
 		}
@@ -947,13 +1123,18 @@ func TestBackend(t *testing.T) {
 	// 	]
 	//   }
 
-	const DeterministicKeyset = `{"primaryKeyId":97978150,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkCXhcXHvfUMj8DWgWjfnxyWFz3GcOw8G1xB2PTcfPdbl93idxHTcmANzYLYW3KmsU0putTRfi3vxySALhSHaHl0","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3647454112,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDeUHhnPioOIETPIbKfEcifAjnhxaeUJbRwT/TB6AurJG/qmhsbpGaHKFdhDHn6VtJ7I/tMWX7gFZTr1Db9f/3v","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":4039363563,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkAqIqBlB7q0W/bhp9RtivX770+nAYkEWxBkYjfPzbWiBWJZbM7YypfHbkOyyWPtkBc0yVK0YTUmqbWD0JpEJ63u","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3167099089,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDfF2JLaeZPvRwMncPw8ZKhsoGDMvFDriu7RtdF1pgHvRefGKbAa56pU7IFQCzA+UWy+dBNtsLW2H5rbHsxM2FC","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2568362933,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkC9CVw73BjO+OSjo3SFvUV7SUszpJnuKGnLWMbmD7cO3WFCIy2unxoyNPCHFDlzle1zU35vTZtoecnlsWScQUVl","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":97978150,"outputPrefixType":"TINK"}]}`
-	const NonDeterministicKeyset = `{"primaryKeyId":3192631270,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBf14hIKBzJYUGjc4LXzaG3dT3aVsvv0vpyZJVZNh02MQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2832419897,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCW0m5ElDr8RznAl4ef3bXqgHgu9PL/js7K6NAZIjkDJw==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2233686170,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiChGSKGi7odjL3mdwhQ03X5SGiVXTarRSKPZUn+xCUYyQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1532149397,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3192631270,"outputPrefixType":"TINK"}]}`
-	const DeterministicSingleKey = `{"primaryKeyId":1481824018,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"}]}`
+	// const DeterministicKeyset = `{"primaryKeyId":97978150,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkCXhcXHvfUMj8DWgWjfnxyWFz3GcOw8G1xB2PTcfPdbl93idxHTcmANzYLYW3KmsU0putTRfi3vxySALhSHaHl0","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3647454112,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDeUHhnPioOIETPIbKfEcifAjnhxaeUJbRwT/TB6AurJG/qmhsbpGaHKFdhDHn6VtJ7I/tMWX7gFZTr1Db9f/3v","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":4039363563,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkAqIqBlB7q0W/bhp9RtivX770+nAYkEWxBkYjfPzbWiBWJZbM7YypfHbkOyyWPtkBc0yVK0YTUmqbWD0JpEJ63u","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3167099089,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDfF2JLaeZPvRwMncPw8ZKhsoGDMvFDriu7RtdF1pgHvRefGKbAa56pU7IFQCzA+UWy+dBNtsLW2H5rbHsxM2FC","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2568362933,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkC9CVw73BjO+OSjo3SFvUV7SUszpJnuKGnLWMbmD7cO3WFCIy2unxoyNPCHFDlzle1zU35vTZtoecnlsWScQUVl","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":97978150,"outputPrefixType":"TINK"}]}`
+	// const NonDeterministicKeyset = `{"primaryKeyId":3192631270,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiBf14hIKBzJYUGjc4LXzaG3dT3aVsvv0vpyZJVZNh02MQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2832419897,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiCW0m5ElDr8RznAl4ef3bXqgHgu9PL/js7K6NAZIjkDJw==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":2233686170,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiChGSKGi7odjL3mdwhQ03X5SGiVXTarRSKPZUn+xCUYyQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1532149397,"outputPrefixType":"TINK"},{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey","value":"GiApAwR1VAPVxpIrRiBGw2RziWx04nzHVDYu1ocipSDCvQ==","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":3192631270,"outputPrefixType":"TINK"}]}`
+	// const DeterministicSingleKey = `{"primaryKeyId":1481824018,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkALk9CVIh1NDBjiE+gBvL/+aJuCdFRZQBzQSp5DcVy/4DkhrGF7BKdt0xLxjyX4jIKN2Vki1rSza+ETgGPV4zLD","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":1481824018,"outputPrefixType":"TINK"}]}`
 
 	t.Run("test21 pathUpdateKeyStatus deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
 
 		keyData := make(map[string]interface{})
 		keyData["test21-key"] = DeterministicSingleKey
@@ -973,6 +1154,12 @@ func TestBackend(t *testing.T) {
 			t.Fatal("importKey - no data returned")
 
 		}
+
+		keyMap := map[string]interface{}{
+			"test21-key": "siv/test21-key",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		updData := make(map[string]interface{})
 		upDataInner := make(map[string]interface{})
@@ -1006,6 +1193,12 @@ func TestBackend(t *testing.T) {
 	t.Run("test22 pathUpdateKeyMaterial non-deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		keyData := make(map[string]interface{})
 		keyData["test22-key"] = DeterministicKeyset
 
@@ -1025,6 +1218,12 @@ func TestBackend(t *testing.T) {
 			t.Fatal("importKey - no data returned")
 
 		}
+
+		keyMap := map[string]interface{}{
+			"test22-key": "siv/test22-key",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		// encrypt data with deterministic key
 		data := map[string]interface{}{
@@ -1059,6 +1258,10 @@ func TestBackend(t *testing.T) {
 				t.Fatal("updateKeyMaterial - no data returned")
 			}
 			str = fmt.Sprintf("%s", resp.Data["test22-key"])
+			if str == "failed to update the material" {
+				t.Errorf("updateKeyMaterial returned: %s", str)
+				t.FailNow()
+			}
 			reconstructedKey = strings.Replace(str, "***", keyMaterialUpdate, -1)
 
 		}
@@ -1109,6 +1312,12 @@ func TestBackend(t *testing.T) {
 	t.Run("test23 pathUpdateKeyID non-deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		keyData := make(map[string]interface{})
 		keyData["test23-key"] = NonDeterministicKeyset
 
@@ -1127,6 +1336,12 @@ func TestBackend(t *testing.T) {
 			t.Fatal("importKey - no data returned")
 
 		}
+
+		keyMap := map[string]interface{}{
+			"test23-key": "gcm/test23-key",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		updData := make(map[string]interface{})
 		upDataInner := make(map[string]interface{})
@@ -1161,6 +1376,12 @@ func TestBackend(t *testing.T) {
 	t.Run("test24 pathUpdatePrimaryKeyID deterministic", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		keyData := make(map[string]interface{})
 		keyData["test24-key"] = DeterministicKeyset
 
@@ -1178,7 +1399,11 @@ func TestBackend(t *testing.T) {
 		if len(keyResp.Data) == 0 {
 			t.Fatal("importKey - no data returned")
 		}
-
+		keyMap := map[string]interface{}{
+			"test24-key": "siv/test24-key",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 		updData := make(map[string]interface{})
 		updData["test24-key"] = "2568362933"
 
@@ -1206,6 +1431,12 @@ func TestBackend(t *testing.T) {
 
 	t.Run("test25 pathImportKey", func(t *testing.T) {
 		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		keyData := make(map[string]interface{})
 		keyData["test25-key"] = DeterministicKeyset
 
@@ -1229,6 +1460,11 @@ func TestBackend(t *testing.T) {
 	t.Run("test26 set AD", func(t *testing.T) {
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		// create a key
 		keyData := make(map[string]interface{})
 		keyData["test26-key"] = DeterministicKeyset
@@ -1247,6 +1483,12 @@ func TestBackend(t *testing.T) {
 		if len(keyResp.Data) == 0 {
 			t.Fatal("importKey - no data returned")
 		}
+
+		keyMap := map[string]interface{}{
+			"test26-key": "siv/test26-key",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
 
 		// encrypt something, save the encrypted value
 		dataForEncryption := map[string]interface{}{
@@ -1277,6 +1519,11 @@ func TestBackend(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
 		_, err := b.HandleRequest(context.Background(), &logical.Request{
 			Storage:   storage,
 			Operation: logical.UpdateOperation,
@@ -1300,6 +1547,13 @@ func TestBackend(t *testing.T) {
 		if err != nil {
 			t.Fatal("saveConfig", err)
 		}
+
+		keyMap := map[string]interface{}{
+			"ADDRESS_FAMILY": "siv/ADDRESS_FAMILY",
+		}
+		// store the config
+		saveConfig(b, storage, keyMap, false, t)
+
 		// storeKeyValue("test27-address2", "ADDRESS_FAMILY", t)
 		// storeKeyValue("test27-phone2", "ADDRESS_FAMILY", t)
 		// saveConfig(b, storage, , false, t)
@@ -1339,6 +1593,479 @@ func TestBackend(t *testing.T) {
 			assertEqual(actualEncryptedValue.Data[k].(string), expectedEncryptedValue, t)
 
 		}
+
+	})
+
+	t.Run("testkv1 ckv read", func(t *testing.T) {
+
+		// t.Parallel()
+		b, storage := testBackend(t)
+
+		if vault_kv_active == "false" {
+			t.SkipNow()
+		}
+
+		resp := readKV(b, storage, t)
+
+		if resp == nil || resp.Data == nil {
+			t.Error("nothing returned from KV")
+		}
+	})
+
+	t.Run("testkv2 kv sync", func(t *testing.T) {
+
+		b, storage := testBackend(t)
+
+		if vault_kv_active == "false" {
+			t.SkipNow()
+		}
+
+		configMap := createVaultConfig()
+
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
+		// create a dynamic AEAD key for a field
+		// set some data to be encrypted using the keys
+		data := map[string]interface{}{
+			"testkv2-address": "my address",
+		}
+
+		// create a key - should get synced as gcm/testkv2-address
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
+
+		resp := readKV(b, storage, t)
+
+		_, ok := resp.Data["gcm/testkv2-address"]
+		if !ok {
+			t.Error("did not find entry for gcm/testkv2-address")
+		}
+
+		// OK its in KV and it looks ok, lets double -check the format by reading kv directly
+
+		// check kv secret
+		fullName := "gcm/testkv2-address"
+
+		checkKVSecret(fullName, t)
+
+		// create a key - should get synced as gcm/testkv2-address
+		encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
+
+		resp = readKV(b, storage, t)
+
+		_, ok = resp.Data["siv/testkv2-address"]
+		if !ok {
+			t.Error("did not find entry for siv/testkv2-address")
+		}
+
+		// OK its in KV and it looks ok, lets double -check the format by reading kv directly
+
+		// check kv secret
+		fullName = "siv/testkv2-address"
+
+		checkKVSecret(fullName, t)
+	})
+
+}
+
+func TestBQ(t *testing.T) {
+
+	// un comment this if you need to debug bqsync
+	t.Run("test-bqsync fake test to debug bqsync ", func(t *testing.T) {
+
+		if bq_active == "false" {
+			t.SkipNow()
+		}
+
+		// t.Parallel()
+		b, storage := testBackend(t)
+
+		configMap := map[string]interface{}{
+
+			"BQ_KMSKEY":                  "projects/vf-cis-rubik-tst-kms/locations/<region>/keyRings/hsm-key-tink-pf1-<region>/cryptoKeys/bq-key",
+			"BQ_PROJECT":                 "vf-pf1-datahub-b14b",
+			"BQ_DEFAULT_ENCRYPT_DATASET": "vfpf1_dh_lake_aead_encrypt_<region>_lv_s",
+			"BQ_DEFAULT_DECRYPT_DATASET": "vfpf1_dh_lake_<category>_aead_decrypt_<region>_lv_s",
+			"BQ_ROUTINE_DET_PREFIX":      "siv",
+			"BQ_ROUTINE_NONDET_PREFIX":   "gcm",
+		}
+		// store the config
+		saveConfig(b, storage, configMap, false, t)
+
+		key := "testbqsync-address"
+		value := "my address"
+
+		nondetkey := map[string]interface{}{
+			key: value,
+		}
+
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, nondetkey, false, t)
+
+		key = "testbqsync-postcode"
+		value = "my postcode"
+		key1 := "name"
+		value1 := "my name"
+
+		detkey := map[string]interface{}{
+			key:  value,
+			key1: value1,
+		}
+
+		encryptDataDetermisticallyAndCreateKey(b, storage, detkey, false, t)
+
+		data := make(map[string]interface{})
+
+		tn := time.Now()
+
+		_, err := b.HandleRequest(context.Background(), &logical.Request{
+			Storage:   storage,
+			Operation: logical.UpdateOperation,
+			Path:      "bqsync",
+			Data:      data,
+		})
+		if err != nil {
+			t.Fatal("bqsync", err)
+		}
+
+		projectId := "vf-pf1-datahub-b14b"
+		datasetName := "vfpf1_dh_lake_aead_encrypt_eu_lv_s"
+		routineName := "testbqsync_postcode_siv_encrypt"
+		checkBQRoutine(projectId, t, datasetName, routineName, tn)
+	})
+
+}
+
+func checkBQRoutine(projectId string, t *testing.T, datasetName string, routineName string, tn time.Time) {
+	ctx := context.Background()
+	bigqueryClient, err := bigquery.NewClient(ctx, projectId)
+	if err != nil {
+		t.Fatal("Failed to create a bigquery client: " + err.Error())
+
+	}
+	defer bigqueryClient.Close()
+	routineEncryptRef := bigqueryClient.Dataset(datasetName).Routine(routineName)
+	var rm *bigquery.RoutineMetadata
+	rm, err = routineEncryptRef.Metadata(ctx)
+	if err != nil {
+		t.Fatal("Failed to find routine: " + datasetName + ":" + routineName + ": " + err.Error())
+	}
+	if tn.After(rm.LastModifiedTime) {
+		t.Error(datasetName + ":" + routineName + " did not change")
+	} else {
+		t.Log(datasetName + ":" + routineName + " did change")
+	}
+}
+
+// func TestKV(t *testing.T) {
+
+// t.Run("testkv1 ckv read", func(t *testing.T) {
+
+// 	if vault_kv_active == "false" {
+// 		t.SkipNow()
+// 	}
+
+// 	// t.Parallel()
+// 	b, storage := testBackend(t)
+
+// 	resp := readKV(b, storage, t)
+
+// 	if resp == nil || resp.Data == nil {
+// 		t.Error("nothing returned from KV")
+// 	}
+// })
+
+// t.Run("testkv2 kv sync", func(t *testing.T) {
+
+// 	if vault_kv_active == "false" {
+// 		t.SkipNow()
+// 	}
+
+// 	b, storage := testBackend(t)
+
+// 	configMap := createVaultConfig()
+
+// 	// store the config
+// 	saveConfig(b, storage, configMap, false, t)
+
+// 	// create a dynamic AEAD key for a field
+// 	// set some data to be encrypted using the keys
+// 	data := map[string]interface{}{
+// 		"testkv2-address": "my address",
+// 	}
+
+// 	// create a key - should get synced as gcm/testkv2-address
+// 	encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
+
+// 	resp := readKV(b, storage, t)
+
+// 	_, ok := resp.Data["gcm/testkv2-address"]
+// 	if !ok {
+// 		t.Error("did not find entry for gcm/testkv2-address")
+// 	}
+
+// 	// OK its in KV and it looks ok, lets double -check the format by reading kv directly
+
+// 	// check kv secret
+// 	fullName := "gcm/testkv2-address"
+
+// 	checkKVSecret(fullName, t)
+
+// 	// create a key - should get synced as gcm/testkv2-address
+// 	encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
+
+// 	resp = readKV(b, storage, t)
+
+// 	_, ok = resp.Data["siv/testkv2-address"]
+// 	if !ok {
+// 		t.Error("did not find entry for siv/testkv2-address")
+// 	}
+
+// 	// OK its in KV and it looks ok, lets double -check the format by reading kv directly
+
+// 	// check kv secret
+// 	fullName = "siv/testkv2-address"
+
+// 	checkKVSecret(fullName, t)
+
+//		})
+//	}
+func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*keyset.Handle, error) {
+
+	proxyurlStr := os.Getenv("https_proxy")
+
+	var tr *http.Transport
+	if proxyurlStr != "" && !strings.Contains(transiturl, "localhost") {
+		proxyUrl, _ := url.Parse(proxyurlStr)
+
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			Proxy:           http.ProxyURL(proxyUrl),
+		}
+	} else {
+
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
+
+	client := &http.Client{Transport: tr}
+	keyToDecode := `{"ciphertext":"` + keyStr + `"}`
+	var data = strings.NewReader(keyToDecode)
+	// var data = strings.NewReader(`{"ciphertext":"vault:v1:quY+4KUQo6JhfhD5Aac7nyFwApoMRGn44jKKOO2IJpw/KXtjG+kATRE5Gc03sxIt/qnXX6CmKah9tSIVxSbCIW0xdfJ65wB9QETl81kDUiwLzC0eImrm48p2ozG99RoYTuPedusIuur2mFKhMIPEGQloJQeyDXeWcdOkdDcVNnWW1rRb11i43NDjrzloaST9LwHLOrMibXDpC8uHyTMkry0XOYSVlXnJqV/6uKWgXj/0WX72J4jWOkgwOIpT0xBCGJmdBKD18izIq/CYH7pupjwfWt+Yi5jiZUFqQs75hyc/HV7V2fqWW6FXFHGVL2R5EW79CaZC+Q/yyBbnDQTcfjuX41QVGNRI65NjsUEEfo6OpF6OcqDNHweOnLEmwrAzCLg="}`)
+
+	req, err := http.NewRequest("POST", transiturl, data)
+	if err != nil {
+		log.Fatal(err)
+	}
+	req.Header.Set("X-Vault-Token", transitTokenStr)
+	// req.Header.Set("X-Vault-Token", "hvs.CAESIDyhl6QeFmqY36dVSiDIaxpnBu-e3PRMNqWjzPLwrANdGicKImh2cy55SHBTbW1JWkFZTTFmckhpQ1dTNlppc00udWYzNE4Q3QE")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+	bodyText, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// fmt.Printf("\n\nBODYTEXT: %s\n", bodyText)
+
+	respBody := map[string]interface{}{}
+	err = json.Unmarshal(bodyText, &respBody)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	unwrappedKeyIntf := respBody["data"]
+	unwrappedKeyMap := unwrappedKeyIntf.(map[string]interface{})
+	base64Keyset := fmt.Sprintf("%v", unwrappedKeyMap["plaintext"])
+	// fmt.Printf("\n\nbase64Keyset: %v\n", base64Keyset)
+	// byteBase64Keyset := []byte(base64Keyset)
+	keysetByte, _ := b64.StdEncoding.DecodeString(base64Keyset)
+	keysetStr := string(keysetByte)
+	// fmt.Printf("\n\nkeysetStr: %s\n", keysetStr)
+
+	// validate the key
+	kh, err := ValidateKeySetJson(keysetStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ksi := kh.KeysetInfo()
+	ki := ksi.KeyInfo[len(ksi.KeyInfo)-1]
+	keyTypeURL := ki.GetTypeUrl()
+	if keyTypeURL == "" {
+		return nil, fmt.Errorf("failed to determine the keyType")
+	}
+
+	return kh, nil
+}
+
+func checkKVSecret(fullName string, t *testing.T) {
+	fieldName := RemoveKeyPrefix(fullName)
+
+	client, err := KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
+	if err != nil {
+		t.Error("\nfailed to initialize Vault client")
+	}
+
+	kvsecret, err := KvGetSecret(client, vault_kv_engine, vault_kv_version, fullName)
+	if err != nil {
+		t.Errorf("failed to read the secrets in folder %s: %s", fullName, err)
+	}
+
+	if kvsecret == nil {
+		t.Errorf("failed to read the secrets in folder %s: secret not found", fullName)
+	}
+
+	if kvsecret.Data == nil {
+		t.Errorf("failed to read the secrets in folder %s: data not found", fullName)
+	}
+
+	jsonKey, ok := kvsecret.Data["data"]
+	if !ok {
+		t.Errorf("failed to read back the aead key  %v", fullName)
+	}
+	secretStr := fmt.Sprintf("%v", jsonKey)
+	var jMap map[string]KeySetStruct
+	if err := json.Unmarshal([]byte(secretStr), &jMap); err != nil {
+		t.Errorf("failed to unmarshall the secret  %v", fullName)
+	}
+	keysetAsMap := jMap[fieldName]
+	keysetAsByteArray, err := json.Marshal(keysetAsMap)
+	if err != nil {
+		t.Error("failed to marshall ")
+	}
+	jsonToValidate := string(keysetAsByteArray)
+	_, err = ValidateKeySetJson(jsonToValidate)
+	if err != nil {
+		t.Errorf("failed to recreate a key handle from the json for  %v", fullName)
+	}
+
+	jsonAad, ok := kvsecret.Data["aad"]
+	if !ok {
+		t.Errorf("failed to read back the aead aad  %v", fullName)
+	}
+	secretStr = fmt.Sprintf("%v", jsonAad)
+	var jMapAad map[string]interface{}
+	if err := json.Unmarshal([]byte(secretStr), &jMapAad); err != nil {
+		t.Errorf("failed to unmarshall the secret aad  %v", fullName)
+	}
+	jMapAadValue, ok := jMapAad[fieldName]
+	if !ok {
+		t.Error("failed to find aad value")
+	}
+	jMapAadValueStr := fmt.Sprintf("%v", jMapAadValue)
+	if jMapAadValueStr != fieldName {
+		t.Error("aad value is incorrect")
+	}
+}
+
+func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
+
+	client, err := KvGetClient(vault_kv_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
+	if err != nil {
+		t.Error("\nfailed to initialize Vault client")
+	}
+
+	var kvsecret *vault.KVSecret
+
+	if vault_transit_namespace != "" {
+		kvsecret, err = KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, vault_transit_kv_version, fullName)
+	} else {
+		kvsecret, err = KvGetSecret(client, vault_transit_kv_engine, vault_transit_kv_version, fullName)
+	}
+	if err != nil || kvsecret.Data == nil {
+		t.Errorf("failed to read the secrets in folder %v", fullName)
+	}
+
+	wrappedKeyIntf, ok := kvsecret.Data["key"]
+	if !ok {
+		t.Errorf("failed to read back the wrapped aead key  %v", fullName)
+	}
+
+	wrappedKeyStr := fmt.Sprintf("%v", wrappedKeyIntf)
+
+	var kvsecretToken *vault.KVSecret
+
+	if vault_transit_namespace != "" {
+		kvsecretToken, err = KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, vault_transit_kv_version, vault_transit_tokenname)
+	} else {
+		kvsecretToken, err = KvGetSecret(client, vault_transit_kv_engine, vault_transit_kv_version, vault_transit_tokenname)
+	}
+	if err != nil || kvsecretToken.Data == nil {
+		t.Errorf("failed to read the secrets in folder %v", fullName)
+	}
+
+	transitTokenIntf, ok := kvsecretToken.Data["key"]
+	if !ok {
+		t.Errorf("failed to read back the transitToken  %v", fullName)
+	}
+	transitToken := fmt.Sprintf("%v", transitTokenIntf)
+
+	if strings.Contains(vault_kv_url, "localhost") {
+		// ${VAULT_SERVER}/v1/kms/${LM}/${LM}_transit/decrypt/${LM}_KEK
+		_, err = unwrapKeyset(vault_kv_url+"/v1/"+vault_transit_engine+"/decrypt/"+vault_transit_kek, transitToken, wrappedKeyStr)
+	} else {
+		_, err = unwrapKeyset(vault_kv_url+"/v1/"+vault_transit_namespace+"/"+vault_transit_engine+"/decrypt/"+vault_transit_kek, transitToken, wrappedKeyStr)
+	}
+
+	if err != nil {
+		t.Error("failed to unwrap keyset and confirm type of aead key")
+	}
+
+}
+func TestTransitKV(t *testing.T) {
+
+	t.Run("testtransitkv1 transit kv sync", func(t *testing.T) {
+		// t.Parallel()
+		b, storage := testBackend(t)
+
+		if vault_transit_active == "false" {
+			t.SkipNow()
+		}
+
+		configMap := createVaultConfig()
+
+		// store the config and create 3 keys
+		saveConfig(b, storage, configMap, true, t)
+		// set up config (sync to transit = false)
+
+		keyMap := map[string]interface{}{
+			"gcm/test30-key1": NonDeterministicKeyset,
+			"gcm/test30-key2": NonDeterministicKeyset,
+			"gcm/test30-key3": NonDeterministicKeyset,
+		}
+		saveConfig(b, storage, keyMap, true, t)
+
+		// set up config (sync to transit = true)
+		newMap := map[string]interface{}{
+			"VAULT_TRANSIT_ACTIVE": "true",
+		}
+		saveConfig(b, storage, newMap, true, t)
+
+		syncMap := map[string]interface{}{
+			"gcm/test30-key1": "true",
+			"gcm/test30-key2": "false",
+			"gcm/test30-key3": "true",
+		}
+
+		// sync 2 of them
+		resp := syncTransitKV(b, storage, syncMap, t)
+
+		for k, v := range resp.Data {
+			fmt.Printf("\nresp-k=%v resp-v=%v", k, v)
+
+		}
+
+		// we should have a wrapped secret in kv called XXX_DEK_TEST30-KEY1_AES256_GCM
+		ns := "XXX"
+		if vault_transit_namespace != "" && strings.Contains(vault_transit_namespace, "kms/") {
+			ns = strings.TrimPrefix(vault_transit_namespace, "kms/")
+		}
+		checkKVTransitWrappedSecret(ns+"_DEK_TEST30-KEY1_AES256_GCM", t)
+		checkKVTransitWrappedSecret(ns+"_DEK_TEST30-KEY3_AES256_GCM", t)
 
 	})
 }
@@ -1496,6 +2223,44 @@ func readConfig(b *backend, storage logical.Storage, t *testing.T) *logical.Resp
 	return resp
 }
 
+func readKV(b *backend, storage logical.Storage, t *testing.T) *logical.Response {
+	resp, err := b.HandleRequest(context.Background(), &logical.Request{
+		Storage:   storage,
+		Operation: logical.ReadOperation,
+		Path:      "readkv",
+	})
+	if err != nil {
+		t.Fatal("readkv", err)
+	}
+	return resp
+}
+
+func syncKV(b *backend, storage logical.Storage, t *testing.T) *logical.Response {
+	resp, err := b.HandleRequest(context.Background(), &logical.Request{
+		Storage:   storage,
+		Operation: logical.ReadOperation,
+		Path:      "synckv",
+	})
+	if err != nil {
+		t.Fatal("synckv", err)
+	}
+	return resp
+}
+
+func syncTransitKV(b *backend, storage logical.Storage, data map[string]interface{}, t *testing.T) *logical.Response {
+
+	resp, err := b.HandleRequest(context.Background(), &logical.Request{
+		Storage:   storage,
+		Operation: logical.UpdateOperation,
+		Path:      "synctransitkv",
+		Data:      data,
+	})
+	if err != nil {
+		t.Fatal("synctransitkv", err)
+	}
+	return resp
+}
+
 func readKeyTypes(b *backend, storage logical.Storage, t *testing.T) *logical.Response {
 	resp, err := b.HandleRequest(context.Background(), &logical.Request{
 		Storage:   storage,
@@ -1568,4 +2333,31 @@ func rotateConfigKeys(b *backend, storage logical.Storage, data map[string]inter
 	if err != nil {
 		t.Fatal("rotateConfigKeys", err)
 	}
+}
+
+func createVaultConfig() map[string]interface{} {
+	configMap := map[string]interface{}{
+		"VAULT_KV_ACTIVE": vault_kv_active,
+		"VAULT_KV_URL":    vault_kv_url,
+		// "VAULT_KV_PWD":             vault_test_pwd,
+		"VAULT_KV_ENGINE":      vault_kv_engine,
+		"VAULT_KV_VERSION":     vault_kv_version,
+		"VAULT_KV_APPROLE_ID":  vault_kv_approle_id,
+		"VAULT_KV_SECRET_ID":   vault_kv_secret_id,
+		"VAULT_TRANSIT_ACTIVE": vault_transit_active,
+		"VAULT_TRANSIT_URL":    vault_transit_url,
+		// "VAULT_TRANSIT_PWD":        vault_transit_pwd,
+		"VAULT_TRANSIT_APPROLE_ID":          vault_transit_kv_approle_id,
+		"VAULT_TRANSIT_SECRET_ID":           vault_transit_kv_secret_id,
+		"VAULT_TRANSIT_KV_ENGINE":           vault_transit_kv_engine,
+		"VAULT_TRANSIT_KV_VERSION":          vault_transit_kv_version,
+		"VAULT_TRANSIT_NAMESPACE":           vault_transit_namespace,
+		"VAULT_TRANSIT_ENGINE":              vault_transit_engine,
+		"VAULT_TRANSIT_TOKENNAME":           vault_transit_tokenname,
+		"VAULT_TRANSIT_KEK":                 vault_transit_kek,
+		"VAULT_KV_WRITER_ROLE":              vault_kv_writer_role,
+		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": vault_secretgenerator_iam_role,
+	}
+	return configMap
+
 }

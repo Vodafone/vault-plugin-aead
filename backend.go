@@ -422,6 +422,44 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
+			// aead/readkv
+			&framework.Path{
+				Pattern:         "readkv",
+				HelpSynopsis:    "Read kv",
+				HelpDescription: "Read kv",
+				Fields:          map[string]*framework.FieldSchema{},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathReadKV,
+					},
+				},
+			},
+
+			// aead/synckv
+			&framework.Path{
+				Pattern:         "synckv",
+				HelpSynopsis:    "Sync kv",
+				HelpDescription: "Sync kv",
+				Fields:          map[string]*framework.FieldSchema{},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathSyncKV,
+					},
+				},
+			},
+
+			// aead/synckv
+			&framework.Path{
+				Pattern:         "synctransitkv",
+				HelpSynopsis:    "Sync Transit kv",
+				HelpDescription: "Sync Transit kv",
+				Fields:          map[string]*framework.FieldSchema{},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback: b.pathSyncTransitKV,
+					},
+				},
+			},
 		},
 	}
 	return &b

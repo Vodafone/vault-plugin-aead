@@ -97,24 +97,16 @@ func RotateKeys(kh *keyset.Handle, deterministic bool) {
 }
 
 func IsKeyHandleDeterministic(kh *keyset.Handle) bool {
-	// the alt to this is to convert the key info tom json and trawl through it
-	// i hate this, but i don't see an alternative atm
 
-	// also, it seems you cannot have a keyset that has both deterministic and non deterministic types
-	deterministic := false
-
-	// is the key AEAD
-	_, err := aead.New(kh)
-	if err != nil {
-		// is the key DAEAD
-		_, err := daead.New(kh)
-		if err != nil {
-			panic(err)
-		} else {
-			deterministic = true
-		}
+	ksi := kh.KeysetInfo()
+	ki := ksi.KeyInfo[len(ksi.KeyInfo)-1]
+	keyTypeURL := ki.GetTypeUrl()
+	if keyTypeURL == "type.googleapis.com/google.crypto.tink.AesSivKey" {
+		return true
+	} else if keyTypeURL == "type.googleapis.com/google.crypto.tink.AesGcmKey" {
+		return false
 	}
-	return deterministic
+	return false // technically correct but could also be an error TODO
 }
 
 func PivotMap(originalMap map[string]map[string]string, newMap map[string]map[string]string) {
@@ -256,7 +248,7 @@ func UpdateKeyStatus(kh *keyset.Handle, keyId string, status string) (*keyset.Ha
 	r := keyset.NewJSONReader(bytes.NewBufferString(string(data)))
 	newkh, err := insecurecleartextkeyset.Read(r)
 	if err != nil {
-		hclog.L().Error("Failed to make a key handle from the json:  %v", err)
+		hclog.L().Info("Failed to make a key handle from the json1:" + string(data) + " Error:" + err.Error())
 		return nil, err
 	}
 
@@ -293,7 +285,7 @@ func UpdateKeyMaterial(kh *keyset.Handle, keyId string, material string) (*keyse
 	r := keyset.NewJSONReader(bytes.NewBufferString(string(data)))
 	newkh, err := insecurecleartextkeyset.Read(r)
 	if err != nil {
-		hclog.L().Error("Failed to make a key handle from the json:  %v", err)
+		hclog.L().Info("Failed to make a key handle from the json2:" + string(data) + " Error:" + err.Error())
 		return nil, err
 	}
 
@@ -331,7 +323,7 @@ func UpdateKeyID(kh *keyset.Handle, keyId string, newKeyId string) (*keyset.Hand
 	r := keyset.NewJSONReader(bytes.NewBufferString(string(data)))
 	newkh, err := insecurecleartextkeyset.Read(r)
 	if err != nil {
-		hclog.L().Error("Failed to make a key handle from the json:  %v", err)
+		hclog.L().Info("Failed to make a key handle from the json3:" + string(data) + " Error:" + err.Error())
 		return nil, err
 	}
 
@@ -369,21 +361,25 @@ func UpdatePrimaryKeyID(kh *keyset.Handle, keyId string) (*keyset.Handle, error)
 	r := keyset.NewJSONReader(bytes.NewBufferString(string(data)))
 	newkh, err := insecurecleartextkeyset.Read(r)
 	if err != nil {
-		hclog.L().Error("Failed to make a key handle from the json:  %v", err)
+		hclog.L().Info("Failed to make a key handle from the json4:" + string(data) + " Error:" + err.Error())
 		return nil, err
 	}
 
 	return newkh, nil
 }
 
-func ValidateKeySetJson(keySetJson string) error {
-	r := keyset.NewJSONReader(bytes.NewBufferString(string(keySetJson)))
-	_, err := insecurecleartextkeyset.Read(r)
-	if err != nil {
-		hclog.L().Error("Failed to make a key handle from the json:  %v", err)
-		return err
+func ValidateKeySetJson(keySetJson string) (*keyset.Handle, error) {
+
+	if !isEncryptionJsonKey(keySetJson) {
+		return nil, fmt.Errorf("Not a key %s", keySetJson)
 	}
-	return nil
+	r := keyset.NewJSONReader(bytes.NewBufferString(string(keySetJson)))
+	kh, err := insecurecleartextkeyset.Read(r)
+	if err != nil {
+		hclog.L().Info("Failed to make a key handle from the json5:" + keySetJson + " Error:" + err.Error())
+		return nil, err
+	}
+	return kh, nil
 }
 
 func isEncryptionJsonKey(keyStr string) bool {
@@ -400,29 +396,92 @@ func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 	return encryptionKeyStr, deterministic
 }
 
+func getEncryptionKeyMultiple(fieldName string, setDepth ...int) (interface{}, bool) {
+	maxDepth := 5
+	if len(setDepth) > 0 {
+		maxDepth = setDepth[0]
+	}
+
+	// define a var for the recursive function
+	var keywalk func(fieldName string, maxDepth int, currDepth int) ([]interface{}, bool)
+	// define the recursive function
+	keywalk = func(fieldName string, maxDepth int, currDepth int) ([]interface{}, bool) {
+		keySliceRtn := make([]interface{}, 0, 0)
+
+		if currDepth >= maxDepth {
+			return nil, false
+		}
+
+		configValue, ok := AEAD_CONFIG.Get(fieldName)
+		if ok {
+			configValueStr := configValue.(string)
+			_, err := ValidateKeySetJson(configValueStr)
+			if err != nil {
+				keySliceRtn = append(keySliceRtn, configValue) // append the found element to keySliceRtn
+			} else {
+				// make a recursive call with the new 'root'
+				keys, _ := keywalk(configValueStr, maxDepth, currDepth+1)
+				keySliceRtn = append(keySliceRtn, keys...) // ... means append keys slice to keySliceRtn
+			}
+		}
+
+		return keySliceRtn, len(keySliceRtn) > 0
+
+	}
+	// call the recursive function with an initial empty subdir (as we want to start from the 'root' of the secret engine)
+	keySliceSliceOut, _ := keywalk(fieldName, maxDepth, 0)
+
+	isKeysetFound := false
+	var keyOut interface{}
+	if len(keySliceSliceOut) < 1 {
+		keyOut = nil
+		isKeysetFound = false
+	} else if len(keySliceSliceOut) == 1 {
+		keyOut = keySliceSliceOut[0]
+		isKeysetFound = true
+	} else if len(keySliceSliceOut) > 1 {
+		hclog.L().Error("Found multiple keys %v", keySliceSliceOut)
+		isKeysetFound = true
+		keyOut = keySliceSliceOut[0]
+	}
+
+	return keyOut, isKeysetFound
+}
+
 func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
 	maxDepth := 5
 	if len(setDepth) > 0 {
 		maxDepth = setDepth[0]
 	}
-	possiblyEncryptionKey, ok := AEAD_CONFIG.Get(fieldName)
-	if !ok {
-		return nil, ok
-	}
-	for i := 1; i < maxDepth; i++ {
-		possiblyEncryptionKeyStr := possiblyEncryptionKey.(string)
-		if !isEncryptionJsonKey(possiblyEncryptionKeyStr) {
-			possiblyEncryptionKey, ok = AEAD_CONFIG.Get(possiblyEncryptionKeyStr)
-			if !ok {
-				return nil, ok
-			}
-		} else {
-			return possiblyEncryptionKey, true
-		}
-	}
 
-	isKeysetFound := false
-	return nil, isKeysetFound
+	// define a var for the recursive function
+	var keywalk func(fieldName string, maxDepth int, currDepth int) (interface{}, bool)
+	// define the recursive function
+	keywalk = func(fieldName string, maxDepth int, currDepth int) (interface{}, bool) {
+
+		if currDepth >= maxDepth {
+			return nil, false
+		}
+
+		configValue, ok := AEAD_CONFIG.Get(fieldName)
+		if ok {
+			configValueStr := configValue.(string)
+			_, err := ValidateKeySetJson(configValueStr)
+			if err == nil {
+				// this is a valid key
+				return configValue, true
+			} else {
+				// make a recursive call with the new 'root'
+				key, found := keywalk(configValueStr, maxDepth, currDepth+1)
+				return key, found
+			}
+		}
+		return nil, false
+	}
+	// call the recursive function with an initial empty subdir (as we want to start from the 'root' of the secret engine)
+	key, found := keywalk(fieldName, maxDepth, 0)
+
+	return key, found
 }
 
 func muteKeyMaterial(theKey string) string {
@@ -443,4 +502,58 @@ func muteKeyMaterial(theKey string) string {
 		mutedMaterial = strings.Replace(mutedMaterial, key.KeyData.Value, "***", -1)
 	}
 	return mutedMaterial
+}
+
+func GetKeyPrefix(fieldName string, potentialAEADKey string, kh *keyset.Handle) string {
+	// if the fieldname already has the prefix, dont double up
+	if strings.HasPrefix(fieldName, "siv/") || strings.HasPrefix(fieldName, "gcm/") {
+		// its either not an AEAD keyset or it is but already has the prefix
+		return ""
+	}
+
+	gotKeyHandle := false
+	if kh == nil {
+		kh2, err := ValidateKeySetJson(potentialAEADKey)
+		if err == nil {
+			gotKeyHandle = true
+			kh = kh2
+		} else {
+			gotKeyHandle = false
+		}
+	} else {
+		gotKeyHandle = true
+	}
+
+	prefix := ""
+
+	if gotKeyHandle {
+
+		if IsKeyHandleDeterministic(kh) {
+			prefix = "siv/"
+		} else {
+			prefix = "gcm/"
+		}
+	}
+
+	return prefix
+}
+
+func RemoveKeyPrefix(fieldName string) string {
+	if strings.HasPrefix(fieldName, "siv/") {
+		return strings.TrimPrefix(fieldName, "siv/")
+	}
+	if strings.HasPrefix(fieldName, "gcm/") {
+		return strings.TrimPrefix(fieldName, "gcm/")
+	}
+	return fieldName
+}
+
+func ReverseKeyPrefix(fieldName string) string {
+	if strings.HasPrefix(fieldName, "siv/") {
+		return strings.TrimPrefix(fieldName, "siv/")
+	}
+	if strings.HasPrefix(fieldName, "gcm/") {
+		return strings.TrimPrefix(fieldName, "gcm/")
+	}
+	return fieldName
 }
