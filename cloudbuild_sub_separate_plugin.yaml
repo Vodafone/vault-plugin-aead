@@ -12,24 +12,24 @@ steps:
     args:
       - '-c'
       - |
-        make build VERSION=$TAG_NAME-${_TARGET_TAG}-rc
+        make build VERSION=$TAG_NAME-$BUILD_ID
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
     entrypoint: /bin/sh
 
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
     env:
-      - 'P_VERSION=$TAG_NAME-${_TARGET_TAG}-rc'
+      - 'P_VERSION=$TAG_NAME-$BUILD_ID'
       - 'FQ_BASE_IMAGE=${_FQ_BASE_IMAGE}'
     waitFor: ['go-build']
     args:
       - build
       - '--build-arg'
-      - 'FQ_BASE_IMAGE=${_FQ_BASE_IMAGE}'
-      - '--build-arg'
-      - 'P_VERSION=$TAG_NAME-${_TARGET_TAG}-rc'
+      - 'P_VERSION=$TAG_NAME-$BUILD_ID'  
+      - '-f'
+      - 'Dockerfile.plugin'
       - '-t'
-      - '${_TARGET}:${_TARGET_TAG}'
+      - '${_TARGET}:$TAG_NAME-$BUILD_ID'
       - .
     dir: docker
     
@@ -40,18 +40,16 @@ steps:
     args:
     - -c
     - |
-      BUILD_TAG=${TAG_NAME}-${_TARGET_TAG}
-      docker tag ${_TARGET}:${_TARGET_TAG} ${_TARGET}:$${BUILD_TAG}-rc
-      docker push ${_TARGET}:$${BUILD_TAG}-rc
+      docker push ${_TARGET}:$TAG_NAME-$BUILD_ID
 
 timeout: 1200s      
-images: [ '${_TARGET}:${_TARGET_TAG}' ]
+images: [ '${_TARGET}:$TAG_NAME-$BUILD_ID' ]
 logsBucket: 'gs://${_BUILD_PROJECT}-logging'
 options:
   workerPool: projects/${_BUILD_PROJECT}/locations/europe-west1/workerPools/worker-pool2
   env:
     - 'GOPRIVATE=github.com/pierrec,google.golang.org'
     - 'GOOS=linux'
-    - 'GOPROXY=direct'
     - 'GOARCH=amd64'
     - 'TAG_NAME=$TAG_NAME'
+    - 'GOPROXY=direct'

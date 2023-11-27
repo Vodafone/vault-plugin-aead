@@ -19,7 +19,7 @@ endif
 all: fmt build start
 
 build:
-	GOOS=$(OS) GOARCH="$(GOARCH)" go build -o vault/plugins/vault-plugin-aead cmd/vault-plugin-aead/main.go
+	GOPROXY=direct GOOS=$(OS) GOARCH="$(GOARCH)" go build -ldflags "-X github.com/Vodafone/vault-plugin-aead/version.Version=$(VERSION)" -o vault/plugins/vault-plugin-aead cmd/vault-plugin-aead/main.go
 
 start:
 	vault server -dev -dev-root-token-id=root -dev-plugin-dir=./vault/plugins
