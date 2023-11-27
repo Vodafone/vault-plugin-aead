@@ -66,6 +66,8 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 		// log.Fatal()
 	}
 	fmt.Printf("\nsaEmail=%s ProjectId=%s\n", saEmail, projectId)
+	// saEmail = "gke-service-account@vf-grp-clouddmz-lab.iam.gserviceaccount.com"
+	// fmt.Printf("\nsaEmail=%s ProjectId=%s\n", saEmail, projectId)
 
 	// 2. use the SA and IAM role to generate a token for vault
 	_, token, err := getVaultTokenGCPAuthIAM(saEmail, vault_addr, vault_secretgenerator_iam_role)
@@ -604,13 +606,11 @@ func getVaultTokenGCPAuthIAM(serviceAccount string, vaultAddress string, vaultIA
 		return nil, "", fmt.Errorf("unable to initialize Vault client: %w", err)
 	}
 
-	// Use passed serviceAccount email
-	svcAccountEmail := serviceAccount
-
 	// auth.WithIAMAuth option uses the IAM-style authentication
+	fmt.Printf("\ngetVaultTokenGCPAuthIAM(serviceAccount=%s, vaultAddress=%s, vaultIAM=%s)", serviceAccount, vaultAddress, vaultIAM)
 	gcpAuth, err := authgcp.NewGCPAuth(
 		vaultIAM,
-		authgcp.WithIAMAuth(svcAccountEmail),
+		authgcp.WithIAMAuth(serviceAccount),
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("unable to initialize GCP auth method: %w", err)
