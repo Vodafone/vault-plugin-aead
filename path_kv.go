@@ -145,7 +145,7 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 		return nil, nil
 	}
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, "", "")
+	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, kvOptions.vault_kv_writer_role, kvOptions.vault_secretgenerator_iam_role)
 
 	if err != nil {
 		hclog.L().Error("\nfailed to initialize Vault client1")
@@ -306,6 +306,16 @@ func resolveKvOptions(kvOptions *KVOptions) error {
 		kvOptions.vault_transit_kek = fmt.Sprintf("%v", vault_transit_kek)
 	}
 
+	vault_kv_writer_role, ok := AEAD_CONFIG.Get("VAULT_KV_WRITER_ROLE")
+	if ok {
+		kvOptions.vault_kv_writer_role = fmt.Sprintf("%v", vault_kv_writer_role)
+	}
+
+	vault_secretgenerator_iam_role, ok := AEAD_CONFIG.Get("VAULT_KV_SECRETGENERATOR_IAM_ROLE")
+	if ok {
+		kvOptions.vault_secretgenerator_iam_role = fmt.Sprintf("%v", vault_secretgenerator_iam_role)
+	}
+
 	return nil
 }
 func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
@@ -340,7 +350,7 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 	// hclog.L().Info("saveToKV:" + keyNameIn + " Type: " + keyTypeURL)
 
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, "", "")
+	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, kvOptions.vault_kv_writer_role, kvOptions.vault_secretgenerator_iam_role)
 	if err != nil {
 		hclog.L().Error("\nfailed to initialize Vault client2")
 		return false, err
@@ -498,7 +508,7 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 	// OK, we want to sync this key
 
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_transit_url, kvOptions.vault_transit_namespace, kvOptions.vault_transit_approle_id, kvOptions.vault_transit_secret_id, "", "")
+	client, err := KvGetClient(kvOptions.vault_transit_url, kvOptions.vault_transit_namespace, kvOptions.vault_transit_approle_id, kvOptions.vault_transit_secret_id, kvOptions.vault_kv_writer_role, kvOptions.vault_secretgenerator_iam_role)
 	if err != nil {
 		hclog.L().Error("\nfailed to initialize Vault client3")
 		return false, err
@@ -613,7 +623,7 @@ func deleteFromKV(k string) (bool, error) {
 
 func storeKeysTobeSynced(kvOptions KVOptions, keyMap map[string]interface{}) error {
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, "", "")
+	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, kvOptions.vault_kv_writer_role, kvOptions.vault_secretgenerator_iam_role)
 	if err != nil {
 		hclog.L().Error("Failed to initialise kv:" + err.Error())
 		return err
@@ -654,7 +664,7 @@ func storeKeysTobeSynced(kvOptions KVOptions, keyMap map[string]interface{}) err
 
 func readKeysTobeSynced(kvOptions KVOptions) (map[string]interface{}, error) {
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, "", "")
+	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, kvOptions.vault_kv_writer_role, kvOptions.vault_secretgenerator_iam_role)
 	if err != nil {
 		hclog.L().Error("Failed to initialise kv:" + err.Error())
 		return nil, err

@@ -43,6 +43,12 @@ path "transit/*" {
   capabilities = ["create", "read", "update", "patch", "delete", "list"]
 }
 
+cat secretgenpolicy.json
+path "auth/approle/role/my-approle/secret-id" {
+  capabilities = ["create", "update"]
+}
+
+
 vault secrets enable -path=aead-secrets vault-plugin-aead
 vault secrets enable transit
 vault write -f transit/keys/my-key
@@ -52,6 +58,10 @@ vault write auth/approle/role/my-approle token_policies="my-policy"
 vault read -field=role_id auth/approle/role/my-approle/role-id
 vault write -f -field=secret_id auth/approle/role/my-approle/secret-id
 vault kv put -mount=secret transit-token key=root
+
+vault auth enable gcp
+vault policy write secretgen-policy ./policy-secretgen.json
+vault write auth/gcp/role/vault-gce-auth-role type="gce" policies="secretgen-policy" bound_service_accounts="restricted-zone-restricted@vf-grp-neuronenabler-nonlive.iam.gserviceaccount.com"
 */
 
 // NOTE THE BELOW VALUES ARE FOR A LOCAL VAULT, INSTRUCTIONS ABOVE
@@ -81,6 +91,8 @@ const vault_kv_approle_id string = "xxxxxx"
 const vault_kv_secret_id string = "yyyyyy"
 const vault_kv_engine string = "secret"
 const vault_kv_version string = "v2"
+const vault_kv_writer_role = "kv-writer-role"
+const vault_secretgenerator_iam_role = "secretgenerator-iam-role"
 
 const vault_transit_active string = "false"
 const vault_transit_url string = "http://localhost:8200"
@@ -1893,7 +1905,7 @@ func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*ke
 func checkKVSecret(fullName string, t *testing.T) {
 	fieldName := RemoveKeyPrefix(fullName)
 
-	client, err := KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id, "", "")
+	client, err := KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
 	if err != nil {
 		t.Error("\nfailed to initialize Vault client")
 	}
@@ -1952,7 +1964,7 @@ func checkKVSecret(fullName string, t *testing.T) {
 
 func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 
-	client, err := KvGetClient(vault_kv_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id, "", "")
+	client, err := KvGetClient(vault_kv_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
 	if err != nil {
 		t.Error("\nfailed to initialize Vault client")
 	}
@@ -2335,14 +2347,16 @@ func createVaultConfig() map[string]interface{} {
 		"VAULT_TRANSIT_ACTIVE": vault_transit_active,
 		"VAULT_TRANSIT_URL":    vault_transit_url,
 		// "VAULT_TRANSIT_PWD":        vault_transit_pwd,
-		"VAULT_TRANSIT_APPROLE_ID": vault_transit_kv_approle_id,
-		"VAULT_TRANSIT_SECRET_ID":  vault_transit_kv_secret_id,
-		"VAULT_TRANSIT_KV_ENGINE":  vault_transit_kv_engine,
-		"VAULT_TRANSIT_KV_VERSION": vault_transit_kv_version,
-		"VAULT_TRANSIT_NAMESPACE":  vault_transit_namespace,
-		"VAULT_TRANSIT_ENGINE":     vault_transit_engine,
-		"VAULT_TRANSIT_TOKENNAME":  vault_transit_tokenname,
-		"VAULT_TRANSIT_KEK":        vault_transit_kek,
+		"VAULT_TRANSIT_APPROLE_ID":          vault_transit_kv_approle_id,
+		"VAULT_TRANSIT_SECRET_ID":           vault_transit_kv_secret_id,
+		"VAULT_TRANSIT_KV_ENGINE":           vault_transit_kv_engine,
+		"VAULT_TRANSIT_KV_VERSION":          vault_transit_kv_version,
+		"VAULT_TRANSIT_NAMESPACE":           vault_transit_namespace,
+		"VAULT_TRANSIT_ENGINE":              vault_transit_engine,
+		"VAULT_TRANSIT_TOKENNAME":           vault_transit_tokenname,
+		"VAULT_TRANSIT_KEK":                 vault_transit_kek,
+		"VAULT_KV_WRITER_ROLE":              vault_kv_writer_role,
+		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": vault_secretgenerator_iam_role,
 	}
 	return configMap
 

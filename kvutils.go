@@ -26,27 +26,32 @@ import (
 )
 
 type KVOptions struct {
-	vault_kv_url             string
-	vault_kv_active          string
-	vault_kv_approle_id      string
-	vault_kv_secret_id       string
-	vault_kv_engine          string
-	vault_kv_version         string
-	vault_transit_active     string
-	vault_transit_url        string
-	vault_transit_approle_id string
-	vault_transit_secret_id  string
-	vault_transit_kv_engine  string
-	vault_transit_kv_version string
-	vault_transit_namespace  string
-	vault_transit_engine     string
-	vault_transit_tokenname  string
-	vault_transit_kek        string
+	vault_kv_url                   string
+	vault_kv_active                string
+	vault_kv_approle_id            string
+	vault_kv_secret_id             string
+	vault_kv_engine                string
+	vault_kv_version               string
+	vault_transit_active           string
+	vault_transit_url              string
+	vault_transit_approle_id       string
+	vault_transit_secret_id        string
+	vault_transit_kv_engine        string
+	vault_transit_kv_version       string
+	vault_transit_namespace        string
+	vault_transit_engine           string
+	vault_transit_tokenname        string
+	vault_transit_kek              string
+	vault_kv_writer_role           string
+	vault_secretgenerator_iam_role string
 }
 
 var aead_engine = "aead-secrets"
 
 func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string, vault_kv_writer_role string, vault_secretgenerator_iam_role string) (string, error) {
+
+	fmt.Printf("\nvault_kv_writer_role=%s", vault_kv_writer_role)
+	fmt.Printf("\nvault_secretgenerator_iam_role=%s", vault_secretgenerator_iam_role)
 
 	if vault_writer_secret_id != "" {
 		// we already have the secret id, no need to generate one
@@ -56,9 +61,13 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 	saEmail, projectId, err := getMetadataInfo()
 	if err != nil {
 		fmt.Printf("oops error from getMetadataInfo=%s", err.Error())
-		log.Fatal()
+		saEmail = "restricted-zone-restricted@vf-grp-neuronenabler-nonlive.iam.gserviceaccount.com"
+		projectId = "vf-grp-neuronenabler-nonlive"
+		// log.Fatal()
 	}
 	fmt.Printf("\nsaEmail=%s ProjectId=%s\n", saEmail, projectId)
+	// saEmail = "gke-service-account@vf-grp-clouddmz-lab.iam.gserviceaccount.com"
+	// fmt.Printf("\nsaEmail=%s ProjectId=%s\n", saEmail, projectId)
 
 	// 2. use the SA and IAM role to generate a token for vault
 	_, token, err := getVaultTokenGCPAuthIAM(saEmail, vault_addr, vault_secretgenerator_iam_role)
@@ -81,7 +90,7 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 // Fetches a key-value secret (kv-v2) after authenticating via AppRole.
 func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id string, vault_writer_secret_id string, vault_writer_approle_name string, vault_secretgenerator_iam_role_name string) (*vault.Client, error) {
 
-	generated_secret_id, err := getGeneratedVaultSecretId(vault_addr, vault_writer_approle_name, vault_writer_secret_id, vault_secretgenerator_iam_role_name)
+	generated_secret_id, err := getGeneratedVaultSecretId(vault_addr, vault_writer_secret_id, vault_writer_approle_name, vault_secretgenerator_iam_role_name)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to generate a secret id")
 	} else {
@@ -552,23 +561,23 @@ func callMetadataServer(metadata_url string) (string, error) {
 	req, err := http.NewRequest("GET", metadata_url, nil)
 	req.Header.Set("Metadata-Flavor", "Google")
 
-	proxyurlStr := os.Getenv("https_proxy")
-	proxyurlStr = ""
+	// proxyurlStr := os.Getenv("https_proxy")
+	// proxyurlStr = ""
 
 	var tr *http.Transport
-	if proxyurlStr != "" {
-		proxyUrl, _ := url.Parse(proxyurlStr)
+	// if proxyurlStr != "" {
+	// 	proxyUrl, _ := url.Parse(proxyurlStr)
 
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			Proxy:           http.ProxyURL(proxyUrl),
-		}
-	} else {
+	// 	tr = &http.Transport{
+	// 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	// 		Proxy:           http.ProxyURL(proxyUrl),
+	// 	}
+	// } else {
 
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
+	tr = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
+	// }
 
 	client := &http.Client{Transport: tr}
 
@@ -597,13 +606,11 @@ func getVaultTokenGCPAuthIAM(serviceAccount string, vaultAddress string, vaultIA
 		return nil, "", fmt.Errorf("unable to initialize Vault client: %w", err)
 	}
 
-	// Use passed serviceAccount email
-	svcAccountEmail := serviceAccount
-
 	// auth.WithIAMAuth option uses the IAM-style authentication
+	fmt.Printf("\ngetVaultTokenGCPAuthIAM(serviceAccount=%s, vaultAddress=%s, vaultIAM=%s)", serviceAccount, vaultAddress, vaultIAM)
 	gcpAuth, err := authgcp.NewGCPAuth(
 		vaultIAM,
-		authgcp.WithIAMAuth(svcAccountEmail),
+		authgcp.WithIAMAuth(serviceAccount),
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("unable to initialize GCP auth method: %w", err)
