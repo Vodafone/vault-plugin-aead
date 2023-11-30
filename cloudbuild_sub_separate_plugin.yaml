@@ -20,12 +20,15 @@ steps:
     id: 'container-build'
     env:
       - 'P_VERSION=$TAG_NAME-$BUILD_ID'
+      - 'P_NAME=${_PLUGIN_NAME}'
       - 'FQ_BASE_IMAGE=${_FQ_BASE_IMAGE}'
     waitFor: ['go-build']
     args:
       - build
       - '--build-arg'
       - 'P_VERSION=$TAG_NAME-$BUILD_ID'  
+      - '--build-arg'
+      - 'P_NAME=${_PLUGIN_NAME}' 
       - '-f'
       - 'Dockerfile.plugin'
       - '-t'
