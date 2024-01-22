@@ -218,13 +218,13 @@ func KvGetSecret(client *vault.Client, kv_engine string, kv_version string, secr
 	if kv_version == "v1" {
 		secret, err := client.KVv1(kv_engine).Get(context.Background(), secretPath)
 		if err != nil {
-			panic(err)
+			return nil, fmt.Errorf("failed to obtain Vault secret: %w", err)
 		}
 		return secret, err
 	} else if kv_version == "v2" {
 		secret, err := client.KVv2(kv_engine).Get(context.Background(), secretPath)
 		if err != nil {
-			panic(err)
+			return nil, fmt.Errorf("failed to obtain Vault secret: %w", err)
 		}
 		return secret, err
 	} else {
