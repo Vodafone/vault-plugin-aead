@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -17,16 +16,6 @@ import (
 	"time"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-
-	"context"
-	"crypto/tls"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
-	"time"
 
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/google/tink/go/keyset"
