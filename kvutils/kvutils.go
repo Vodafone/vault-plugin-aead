@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -17,6 +18,16 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"time"
+
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/google/tink/go/keyset"
 	hclog "github.com/hashicorp/go-hclog"
@@ -25,6 +36,7 @@ import (
 	auth "github.com/hashicorp/vault/api/auth/approle"
 	authgcp "github.com/hashicorp/vault/api/auth/gcp"
 	cmap "github.com/orcaman/concurrent-map"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
 
 type KVOptions struct {
