@@ -601,6 +601,22 @@ func callMetadataServer(metadata_url string) (string, error) {
 	return string(body), nil
 }
 
+func GetMetadataInfo() (string, string, error) {
+	url := "http://metadata.google.internal/computeMetadata/v1/project/project-id"
+	projectID, err := callMetadataServer(url)
+	if err != nil {
+		return "", "", fmt.Errorf("Error: unable to contact http://metadata.google.internal: %s", err)
+	}
+
+	url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email"
+	saEmail, err := callMetadataServer(url)
+	if err != nil {
+		return "", "", fmt.Errorf("Error: unable to contact http://metadata.google.internal: %s", err)
+	}
+
+	return saEmail, projectID, nil
+}
+
 func getVaultTokenGCPAuthIAM(serviceAccount string, vaultAddress string, vaultIAM string) (*vault.Client, string, error) {
 	config := vault.DefaultConfig()
 
