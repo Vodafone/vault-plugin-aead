@@ -683,7 +683,8 @@ func createSecretIdForRole(vaulturl string, token string, approle string) (strin
 	req, err := retryablehttp.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
 		fmt.Printf("oops error from retryablehttp.NewRequest=%s", err.Error())
-		log.Fatal()
+		hclog.L().Error("\nfailed to initialize AppRole auth method: %w", err)
+		return "", err
 	}
 	req.Header.Set("X-Vault-Token", token)
 	// req.Header.Set("Content-Type", "application/json")
@@ -691,17 +692,16 @@ func createSecretIdForRole(vaulturl string, token string, approle string) (strin
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Printf("oops error from client.Do=%s", err.Error())
-		log.Fatal()
+		return "", err
 	}
 
 	defer resp.Body.Close()
 
-	log.Printf("resp=%v", resp)
+	hclog.L().Error("resp=%v", resp)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Printf("goDoHttp io.ReadAll Error=%v\n", err)
-		log.Fatal()
 	}
 
 	bodyMap := map[string]interface{}{}
@@ -709,16 +709,13 @@ func createSecretIdForRole(vaulturl string, token string, approle string) (strin
 	err = json.Unmarshal([]byte(body), &bodyMap)
 	if err != nil {
 		fmt.Printf("goDoHttp Unmarshall Error=%v\n", err)
-		log.Fatal()
 	}
-	log.Printf("\nbodymap=%v", bodyMap)
+	hclog.L().Error("\nbodymap=%v", bodyMap)
 
 	dataMap := bodyMap["data"]
 	// dataMapDeets := map[string]interface{}{}
 	dataMapDeets := dataMap.(map[string]interface{})
-
-	log.Printf("\nnewSecretId=%v", dataMapDeets["secret_id"])
-
+	hclog.L().Error("\nnewSecretId=%v", dataMapDeets["secret_id"])
 	si := fmt.Sprintf("%s", dataMapDeets["secret_id"])
 
 	return si, nil
