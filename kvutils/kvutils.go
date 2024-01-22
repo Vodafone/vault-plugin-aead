@@ -232,6 +232,17 @@ func KvGetSecret(client *vault.Client, kv_engine string, kv_version string, secr
 	}
 }
 
+func KvDeleteSecret(client *vault.Client, kv_engine string, kv_version string, secretPath string) error {
+	if kv_version == "v1" {
+		err := client.KVv1(kv_engine).Delete(context.Background(), secretPath)
+		return err
+	} else if kv_version == "v2" {
+		err := client.KVv2(kv_engine).Delete(context.Background(), secretPath)
+		return err
+	} else {
+		return fmt.Errorf("kv_version must be v1 or v2")
+	}
+}
 func KvGetSecretPaths(client *vault.Client, kv_engine string, kv_version string, rootpath string) ([]string, error) {
 
 	// define a var for the recursive function
