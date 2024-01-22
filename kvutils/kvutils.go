@@ -219,9 +219,17 @@ func KvPutSecret(client *vault.Client, kv_engine string, kv_version string, secr
 func KvGetSecret(client *vault.Client, kv_engine string, kv_version string, secretPath string) (*vault.KVSecret, error) {
 
 	if kv_version == "v1" {
-		return client.KVv1(kv_engine).Get(context.Background(), secretPath)
+		secret, err := client.KVv1(kv_engine).Get(context.Background(), secretPath)
+		if err != nil {
+			panic(err)
+		}
+		return secret, err
 	} else if kv_version == "v2" {
-		return client.KVv2(kv_engine).Get(context.Background(), secretPath)
+		secret, err := client.KVv2(kv_engine).Get(context.Background(), secretPath)
+		if err != nil {
+			panic(err)
+		}
+		return secret, err
 	} else {
 		return nil, fmt.Errorf("kv_version must be v1 or v2")
 	}
