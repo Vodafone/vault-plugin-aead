@@ -19,6 +19,7 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
+	"github.com/Vodafone/vault-plugin-aead/kvutils"
 	version "github.com/Vodafone/vault-plugin-aead/version"
 	"github.com/google/tink/go/daead"
 	"github.com/google/tink/go/insecurecleartextkeyset"
@@ -1906,12 +1907,12 @@ func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*ke
 func checkKVSecret(fullName string, t *testing.T) {
 	fieldName := aeadutils.RemoveKeyPrefix(fullName)
 
-	client, err := KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
 	if err != nil {
 		t.Error("\nfailed to initialize Vault client")
 	}
 
-	kvsecret, err := KvGetSecret(client, vault_kv_engine, vault_kv_version, fullName)
+	kvsecret, err := kvutils.KvGetSecret(client, vault_kv_engine, vault_kv_version, fullName)
 	if err != nil {
 		t.Errorf("failed to read the secrets in folder %s: %s", fullName, err)
 	}
@@ -1965,7 +1966,7 @@ func checkKVSecret(fullName string, t *testing.T) {
 
 func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 
-	client, err := KvGetClient(vault_kv_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClient(vault_kv_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
 	if err != nil {
 		t.Error("\nfailed to initialize Vault client")
 	}
@@ -1973,9 +1974,9 @@ func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 	var kvsecret *vault.KVSecret
 
 	if vault_transit_namespace != "" {
-		kvsecret, err = KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, vault_transit_kv_version, fullName)
+		kvsecret, err = kvutils.KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, vault_transit_kv_version, fullName)
 	} else {
-		kvsecret, err = KvGetSecret(client, vault_transit_kv_engine, vault_transit_kv_version, fullName)
+		kvsecret, err = kvutils.KvGetSecret(client, vault_transit_kv_engine, vault_transit_kv_version, fullName)
 	}
 	if err != nil || kvsecret.Data == nil {
 		t.Errorf("failed to read the secrets in folder %v", fullName)
@@ -1991,9 +1992,9 @@ func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 	var kvsecretToken *vault.KVSecret
 
 	if vault_transit_namespace != "" {
-		kvsecretToken, err = KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, vault_transit_kv_version, vault_transit_tokenname)
+		kvsecretToken, err = kvutils.KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, vault_transit_kv_version, vault_transit_tokenname)
 	} else {
-		kvsecretToken, err = KvGetSecret(client, vault_transit_kv_engine, vault_transit_kv_version, vault_transit_tokenname)
+		kvsecretToken, err = kvutils.KvGetSecret(client, vault_transit_kv_engine, vault_transit_kv_version, vault_transit_tokenname)
 	}
 	if err != nil || kvsecretToken.Data == nil {
 		t.Errorf("failed to read the secrets in folder %v", fullName)

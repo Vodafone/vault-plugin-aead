@@ -1,4 +1,4 @@
-package aeadplugin
+package kvutils
 
 import (
 	"bytes"
@@ -17,33 +17,35 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
+	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/google/tink/go/keyset"
 	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-retryablehttp"
 	vault "github.com/hashicorp/vault/api"
 	auth "github.com/hashicorp/vault/api/auth/approle"
 	authgcp "github.com/hashicorp/vault/api/auth/gcp"
+	cmap "github.com/orcaman/concurrent-map"
 )
 
 type KVOptions struct {
-	vault_kv_url                   string
-	vault_kv_active                string
-	vault_kv_approle_id            string
-	vault_kv_secret_id             string
-	vault_kv_engine                string
-	vault_kv_version               string
-	vault_transit_active           string
-	vault_transit_url              string
-	vault_transit_approle_id       string
-	vault_transit_secret_id        string
-	vault_transit_kv_engine        string
-	vault_transit_kv_version       string
-	vault_transit_namespace        string
-	vault_transit_engine           string
-	vault_transit_tokenname        string
-	vault_transit_kek              string
-	vault_kv_writer_role           string
-	vault_secretgenerator_iam_role string
+	Vault_kv_url                   string
+	Vault_kv_active                string
+	Vault_kv_approle_id            string
+	Vault_kv_secret_id             string
+	Vault_kv_engine                string
+	Vault_kv_version               string
+	Vault_transit_active           string
+	Vault_transit_url              string
+	Vault_transit_approle_id       string
+	Vault_transit_secret_id        string
+	Vault_transit_kv_engine        string
+	Vault_transit_kv_version       string
+	Vault_transit_namespace        string
+	Vault_transit_engine           string
+	Vault_transit_tokenname        string
+	Vault_transit_kek              string
+	Vault_kv_writer_role           string
+	Vault_secretgenerator_iam_role string
 }
 
 var aead_engine = "aead-secrets"
@@ -155,7 +157,7 @@ func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id st
 }
 
 // Fetches a key-value secret (kv-v2) after authenticating via AppRole.
-func KvGetClientPwd(configUrlStr string, configPwdStr string) (*vault.Client, error) {
+func KvGetClientPwd(configUrlStr string, configPwdStr string, AEAD_CONFIG cmap.ConcurrentMap) (*vault.Client, error) {
 
 	vault_url, ok := AEAD_CONFIG.Get(configUrlStr)
 	if !ok {
@@ -390,7 +392,7 @@ func UnwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*ke
 	// fmt.Printf("\n\nkeysetStr: %s\n", keysetStr)
 
 	// validate the key
-	kh, err := ValidateKeySetJson(keysetStr)
+	kh, err := aeadutils.ValidateKeySetJson(keysetStr)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -473,7 +475,7 @@ func DeriveKeyName(namespace string, keyname string, keyjson string) (string, er
 	newkeyname := ""
 
 	// validate the key
-	kh, err := ValidateKeySetJson(keyjson)
+	kh, err := aeadutils.ValidateKeySetJson(keyjson)
 	if err != nil {
 		log.Fatal(err)
 	}
