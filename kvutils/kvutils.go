@@ -48,12 +48,7 @@ type KVOptions struct {
 	Vault_secretgenerator_iam_role string
 }
 
-var aead_engine = "aead-secrets"
-
 func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string, vault_kv_writer_role string, vault_secretgenerator_iam_role string) (string, error) {
-
-	fmt.Printf("\nvault_kv_writer_role=%s", vault_kv_writer_role)
-	fmt.Printf("\nvault_secretgenerator_iam_role=%s", vault_secretgenerator_iam_role)
 
 	if vault_writer_secret_id != "" {
 		// we already have the secret id, no need to generate one
@@ -65,7 +60,6 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 		fmt.Printf("oops error from getMetadataInfo=%s", err.Error())
 		saEmail = "restricted-zone-restricted@vf-grp-neuronenabler-nonlive.iam.gserviceaccount.com"
 		projectId = "vf-grp-neuronenabler-nonlive"
-		// log.Fatal()
 	}
 	fmt.Printf("\nsaEmail=%s ProjectId=%s\n", saEmail, projectId)
 	// saEmail = "gke-service-account@vf-grp-clouddmz-lab.iam.gserviceaccount.com"
@@ -75,7 +69,7 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 	_, token, err := getVaultTokenGCPAuthIAM(saEmail, vault_addr, vault_secretgenerator_iam_role)
 	if err != nil {
 		fmt.Printf("oops error from getVaultTokenGCPAuthIAM=%s", err.Error())
-		log.Fatal()
+		return "", err
 	}
 	fmt.Printf("\ntoken from getVaultTokenGCPAuthIAM=%s\n", token)
 
@@ -83,7 +77,7 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 	newSecretId, err := createSecretIdForRole(vault_addr, token, vault_kv_writer_role)
 	if err != nil {
 		fmt.Printf("oops error from createSecretIdForRole=%s", err.Error())
-		log.Fatal()
+		return "", err
 	}
 	fmt.Printf("\nnewSecretId from createSecretIdForRole=%s\n", newSecretId)
 	return newSecretId, nil
