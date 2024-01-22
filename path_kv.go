@@ -546,29 +546,29 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 
 	//url = "http://localhost:8200/v1/transit/encrypt/my-key"
 
-	url := ""
-	if kvOptions.Vault_transit_namespace != "" {
-		url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_namespace + "/" + kvOptions.Vault_transit_engine + "/encrypt/" + kvOptions.Vault_transit_kek
-	} else {
-		// no namespace
-		url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_engine + "/encrypt/" + kvOptions.Vault_transit_kek
-	}
+	// url := ""
+	// if kvOptions.Vault_transit_namespace != "" {
+	// 	url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_namespace + "/" + kvOptions.Vault_transit_engine + "/encrypt/" + kvOptions.Vault_transit_kek
+	// } else {
+	// 	// no namespace
+	// 	url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_engine + "/encrypt/" + kvOptions.Vault_transit_kek
+	// }
 
-	wrappedkey, err := kvutils.WrapKeyset(url, transitTokenStr, keyjson)
+	wrappedkey, err := kvutils.WrapKeyset(resolveKvOptions, transitTokenStr, keyjson)
 	if err != nil {
 		hclog.L().Error("failed to wrap key")
 	}
 
 	//url = "http://localhost:8200/v1/transit/decrypt/my-key"
 
-	if kvOptions.Vault_transit_namespace != "" {
-		url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_namespace + "/" + kvOptions.Vault_transit_engine + "/decrypt/" + kvOptions.Vault_transit_kek
-	} else {
-		url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_engine + "/decrypt/" + kvOptions.Vault_transit_kek
+	// if kvOptions.Vault_transit_namespace != "" {
+	// 	url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_namespace + "/" + kvOptions.Vault_transit_engine + "/decrypt/" + kvOptions.Vault_transit_kek
+	// } else {
+	// 	url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_engine + "/decrypt/" + kvOptions.Vault_transit_kek
 
-	}
+	// }
 
-	_, err = kvutils.UnwrapKeyset(url, transitTokenStr, wrappedkey)
+	_, err = kvutils.UnwrapKeyset(resolveKvOptions, kvutils.EncryptedKVKey{Ciphertext: transitTokenStr}, wrappedkey)
 	if err != nil {
 		hclog.L().Error("failed to unwrap key")
 	}
