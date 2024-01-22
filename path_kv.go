@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/google/tink/go/keyset"
 	hclog "github.com/hashicorp/go-hclog"
 	vault "github.com/hashicorp/vault/api"
@@ -200,7 +201,7 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 			} else {
 				// hclog.L().Info("valid secret key")
 				if mask == nil || mask[0] == true {
-					consulKV[path] = muteKeyMaterial(extractedKeySet)
+					consulKV[path] = aeadutils.MuteKeyMaterial(extractedKeySet)
 				} else {
 					consulKV[path] = extractedKeySet
 				}
@@ -336,8 +337,8 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 		return true, nil
 	}
 
-	// kh, err := ValidateKeySetJson(potentialAEADKey)
-	_, err = ValidateKeySetJson(potentialAEADKey)
+	// kh, err := aeadutils.ValidateKeySetJson(potentialAEADKey)
+	_, err = aeadutils.ValidateKeySetJson(potentialAEADKey)
 
 	if err != nil {
 		return true, nil
@@ -358,15 +359,15 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 
 	// // create a secret
 	keyJsonInStr := fmt.Sprintf("%s", keyJsonIn)
-	var keySetStruct KeySetStruct
+	var keySetStruct aeadutils.KeySetStruct
 	err = json.Unmarshal([]byte(keyJsonInStr), &keySetStruct)
 	if err != nil {
 		hclog.L().Error("\nfailed to unmarshall the keyset into a struct")
 	}
 
 	keyMap := make(map[string]interface{})
-	// keyMap[RemoveKeyPrefix(keyNameIn)] = keyJsonIn
-	keyMap[RemoveKeyPrefix(keyNameIn)] = keySetStruct
+	// keyMap[aeadutils.RemoveKeyPrefix(keyNameIn)] = keyJsonIn
+	keyMap[aeadutils.RemoveKeyPrefix(keyNameIn)] = keySetStruct
 
 	// Marshal the map into a JSON string.
 	keyData, err := json.Marshal(keyMap)
@@ -376,7 +377,7 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 	jsonKeyStr := string(keyData)
 
 	aadMap := make(map[string]interface{})
-	aadMap[RemoveKeyPrefix(keyNameIn)] = RemoveKeyPrefix(keyNameIn)
+	aadMap[aeadutils.RemoveKeyPrefix(keyNameIn)] = aeadutils.RemoveKeyPrefix(keyNameIn)
 	// Marshal the map into a JSON string.
 	aadData, err := json.Marshal(aadMap)
 	if err != nil {
@@ -396,7 +397,7 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 		return false, err
 	}
 
-	if _, _, err = isSecretAnAEADKeyset(secret, RemoveKeyPrefix(keyNameIn)); err != nil {
+	if _, _, err = isSecretAnAEADKeyset(secret, aeadutils.RemoveKeyPrefix(keyNameIn)); err != nil {
 		return false, err
 	}
 
@@ -536,7 +537,7 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 	}
 
 	// make a new keyname
-	keyname := RemoveKeyPrefix(keyNameIn)
+	keyname := aeadutils.RemoveKeyPrefix(keyNameIn)
 	newkeyname, err := DeriveKeyName(kvOptions.vault_transit_namespace, keyname, keyjson)
 	hclog.L().Info("newkeyname: " + newkeyname)
 
@@ -582,8 +583,8 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 
 func isSecretAnAEADKeyset(secret interface{}, fName string) (string, *keyset.Handle, error) {
 	secretStr := fmt.Sprintf("%v", secret)
-	fieldName := RemoveKeyPrefix(fName)
-	var jMap map[string]KeySetStruct
+	fieldName := aeadutils.RemoveKeyPrefix(fName)
+	var jMap map[string]aeadutils.KeySetStruct
 	if err := json.Unmarshal([]byte(secretStr), &jMap); err != nil {
 		hclog.L().Error("failed to unmarshall the secret " + fName)
 		return "", nil, err
@@ -595,7 +596,7 @@ func isSecretAnAEADKeyset(secret interface{}, fName string) (string, *keyset.Han
 		hclog.L().Error("failed to marshall " + fName)
 	}
 	jsonToValidate := string(keysetAsByteArray)
-	kh, err := ValidateKeySetJson(jsonToValidate)
+	kh, err := aeadutils.ValidateKeySetJson(jsonToValidate)
 	if err != nil {
 		hclog.L().Error("failed to recreate a key handle from the json " + fName)
 		return "", nil, err
@@ -605,7 +606,7 @@ func isSecretAnAEADKeyset(secret interface{}, fName string) (string, *keyset.Han
 
 func extractADFromSecret(secret interface{}, fName string) (string, error) {
 	secretStr := fmt.Sprintf("%v", secret)
-	fieldName := RemoveKeyPrefix(fName)
+	fieldName := aeadutils.RemoveKeyPrefix(fName)
 	var jMap map[string]interface{}
 	if err := json.Unmarshal([]byte(secretStr), &jMap); err != nil {
 		hclog.L().Error("failed to unmarshall the secret " + fName)

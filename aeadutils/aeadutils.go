@@ -1,4 +1,4 @@
-package aeadplugin
+package aeadutils
 
 import (
 	"bytes"
@@ -14,6 +14,7 @@ import (
 	"github.com/google/tink/go/tink"
 
 	hclog "github.com/hashicorp/go-hclog"
+	cmap "github.com/orcaman/concurrent-map"
 )
 
 func CreateInsecureHandleAndAead(rawKeyset string) (*keyset.Handle, tink.AEAD, error) {
@@ -387,7 +388,7 @@ func isEncryptionJsonKey(keyStr string) bool {
 	return strings.Contains(keyStr, "primaryKeyId")
 }
 
-func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
+func IsKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
 	deterministic := false
 	if strings.Contains(encryptionKeyStr, "AesSivKey") {
@@ -396,7 +397,7 @@ func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 	return encryptionKeyStr, deterministic
 }
 
-func getEncryptionKeyMultiple(fieldName string, setDepth ...int) (interface{}, bool) {
+func getEncryptionKeyMultiple(fieldName string, AEAD_CONFIG cmap.ConcurrentMap, setDepth ...int) (interface{}, bool) {
 	maxDepth := 5
 	if len(setDepth) > 0 {
 		maxDepth = setDepth[0]
@@ -448,7 +449,7 @@ func getEncryptionKeyMultiple(fieldName string, setDepth ...int) (interface{}, b
 	return keyOut, isKeysetFound
 }
 
-func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
+func GetEncryptionKey(fieldName string, AEAD_CONFIG cmap.ConcurrentMap, setDepth ...int) (interface{}, bool) {
 	maxDepth := 5
 	if len(setDepth) > 0 {
 		maxDepth = setDepth[0]
@@ -484,7 +485,7 @@ func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
 	return key, found
 }
 
-func muteKeyMaterial(theKey string) string {
+func MuteKeyMaterial(theKey string) string {
 	type jsonKey struct {
 		Key []struct {
 			KeyData struct {

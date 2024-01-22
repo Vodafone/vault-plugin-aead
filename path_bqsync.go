@@ -9,6 +9,7 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	kms "cloud.google.com/go/kms/apiv1"
+	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
 	hclog "github.com/hashicorp/go-hclog"
@@ -32,9 +33,9 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 			continue
 		}
 
-		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionKey)
+		encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionKey)
 		if deterministic {
-			kh, _, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+			kh, _, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 			if err != nil {
 				hclog.L().Error("failed to create deterministic key handle")
 				return &logical.Response{
@@ -44,7 +45,7 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 			doBQSync(kh, fieldName, true)
 			// do deterministic sync
 		} else {
-			kh, _, err := CreateInsecureHandleAndAead(encryptionKeyStr)
+			kh, _, err := aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
 			if err != nil {
 				hclog.L().Error("failed to create non deterministic key handle")
 				return &logical.Response{
@@ -76,7 +77,7 @@ func doBQSync(kh *keyset.Handle, fieldName string, deterministic bool) {
 
 	// fieldName might have a "-" in it, but "-" are not allowed in BQ, so translate them to "_"
 	fieldName = strings.Replace(fieldName, "-", "_", -1)
-	fieldName = RemoveKeyPrefix(fieldName)
+	fieldName = aeadutils.RemoveKeyPrefix(fieldName)
 
 	var options Options
 	resolveOptions(&options, fieldName, deterministic)

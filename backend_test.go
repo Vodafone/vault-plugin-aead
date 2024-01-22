@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	version "github.com/Vodafone/vault-plugin-aead/version"
 	"github.com/google/tink/go/daead"
 	"github.com/google/tink/go/insecurecleartextkeyset"
@@ -197,7 +198,7 @@ func TestBackend(t *testing.T) {
 
 		// now we need to use the same key to encrypt the same data to get the expected value
 		// create key from string
-		h, d, err := CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
+		h, d, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -285,7 +286,7 @@ func TestBackend(t *testing.T) {
 		}
 
 		// re-encrypt the data using our known key
-		_, d, err := CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
+		_, d, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -399,7 +400,7 @@ func TestBackend(t *testing.T) {
 		encryptedData := resp.Data["test7-address4"].(string)
 
 		// create an aead keyhandle from the provided json as string
-		_, a, err := CreateInsecureHandleAndAead(rawKeyset)
+		_, a, err := aeadutils.CreateInsecureHandleAndAead(rawKeyset)
 		if err != nil {
 			t.Errorf("Failed to create aead from %s", rawKeyset)
 		}
@@ -1567,7 +1568,7 @@ func TestBackend(t *testing.T) {
 		// actualJSonKey4Family := configResp.Data["ADDRESS_FAMILY"].(string)
 
 		// // re-encrypt the data using the same key
-		_, d, err := CreateInsecureHandleAndDeterministicAead(DeterministicKeyset)
+		_, d, err := aeadutils.CreateInsecureHandleAndDeterministicAead(DeterministicKeyset)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -1887,7 +1888,7 @@ func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*ke
 	// fmt.Printf("\n\nkeysetStr: %s\n", keysetStr)
 
 	// validate the key
-	kh, err := ValidateKeySetJson(keysetStr)
+	kh, err := aeadutils.ValidateKeySetJson(keysetStr)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -1903,7 +1904,7 @@ func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*ke
 }
 
 func checkKVSecret(fullName string, t *testing.T) {
-	fieldName := RemoveKeyPrefix(fullName)
+	fieldName := aeadutils.RemoveKeyPrefix(fullName)
 
 	client, err := KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
 	if err != nil {
@@ -1928,7 +1929,7 @@ func checkKVSecret(fullName string, t *testing.T) {
 		t.Errorf("failed to read back the aead key  %v", fullName)
 	}
 	secretStr := fmt.Sprintf("%v", jsonKey)
-	var jMap map[string]KeySetStruct
+	var jMap map[string]aeadutils.KeySetStruct
 	if err := json.Unmarshal([]byte(secretStr), &jMap); err != nil {
 		t.Errorf("failed to unmarshall the secret  %v", fullName)
 	}
@@ -1938,7 +1939,7 @@ func checkKVSecret(fullName string, t *testing.T) {
 		t.Error("failed to marshall ")
 	}
 	jsonToValidate := string(keysetAsByteArray)
-	_, err = ValidateKeySetJson(jsonToValidate)
+	_, err = aeadutils.ValidateKeySetJson(jsonToValidate)
 	if err != nil {
 		t.Errorf("failed to recreate a key handle from the json for  %v", fullName)
 	}

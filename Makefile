@@ -33,4 +33,8 @@ clean:
 fmt:
 	go fmt $$(go list ./...)
 
+test:
+	go test 
+	go test ./aeadutils
+
 .PHONY: build clean fmt start enable
