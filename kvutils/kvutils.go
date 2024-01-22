@@ -90,7 +90,7 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 }
 
 // Fetches a key-value secret (kv-v2) after authenticating via AppRole.
-func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id string, vault_writer_secret_id string, vault_writer_approle_name string, vault_secretgenerator_iam_role_name string) (*vault.Client, error) {
+func KvGetClientWithApprole(vault_addr string, namespace string, vault_writer_approle_id string, vault_writer_secret_id string, vault_writer_approle_name string, vault_secretgenerator_iam_role_name string) (*vault.Client, error) {
 
 	generated_secret_id, err := getGeneratedVaultSecretId(vault_addr, vault_writer_secret_id, vault_writer_approle_name, vault_secretgenerator_iam_role_name)
 	if err != nil {
@@ -98,10 +98,13 @@ func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id st
 	} else {
 		vault_writer_secret_id = generated_secret_id
 	}
+	return KvGetClient(vault_addr, namespace, vault_writer_approle_id, vault_writer_secret_id)
+}
+func KvGetClient(vault_addr string, namespace string, vault_approle_id string, vault_secret_id string) (*vault.Client, error) {
 
 	os.Setenv("VAULT_ADDR", vault_addr)
-	os.Setenv("APPROLE_ROLE_ID", vault_writer_approle_id)
-	os.Setenv("APPROLE_SECRET_ID", vault_writer_secret_id)
+	os.Setenv("APPROLE_ROLE_ID", vault_approle_id)
+	os.Setenv("APPROLE_SECRET_ID", vault_secret_id)
 
 	config := vault.DefaultConfig() // modify for more granular configuration
 
@@ -127,7 +130,7 @@ func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id st
 	secretID := &auth.SecretID{FromEnv: "APPROLE_SECRET_ID"}
 
 	appRoleAuth, err := auth.NewAppRoleAuth(
-		vault_writer_approle_id,
+		vault_approle_id,
 		secretID,
 		// auth.WithWrappingToken(), // Only required if the secret ID is response-wrapped.
 	)

@@ -1907,7 +1907,7 @@ func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*ke
 func checkKVSecret(fullName string, t *testing.T) {
 	fieldName := aeadutils.RemoveKeyPrefix(fullName)
 
-	client, err := kvutils.KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClientWithApprole(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
 	if err != nil {
 		t.Error("\nfailed to initialize Vault client")
 	}
@@ -1966,7 +1966,7 @@ func checkKVSecret(fullName string, t *testing.T) {
 
 func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 
-	client, err := kvutils.KvGetClient(vault_kv_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClientWithApprole(vault_kv_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
 	if err != nil {
 		t.Error("\nfailed to initialize Vault client")
 	}
