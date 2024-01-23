@@ -553,7 +553,7 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 	// 	// no namespace
 	// 	url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_engine + "/encrypt/" + kvOptions.Vault_transit_kek
 	// }
-	var vaultWrapper kvutils.VaultClientWrapper = client
+	var vaultWrapper kvutils.VaultClientWrapper = kvutils.VaultClientWrapperImpl{Client: client}
 	wrappedkey, err := kvutils.WrapKeyset(&vaultWrapper, transitTokenStr, keyjson)
 	if err != nil {
 		hclog.L().Error("failed to wrap key")

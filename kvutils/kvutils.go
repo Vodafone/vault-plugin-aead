@@ -351,7 +351,14 @@ func KvGoDoHttp(inputData map[string]interface{}, url string, method string, bod
 }
 
 type VaultClientWrapper interface {
-	Logical() *vault.Logical
+	Write(path string, data map[string]interface{}) (*vault.Secret, error)
+}
+type VaultClientWrapperImpl struct {
+	Client *vault.Client
+}
+
+func (w VaultClientWrapperImpl) Write(path string, data map[string]interface{}) (*vault.Secret, error) {
+	return w.Client.Logical().Write(path, data)
 }
 
 type DecryptedKVKey struct {
@@ -405,7 +412,7 @@ func KVTransitEncrypt(c *VaultClientWrapper, rawKeyset string, kvTransitKey stri
 	}
 
 	// Use Transit KV engine to encrypt the data
-	encrypted, err := (*c).Logical().Write("transit/encrypt/"+kvTransitKey, dataToEncrypt)
+	encrypted, err := (*c).Write("transit/encrypt/"+kvTransitKey, dataToEncrypt)
 	if err != nil {
 		return EncryptedKVKey{}, nil
 	}
@@ -424,7 +431,7 @@ func KVTransitEncrypt(c *VaultClientWrapper, rawKeyset string, kvTransitKey stri
 }
 func KVTransitDecrypt(c *VaultClientWrapper, encrypted EncryptedKVKey, kvTransitKey string) (DecryptedKVKey, error) {
 	// Use Transit KV engine to decrypt the data
-	decrypted, err := (*c).Logical().Write("transit/decrypt/"+kvTransitKey, map[string]interface{}{
+	decrypted, err := (*c).Write("transit/decrypt/"+kvTransitKey, map[string]interface{}{
 		"ciphertext": encrypted.Ciphertext,
 	})
 
