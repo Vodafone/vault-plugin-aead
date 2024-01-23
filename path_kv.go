@@ -14,6 +14,15 @@ import (
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 )
+func getApproleClient(resolveKvOptions kvutils.OptionsResolver) (*vault.Client, error) {
+	var kvOptions kvutils.KVOptions
+	err := resolveKvOptions(&kvOptions)
+	if err != nil {
+		hclog.L().Error("\nfailed to read vault config: " + err.Error())
+		return nil, err
+	}
+	return kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
+}
 
 func (b *backend) pathSyncTransitKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 

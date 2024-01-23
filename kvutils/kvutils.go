@@ -358,19 +358,11 @@ type EncryptedKVKey struct {
 }
 
 type OptionsResolver func(*KVOptions) error
+type ClientResolver func(OptionsResolver) (*vault.Client, error)
 
-func getApproleClient(resolveKvOptions OptionsResolver) (*vault.Client, error) {
-	var kvOptions KVOptions
-	err := resolveKvOptions(&kvOptions)
-	if err != nil {
-		hclog.L().Error("\nfailed to read vault config: " + err.Error())
-		return nil, err
-	}
-	return KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
-}
-func UnwrapKeyset(resolveKvOptions OptionsResolver, encryptedKVKey EncryptedKVKey, kvTransitKey string) (string, error) {
+func UnwrapKeyset(clientResolver ClientResolver, optionsResolver OptionsResolver, encryptedKVKey EncryptedKVKey, kvTransitKey string) (string, error) {
 
-	client, err := getApproleClient(resolveKvOptions)
+	client, err := clientResolver(optionsResolver)
 	if err != nil {
 		return "", err
 	}
@@ -391,8 +383,8 @@ func UnwrapKeyset(resolveKvOptions OptionsResolver, encryptedKVKey EncryptedKVKe
 	// }
 
 }
-func WrapKeyset(resolveKvOptions OptionsResolver, rawKeyset string, kvTransitKey string) (string, error) {
-	client, err := getApproleClient(resolveKvOptions)
+func WrapKeyset(clientResolver ClientResolver, resolveKvOptions OptionsResolver, rawKeyset string, kvTransitKey string) (string, error) {
+	client, err := clientResolver(resolveKvOptions)
 	if err != nil {
 		return "", err
 	}
