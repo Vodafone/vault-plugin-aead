@@ -357,17 +357,14 @@ type EncryptedKVKey struct {
 	Ciphertext string `json:"ciphertext"`
 }
 
-type OptionsResolver func(*KVOptions) error
-type ClientResolver func(OptionsResolver) (*vault.Client, error)
+// type OptionsResolver func(*KVOptions) error
+// type ClientResolver func(OptionsResolver) (*vault.Client, error)
 
-func UnwrapKeyset(clientResolver ClientResolver, optionsResolver OptionsResolver, encryptedKVKey EncryptedKVKey, kvTransitKey string) (string, error) {
-
-	client, err := clientResolver(optionsResolver)
+func UnwrapKeyset(client *vault.Client, encryptedKVKey EncryptedKVKey, kvTransitKey string) (string, error) {
+	decryptedKey, err := KVTransitDecrypt(client, encryptedKVKey, kvTransitKey)
 	if err != nil {
 		return "", err
 	}
-	decryptedKey, err := KVTransitDecrypt(client, encryptedKVKey, kvTransitKey)
-
 	return decryptedKey.Plaintext, nil
 
 	// // validate the key
@@ -383,11 +380,7 @@ func UnwrapKeyset(clientResolver ClientResolver, optionsResolver OptionsResolver
 	// }
 
 }
-func WrapKeyset(clientResolver ClientResolver, resolveKvOptions OptionsResolver, rawKeyset string, kvTransitKey string) (string, error) {
-	client, err := clientResolver(resolveKvOptions)
-	if err != nil {
-		return "", err
-	}
+func WrapKeyset(client *vault.Client, rawKeyset string, kvTransitKey string) (string, error) {
 	encryptedKeyset, err := KVTransitEncrypt(client, rawKeyset, kvTransitKey)
 	if err != nil {
 		return "", err
