@@ -350,6 +350,10 @@ func KvGoDoHttp(inputData map[string]interface{}, url string, method string, bod
 	return nil
 }
 
+type VaultClientWrapper interface {
+	Logical() *vault.Logical
+}
+
 type DecryptedKVKey struct {
 	Plaintext string `json:"plaintext"`
 }
@@ -360,7 +364,7 @@ type EncryptedKVKey struct {
 // type OptionsResolver func(*KVOptions) error
 // type ClientResolver func(OptionsResolver) (*vault.Client, error)
 
-func UnwrapKeyset(client *vault.Client, encryptedKVKey EncryptedKVKey, kvTransitKey string) (string, error) {
+func UnwrapKeyset(client *VaultClientWrapper, encryptedKVKey EncryptedKVKey, kvTransitKey string) (string, error) {
 	decryptedKey, err := KVTransitDecrypt(client, encryptedKVKey, kvTransitKey)
 	if err != nil {
 		return "", err
@@ -380,7 +384,7 @@ func UnwrapKeyset(client *vault.Client, encryptedKVKey EncryptedKVKey, kvTransit
 	// }
 
 }
-func WrapKeyset(client *vault.Client, rawKeyset string, kvTransitKey string) (string, error) {
+func WrapKeyset(client *VaultClientWrapper, rawKeyset string, kvTransitKey string) (string, error) {
 	encryptedKeyset, err := KVTransitEncrypt(client, rawKeyset, kvTransitKey)
 	if err != nil {
 		return "", err
@@ -393,7 +397,7 @@ func WrapKeyset(client *vault.Client, rawKeyset string, kvTransitKey string) (st
 
 	// return cipherKey, nil
 }
-func KVTransitEncrypt(c *vault.Client, rawKeyset string, kvTransitKey string) (EncryptedKVKey, error) {
+func KVTransitEncrypt(c *VaultClientWrapper, rawKeyset string, kvTransitKey string) (EncryptedKVKey, error) {
 	base64Keyset := base64.StdEncoding.EncodeToString([]byte(rawKeyset))
 
 	dataToEncrypt := map[string]interface{}{
@@ -401,7 +405,7 @@ func KVTransitEncrypt(c *vault.Client, rawKeyset string, kvTransitKey string) (E
 	}
 
 	// Use Transit KV engine to encrypt the data
-	encrypted, err := c.Logical().Write("transit/encrypt/"+kvTransitKey, dataToEncrypt)
+	encrypted, err := (*c).Logical().Write("transit/encrypt/"+kvTransitKey, dataToEncrypt)
 	if err != nil {
 		return EncryptedKVKey{}, nil
 	}
@@ -418,9 +422,9 @@ func KVTransitEncrypt(c *vault.Client, rawKeyset string, kvTransitKey string) (E
 
 	return secretData, nil
 }
-func KVTransitDecrypt(c *vault.Client, encrypted EncryptedKVKey, kvTransitKey string) (DecryptedKVKey, error) {
+func KVTransitDecrypt(c *VaultClientWrapper, encrypted EncryptedKVKey, kvTransitKey string) (DecryptedKVKey, error) {
 	// Use Transit KV engine to decrypt the data
-	decrypted, err := c.Logical().Write("transit/decrypt/"+kvTransitKey, map[string]interface{}{
+	decrypted, err := (*c).Logical().Write("transit/decrypt/"+kvTransitKey, map[string]interface{}{
 		"ciphertext": encrypted.Ciphertext,
 	})
 
