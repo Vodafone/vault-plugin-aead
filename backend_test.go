@@ -3,15 +3,10 @@ package aeadplugin
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"net/url"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -1833,61 +1828,19 @@ func checkBQRoutine(projectId string, t *testing.T, datasetName string, routineN
 //	}
 func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*keyset.Handle, error) {
 
-	proxyurlStr := os.Getenv("https_proxy")
-
-	var tr *http.Transport
-	if proxyurlStr != "" && !strings.Contains(transiturl, "localhost") {
-		proxyUrl, _ := url.Parse(proxyurlStr)
-
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			Proxy:           http.ProxyURL(proxyUrl),
-		}
-	} else {
-
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
-
-	client := &http.Client{Transport: tr}
-	keyToDecode := `{"ciphertext":"` + keyStr + `"}`
-	var data = strings.NewReader(keyToDecode)
-	// var data = strings.NewReader(`{"ciphertext":"vault:v1:quY+4KUQo6JhfhD5Aac7nyFwApoMRGn44jKKOO2IJpw/KXtjG+kATRE5Gc03sxIt/qnXX6CmKah9tSIVxSbCIW0xdfJ65wB9QETl81kDUiwLzC0eImrm48p2ozG99RoYTuPedusIuur2mFKhMIPEGQloJQeyDXeWcdOkdDcVNnWW1rRb11i43NDjrzloaST9LwHLOrMibXDpC8uHyTMkry0XOYSVlXnJqV/6uKWgXj/0WX72J4jWOkgwOIpT0xBCGJmdBKD18izIq/CYH7pupjwfWt+Yi5jiZUFqQs75hyc/HV7V2fqWW6FXFHGVL2R5EW79CaZC+Q/yyBbnDQTcfjuX41QVGNRI65NjsUEEfo6OpF6OcqDNHweOnLEmwrAzCLg="}`)
-
-	req, err := http.NewRequest("POST", transiturl, data)
+	var kvOptions kvutils.KVOptions
+	err := resolveKvOptions(&kvOptions)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Printf("\nfailed to read vault config")
 	}
-	req.Header.Set("X-Vault-Token", transitTokenStr)
-	// req.Header.Set("X-Vault-Token", "hvs.CAESIDyhl6QeFmqY36dVSiDIaxpnBu-e3PRMNqWjzPLwrANdGicKImh2cy55SHBTbW1JWkFZTTFmckhpQ1dTNlppc00udWYzNE4Q3QE")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := client.Do(req)
+	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_transit_url, kvOptions.Vault_transit_namespace, kvOptions.Vault_transit_approle_id, kvOptions.Vault_transit_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
+	var vaultWrapper kvutils.VaultClientWrapper = kvutils.VaultClientWrapperImpl{Client: client}
+	base64Keyset, err := kvutils.UnwrapKeyset(&vaultWrapper, kvutils.EncryptedKVKey{Ciphertext: keyStr}, transitTokenStr)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Printf("failed to unwrap key")
 	}
-	defer resp.Body.Close()
-	bodyText, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// fmt.Printf("\n\nBODYTEXT: %s\n", bodyText)
-
-	respBody := map[string]interface{}{}
-	err = json.Unmarshal(bodyText, &respBody)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	unwrappedKeyIntf := respBody["data"]
-	unwrappedKeyMap := unwrappedKeyIntf.(map[string]interface{})
-	base64Keyset := fmt.Sprintf("%v", unwrappedKeyMap["plaintext"])
-	// fmt.Printf("\n\nbase64Keyset: %v\n", base64Keyset)
-	// byteBase64Keyset := []byte(base64Keyset)
 	keysetByte, _ := b64.StdEncoding.DecodeString(base64Keyset)
 	keysetStr := string(keysetByte)
-	// fmt.Printf("\n\nkeysetStr: %s\n", keysetStr)
-
 	// validate the key
 	kh, err := aeadutils.ValidateKeySetJson(keysetStr)
 	if err != nil {

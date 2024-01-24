@@ -377,19 +377,6 @@ func UnwrapKeyset(client *VaultClientWrapper, encryptedKVKey EncryptedKVKey, kvT
 		return "", err
 	}
 	return decryptedKey.Plaintext, nil
-
-	// // validate the key
-	// kh, err := aeadutils.ValidateKeySetJson(keysetStr)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// ksi := kh.KeysetInfo()
-	// ki := ksi.KeyInfo[len(ksi.KeyInfo)-1]
-	// keyTypeURL := ki.GetTypeUrl()
-	// if keyTypeURL == "" {
-	// 	return nil, fmt.Errorf("failed to determine the keyType")
-	// }
-
 }
 func WrapKeyset(client *VaultClientWrapper, rawKeyset string, kvTransitKey string) (string, error) {
 	encryptedKeyset, err := KVTransitEncrypt(client, rawKeyset, kvTransitKey)
@@ -397,12 +384,6 @@ func WrapKeyset(client *VaultClientWrapper, rawKeyset string, kvTransitKey strin
 		return "", err
 	}
 	return encryptedKeyset.Ciphertext, nil
-	// wrappedKeyIntf := respBody2["data"]
-	// wrappedKeyMap := wrappedKeyIntf.(map[string]interface{})
-	// cipherKey := fmt.Sprintf("%v", wrappedKeyMap["ciphertext"])
-	// // fmt.Printf("\n\ncipherKey: %s\n", cipherKey)
-
-	// return cipherKey, nil
 }
 func KVTransitEncrypt(c *VaultClientWrapper, rawKeyset string, kvTransitKey string) (EncryptedKVKey, error) {
 	base64Keyset := base64.StdEncoding.EncodeToString([]byte(rawKeyset))

@@ -543,34 +543,19 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 	hclog.L().Info("newkeyname: " + newkeyname)
 
 	//wrap the key
-
-	//url = "http://localhost:8200/v1/transit/encrypt/my-key"
-
-	// url := ""
-	// if kvOptions.Vault_transit_namespace != "" {
-	// 	url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_namespace + "/" + kvOptions.Vault_transit_engine + "/encrypt/" + kvOptions.Vault_transit_kek
-	// } else {
-	// 	// no namespace
-	// 	url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_engine + "/encrypt/" + kvOptions.Vault_transit_kek
-	// }
 	var vaultWrapper kvutils.VaultClientWrapper = kvutils.VaultClientWrapperImpl{Client: client}
-	wrappedkey, err := kvutils.WrapKeyset(&vaultWrapper, transitTokenStr, keyjson)
+	wrappedkey, err := kvutils.WrapKeyset(&vaultWrapper, keyjson, transitTokenStr)
 	if err != nil {
 		hclog.L().Error("failed to wrap key")
 	}
 
-	//url = "http://localhost:8200/v1/transit/decrypt/my-key"
-
-	// if kvOptions.Vault_transit_namespace != "" {
-	// 	url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_namespace + "/" + kvOptions.Vault_transit_engine + "/decrypt/" + kvOptions.Vault_transit_kek
-	// } else {
-	// 	url = kvOptions.Vault_transit_url + "/v1/" + kvOptions.Vault_transit_engine + "/decrypt/" + kvOptions.Vault_transit_kek
-
-	// }
-
-	_, err = kvutils.UnwrapKeyset(&vaultWrapper, kvutils.EncryptedKVKey{Ciphertext: transitTokenStr}, wrappedkey)
+	base64Keyset, err := kvutils.UnwrapKeyset(&vaultWrapper, kvutils.EncryptedKVKey{Ciphertext: wrappedkey}, transitTokenStr)
 	if err != nil {
 		hclog.L().Error("failed to unwrap key")
+	}
+	_, err = aeadutils.ValidateB64Key(base64Keyset)
+	if err != nil {
+		hclog.L().Error("Wrapped key is invalid")
 	}
 
 	secretMap := map[string]interface{}{}

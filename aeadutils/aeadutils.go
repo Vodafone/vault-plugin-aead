@@ -2,6 +2,7 @@ package aeadutils
 
 import (
 	"bytes"
+	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -381,6 +382,26 @@ func ValidateKeySetJson(keySetJson string) (*keyset.Handle, error) {
 		return nil, err
 	}
 	return kh, nil
+}
+
+func ValidateB64Key(base64Keyset string) (string, error) {
+	keysetByte, err := b64.StdEncoding.DecodeString(base64Keyset)
+	if err != nil {
+		fmt.Printf("JSON is not a valid keyset: %s", err.Error())
+		return "", err
+	}
+	keysetStr := string(keysetByte)
+	kh, err := ValidateKeySetJson(keysetStr)
+	if err != nil {
+		fmt.Printf("JSON is not a valid keyset: %s", err.Error())
+	}
+	ksi := kh.KeysetInfo()
+	ki := ksi.KeyInfo[len(ksi.KeyInfo)-1]
+	keyTypeURL := ki.GetTypeUrl()
+	if keyTypeURL == "" {
+		fmt.Printf("ValidatingKey: failed to determine the AEAD keyType")
+	}
+	return keysetStr, err
 }
 
 func isEncryptionJsonKey(keyStr string) bool {
