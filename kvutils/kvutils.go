@@ -358,7 +358,7 @@ type VaultClientWrapperImpl struct {
 }
 
 func (w VaultClientWrapperImpl) Write(path string, data map[string]interface{}) (*vault.Secret, error) {
-	return w.Client.Logical().Write(path, data)
+	return (*w.Client).Logical().Write(path, data)
 }
 
 type DecryptedKVKey struct {
