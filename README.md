@@ -30,6 +30,9 @@ VAULT AEAD SECRETS PLUGIN
     - [/updateKeyID](#updatekeyid)
     - [/updatePrimaryKeyID](#updateprimarykeyid)
     - [/importKey](#importkey)
+    - [/readkv](#readkv)
+    - [/synckv](#synckv)
+    - [/synctransitkv](#synctransitkv)
   - [KEYSET EXAMPLE](#keyset-example)
   - [BULK DATA EXAMPLE](#bulk-data-example)
 - [DESIGNS](#designs)
@@ -464,7 +467,56 @@ Imports a key as json to a field - in the example below importing a keyset of 3 
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/importKey -H "Content-Type: application/json" -d  '{"field3":"{\"primaryKeyId\":1513996195,\"key\":[{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiD2rBnfl5oi1tMfHwcFcyqS+JpQpWUcAj8zzd8D3q3IQA==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":2480583041,\"outputPrefixType\":\"TINK\"},{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiBQUDTlxVawIr3T1/dRvuF5CzBhTZtnnpuVsNZayxv1LQ==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":133713585,\"outputPrefixType\":\"TINK\"},{\"keyData\":{\"typeUrl\":\"type.googleapis.com/google.crypto.tink.AesGcmKey\",\"value\":\"GiBs9EEVquF+igDsDI+FskdsDjVOf6vxLZQHkbJrrIoQLQ==\",\"keyMaterialType\":\"SYMMETRIC\"},\"status\":\"ENABLED\",\"keyId\":1513996195,\"outputPrefixType\":\"TINK\"}]}"}'
 ```
 
+### /readkv
+Reads and returns the keys that are stored in the vault kv defined below
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/readkv
+```
+Note the following config must be set:
+```
+"VAULT_KV_ACTIVE"
+"VAULT_KV_URL"
+"VAULT_KV_ENGINE"
+"VAULT_KV_VERSION"
+"VAULT_KV_APPROLE_ID"
+"VAULT_KV_SECRET_ID" // optional if this can be derived from the below
+"VAULT_KV_WRITER_ROLE"
+"VAULT_KV_SECRETGENERATOR_IAM_ROLE"
+```
 
+### /synckv
+Synchronises the keys in kv defined below to the plugin engine
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/synckv
+```
+Note the following config must be set:
+```
+"VAULT_KV_ACTIVE"
+"VAULT_KV_URL"
+"VAULT_KV_ENGINE"
+"VAULT_KV_VERSION"
+"VAULT_KV_APPROLE_ID"
+"VAULT_KV_SECRET_ID" // optional if this can be derived from the below
+"VAULT_KV_WRITER_ROLE"
+"VAULT_KV_SECRETGENERATOR_IAM_ROLE"
+```
+
+### /synctransitkv
+Defines the keys that will be synced from now on in the config, and then syncs them to the kv store defined below to the plugin engine, note that the keys are also wrapped using transit
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/synctransitkv -H "Content-Type: application/json" -d '{"key1":"true", "key2":"true"}'
+```
+Note the following config must be set:
+```
+"VAULT_TRANSIT_APPROLE_ID"
+"VAULT_TRANSIT_SECRET_ID"
+"VAULT_TRANSIT_KV_ENGINE"
+"VAULT_TRANSIT_KV_VERSION"
+"VAULT_TRANSIT_NAMESPACE"
+"VAULT_TRANSIT_ENGINE"
+"VAULT_TRANSIT_TOKENNAME"
+"VAULT_TRANSIT_KEK"
+```
 
 
 ## KEYSET EXAMPLE
