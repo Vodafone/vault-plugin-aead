@@ -352,6 +352,7 @@ func KvGoDoHttp(inputData map[string]interface{}, url string, method string, bod
 
 type VaultClientWrapper interface {
 	Write(path string, data map[string]interface{}) (*vault.Secret, error)
+	GetClient() *vault.Client
 }
 type VaultClientWrapperImpl struct {
 	Client *vault.Client
@@ -359,6 +360,9 @@ type VaultClientWrapperImpl struct {
 
 func (w VaultClientWrapperImpl) Write(path string, data map[string]interface{}) (*vault.Secret, error) {
 	return (*w.Client).Logical().Write(path, data)
+}
+func (w VaultClientWrapperImpl) GetClient() *vault.Client {
+	return w.Client
 }
 
 type DecryptedKVKey struct {
