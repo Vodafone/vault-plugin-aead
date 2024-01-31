@@ -1,7 +1,8 @@
-package aeadplugin
+package aeadutils
 
 import (
 	"bytes"
+	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/tink/go/tink"
 
 	hclog "github.com/hashicorp/go-hclog"
+	cmap "github.com/orcaman/concurrent-map"
 )
 
 func CreateInsecureHandleAndAead(rawKeyset string) (*keyset.Handle, tink.AEAD, error) {
@@ -382,12 +384,32 @@ func ValidateKeySetJson(keySetJson string) (*keyset.Handle, error) {
 	return kh, nil
 }
 
+func ValidateB64Key(base64Keyset string) (string, error) {
+	keysetByte, err := b64.StdEncoding.DecodeString(base64Keyset)
+	if err != nil {
+		fmt.Printf("JSON is not a valid keyset: %s", err.Error())
+		return "", err
+	}
+	keysetStr := string(keysetByte)
+	kh, err := ValidateKeySetJson(keysetStr)
+	if err != nil {
+		fmt.Printf("JSON is not a valid keyset: %s", err.Error())
+	}
+	ksi := kh.KeysetInfo()
+	ki := ksi.KeyInfo[len(ksi.KeyInfo)-1]
+	keyTypeURL := ki.GetTypeUrl()
+	if keyTypeURL == "" {
+		fmt.Printf("ValidatingKey: failed to determine the AEAD keyType")
+	}
+	return keysetStr, err
+}
+
 func isEncryptionJsonKey(keyStr string) bool {
 	//TODO find better way to check this
 	return strings.Contains(keyStr, "primaryKeyId")
 }
 
-func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
+func IsKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 	encryptionKeyStr := fmt.Sprintf("%v", encryptionkey)
 	deterministic := false
 	if strings.Contains(encryptionKeyStr, "AesSivKey") {
@@ -396,7 +418,7 @@ func isKeyJsonDeterministic(encryptionkey interface{}) (string, bool) {
 	return encryptionKeyStr, deterministic
 }
 
-func getEncryptionKeyMultiple(fieldName string, setDepth ...int) (interface{}, bool) {
+func getEncryptionKeyMultiple(fieldName string, AEAD_CONFIG cmap.ConcurrentMap, setDepth ...int) (interface{}, bool) {
 	maxDepth := 5
 	if len(setDepth) > 0 {
 		maxDepth = setDepth[0]
@@ -448,7 +470,7 @@ func getEncryptionKeyMultiple(fieldName string, setDepth ...int) (interface{}, b
 	return keyOut, isKeysetFound
 }
 
-func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
+func GetEncryptionKey(fieldName string, AEAD_CONFIG cmap.ConcurrentMap, setDepth ...int) (interface{}, bool) {
 	maxDepth := 5
 	if len(setDepth) > 0 {
 		maxDepth = setDepth[0]
@@ -484,7 +506,7 @@ func getEncryptionKey(fieldName string, setDepth ...int) (interface{}, bool) {
 	return key, found
 }
 
-func muteKeyMaterial(theKey string) string {
+func MuteKeyMaterial(theKey string) string {
 	type jsonKey struct {
 		Key []struct {
 			KeyData struct {

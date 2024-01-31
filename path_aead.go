@@ -14,6 +14,7 @@ import (
 	b64 "encoding/base64"
 	"encoding/json"
 
+	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/google/tink/go/tink"
 	"github.com/google/uuid"
 	"github.com/hashicorp/vault/sdk/framework"
@@ -169,18 +170,18 @@ func (b *backend) encryptRow(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}, data *framework.FieldData, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
 	resp := make(map[string]interface{})
-	encryptionkey, ok := getEncryptionKey(fieldName)
+	encryptionkey, ok := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
 	// do we have a key already in config
 	if ok {
 		// is the key we have retrived deterministic?
-		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
+		encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionkey)
 		// set additionalDataBytes as field name of the right type
 		additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
 
 		if deterministic {
 			// SUPPORT FOR DETERMINISTIC AEAD
 			// we don't need the key handle which is returned first
-			_, tinkDetAead, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+			_, tinkDetAead, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 			if err != nil {
 				hclog.L().Error("Failed to create a keyhandle", err)
 			}
@@ -197,7 +198,7 @@ func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}
 			resp[fieldName] = b64.StdEncoding.EncodeToString(cypherText)
 		} else {
 			// SUPPORT FOR NON DETERMINISTIC AEAD
-			_, tinkAead, err := CreateInsecureHandleAndAead(encryptionKeyStr)
+			_, tinkAead, err := aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
 			if err != nil {
 				hclog.L().Error("Failed to create a keyhandle", err)
 			}
@@ -314,11 +315,11 @@ func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, ch chan map[string]interface{}) {
 	resp := make(map[string]interface{})
-	encryptionkey, ok := getEncryptionKey(fieldName)
+	encryptionkey, ok := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
 	// do we have a key already in config
 	if ok {
 		// is the key deterministig or non deterministic
-		encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
+		encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionkey)
 
 		// set additionalDataBytes as field name of the right type
 		additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
@@ -326,7 +327,7 @@ func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interfa
 		if deterministic {
 			// SUPPORT FOR DETERMINISTIC AEAD
 			// we don't need the key handle which is returned first
-			_, tinkDetAead, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+			_, tinkDetAead, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 			if err != nil {
 				hclog.L().Error("Failed to create a  key handle", err)
 			}
@@ -343,7 +344,7 @@ func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interfa
 			resp[fieldName] = string(plainText)
 		} else {
 			// SUPPORT FOR NON DETERMINISTIC AEAD
-			_, tinkAead, err := CreateInsecureHandleAndAead(encryptionKeyStr)
+			_, tinkAead, err := aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
 			if err != nil {
 				hclog.L().Error("Failed to create tinkAead", err)
 			}
@@ -401,7 +402,7 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 
 		// ok, 1st thing to do is to pivot the map
 		pivotedMap := make(map[string]interface{})
-		PivotMapInt(data.Raw, pivotedMap)
+		aeadutils.PivotMapInt(data.Raw, pivotedMap)
 
 		channelCap := len(pivotedMap)
 		channel := make(chan map[string]interface{}, channelCap)
@@ -435,7 +436,7 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 		}
 
 		// unpivot the map
-		PivotMapInt(resultsMap, resp.Data)
+		aeadutils.PivotMapInt(resultsMap, resp.Data)
 
 	} else {
 
@@ -472,9 +473,9 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 	}
 	resp := make(map[string]interface{})
 
-	encryptionkey, keyFound := getEncryptionKey(fieldName)
+	encryptionkey, keyFound := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
 	// is the key we have retrived deterministic?
-	encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
+	encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionkey)
 
 	var tinkDetAead tink.DeterministicAEAD
 	var tinkAead tink.AEAD
@@ -482,7 +483,7 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 	if keyFound && deterministic {
 		// SUPPORT FOR DETERMINISTIC AEAD
 		// we don't need the key handle which is returned first
-		_, tinkDetAead, err = CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+		_, tinkDetAead, err = aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 		if err != nil {
 			hclog.L().Error("Failed to create a keyhandle", err)
 			return &logical.Response{
@@ -491,7 +492,7 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 		}
 	} else if keyFound && !deterministic {
 		// SUPPORT FOR NON DETERMINISTIC AEAD
-		_, tinkAead, err = CreateInsecureHandleAndAead(encryptionKeyStr)
+		_, tinkAead, err = aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
 		if err != nil {
 			hclog.L().Error("Failed to create a key", err)
 			return &logical.Response{
@@ -576,7 +577,7 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 
 		// ok, 1st thing to do is to pivot the map
 		pivotedMap := make(map[string]interface{})
-		PivotMapInt(data.Raw, pivotedMap)
+		aeadutils.PivotMapInt(data.Raw, pivotedMap)
 
 		channelCap := len(pivotedMap)
 		channel := make(chan map[string]interface{}, channelCap)
@@ -613,7 +614,7 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 		}
 
 		// unpivot the map
-		PivotMapInt(resultsMap, resp.Data)
+		aeadutils.PivotMapInt(resultsMap, resp.Data)
 
 	} else {
 		hclog.L().Info("can only do column ops on bulk data")
@@ -646,9 +647,9 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 	}
 	resp := make(map[string]interface{})
 
-	encryptionkey, keyFound := getEncryptionKey(fieldName)
+	encryptionkey, keyFound := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
 	// is the key we have retrived deterministic?
-	encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionkey)
+	encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionkey)
 
 	var tinkDetAead tink.DeterministicAEAD
 	var tinkAead tink.AEAD
@@ -656,7 +657,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 	if keyFound && deterministic {
 		// SUPPORT FOR DETERMINISTIC AEAD
 		// we don't need the key handle which is returned first
-		_, tinkDetAead, err = CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+		_, tinkDetAead, err = aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 		if err != nil {
 			hclog.L().Error("Failed to create a key handle", err)
 			return &logical.Response{
@@ -665,7 +666,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 		}
 	} else if keyFound && !deterministic {
 		// SUPPORT FOR NON DETERMINISTIC AEAD
-		_, tinkAead, err = CreateInsecureHandleAndAead(encryptionKeyStr)
+		_, tinkAead, err = aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
 		if err != nil {
 			hclog.L().Error("Failed to create a key handle", err)
 			return &logical.Response{

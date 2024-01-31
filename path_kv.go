@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Vodafone/vault-plugin-aead/aeadutils"
+	"github.com/Vodafone/vault-plugin-aead/kvutils"
 	"github.com/google/tink/go/keyset"
 	hclog "github.com/hashicorp/go-hclog"
 	vault "github.com/hashicorp/vault/api"
@@ -17,14 +19,14 @@ func (b *backend) pathSyncTransitKV(ctx context.Context, req *logical.Request, d
 
 	rtnMap := make(map[string]interface{})
 
-	var kvOptions KVOptions
+	var kvOptions kvutils.KVOptions
 	err := resolveKvOptions(&kvOptions)
 	if err != nil {
 		hclog.L().Error("\nfailed to read vault config: " + err.Error())
 		return nil, err
 	}
 
-	if kvOptions.vault_kv_active == "true" {
+	if kvOptions.Vault_kv_active == "true" {
 
 		err := storeKeysTobeSynced(kvOptions, data.Raw)
 
@@ -62,14 +64,14 @@ func (b *backend) pathSyncKV(ctx context.Context, req *logical.Request, data *fr
 	kvMap := map[string]interface{}{}
 	rtnMap := make(map[string]interface{})
 
-	var kvOptions KVOptions
+	var kvOptions kvutils.KVOptions
 	err := resolveKvOptions(&kvOptions)
 	if err != nil {
 		hclog.L().Error("\nfailed to read vault config")
 		return nil, err
 	}
 
-	if kvOptions.vault_kv_active == "true" {
+	if kvOptions.Vault_kv_active == "true" {
 
 		kvMap, err = b.readKV(ctx, req.Storage, false)
 
@@ -111,14 +113,14 @@ func (b *backend) pathReadKV(ctx context.Context, req *logical.Request, data *fr
 
 	m := map[string]interface{}{}
 
-	var kvOptions KVOptions
+	var kvOptions kvutils.KVOptions
 	err := resolveKvOptions(&kvOptions)
 	if err != nil {
 		hclog.L().Error("\nfailed to read vault config")
 		return nil, err
 	}
 
-	if kvOptions.vault_kv_active == "true" {
+	if kvOptions.Vault_kv_active == "true" {
 
 		m, err = b.readKV(ctx, req.Storage)
 
@@ -134,18 +136,18 @@ func (b *backend) pathReadKV(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (map[string]interface{}, error) {
 
-	var kvOptions KVOptions
+	var kvOptions kvutils.KVOptions
 	err := resolveKvOptions(&kvOptions)
 	if err != nil {
 		hclog.L().Error("\nfailed to read vault config")
 		return nil, err
 	}
 
-	if kvOptions.vault_kv_active == "false" {
+	if kvOptions.Vault_kv_active == "false" {
 		return nil, nil
 	}
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, kvOptions.vault_kv_writer_role, kvOptions.vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
 
 	if err != nil {
 		hclog.L().Error("\nfailed to initialize Vault client1")
@@ -158,7 +160,7 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 	// data and aad
 
 	// read the paths
-	paths, err := KvGetSecretPaths(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, "")
+	paths, err := kvutils.KvGetSecretPaths(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, "")
 
 	if err != nil || paths == nil {
 		hclog.L().Error("failed to read paths")
@@ -169,7 +171,7 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 	for _, path := range paths {
 
 		keyFound := false
-		kvsecret, err := KvGetSecret(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, path)
+		kvsecret, err := kvutils.KvGetSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, path)
 		if err != nil {
 			errMsg := fmt.Sprintf("failed to read the secrets in folder %s: %s", path, err)
 			hclog.L().Error(errMsg)
@@ -200,7 +202,7 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 			} else {
 				// hclog.L().Info("valid secret key")
 				if mask == nil || mask[0] == true {
-					consulKV[path] = muteKeyMaterial(extractedKeySet)
+					consulKV[path] = aeadutils.MuteKeyMaterial(extractedKeySet)
 				} else {
 					consulKV[path] = extractedKeySet
 				}
@@ -226,108 +228,104 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 
 	return consulKV, nil
 }
-func resolveKvOptions(kvOptions *KVOptions) error {
+func resolveKvOptions(kvOptions *kvutils.KVOptions) error {
 
-	kvOptions.vault_kv_active = "false" // default
+	kvOptions.Vault_kv_active = "false" // default
 	kv_active, ok := AEAD_CONFIG.Get("VAULT_KV_ACTIVE")
 	if ok {
-		kvOptions.vault_kv_active = fmt.Sprintf("%v", kv_active)
+		kvOptions.Vault_kv_active = fmt.Sprintf("%v", kv_active)
 	}
 
-	vault_url, ok := AEAD_CONFIG.Get("VAULT_KV_URL")
+	Vault_url, ok := AEAD_CONFIG.Get("VAULT_KV_URL")
 	if ok {
-		kvOptions.vault_kv_url = fmt.Sprintf("%v", vault_url)
+		kvOptions.Vault_kv_url = fmt.Sprintf("%v", Vault_url)
 	}
 
-	vault_approleid, ok := AEAD_CONFIG.Get("VAULT_KV_APPROLE_ID")
+	Vault_approleid, ok := AEAD_CONFIG.Get("VAULT_KV_APPROLE_ID")
 	if ok {
-		kvOptions.vault_kv_approle_id = fmt.Sprintf("%v", vault_approleid)
+		kvOptions.Vault_kv_approle_id = fmt.Sprintf("%v", Vault_approleid)
 	}
 
-	vault_secretid, ok := AEAD_CONFIG.Get("VAULT_KV_SECRET_ID")
+	Vault_secretid, ok := AEAD_CONFIG.Get("VAULT_KV_SECRET_ID")
 	if ok {
-		kvOptions.vault_kv_secret_id = fmt.Sprintf("%v", vault_secretid)
+		kvOptions.Vault_kv_secret_id = fmt.Sprintf("%v", Vault_secretid)
 	}
 
 	kv_engine, ok := AEAD_CONFIG.Get("VAULT_KV_ENGINE")
 	if ok {
-		kvOptions.vault_kv_engine = fmt.Sprintf("%v", kv_engine)
+		kvOptions.Vault_kv_engine = fmt.Sprintf("%v", kv_engine)
 	} else {
-		kvOptions.vault_kv_engine = "secret" // default
+		kvOptions.Vault_kv_engine = "secret" // default
 	}
 
 	kv_version, ok := AEAD_CONFIG.Get("VAULT_KV_VERSION")
 	if ok {
-		kvOptions.vault_kv_version = fmt.Sprintf("%v", kv_version)
+		kvOptions.Vault_kv_version = fmt.Sprintf("%v", kv_version)
 	} else {
-		kvOptions.vault_kv_version = "v2" // default
+		kvOptions.Vault_kv_version = "v2" // default
 
 	}
 
-	kvOptions.vault_transit_active = "false" // default
-	vault_transit_active, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_ACTIVE")
+	kvOptions.Vault_transit_active = "false" // default
+	Vault_transit_active, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_ACTIVE")
 	if ok {
-		kvOptions.vault_transit_active = fmt.Sprintf("%v", vault_transit_active)
+		kvOptions.Vault_transit_active = fmt.Sprintf("%v", Vault_transit_active)
 	}
-	vault_transit_url, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_URL")
+	Vault_transit_url, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_URL")
 	if ok {
-		kvOptions.vault_transit_url = fmt.Sprintf("%v", vault_transit_url)
+		kvOptions.Vault_transit_url = fmt.Sprintf("%v", Vault_transit_url)
 	}
-	vault_transit_approle_id, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_APPROLE_ID")
+	Vault_transit_approle_id, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_APPROLE_ID")
 	if ok {
-		kvOptions.vault_transit_approle_id = fmt.Sprintf("%v", vault_transit_approle_id)
+		kvOptions.Vault_transit_approle_id = fmt.Sprintf("%v", Vault_transit_approle_id)
 	}
-	vault_transit_secret_id, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_SECRET_ID")
+	Vault_transit_secret_id, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_SECRET_ID")
 	if ok {
-		kvOptions.vault_transit_secret_id = fmt.Sprintf("%v", vault_transit_secret_id)
+		kvOptions.Vault_transit_secret_id = fmt.Sprintf("%v", Vault_transit_secret_id)
 	}
-	vault_transit_kv_engine, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_ENGINE")
+	Vault_transit_kv_engine, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_ENGINE")
 	if ok {
-		kvOptions.vault_transit_kv_engine = fmt.Sprintf("%v", vault_transit_kv_engine)
+		kvOptions.Vault_transit_kv_engine = fmt.Sprintf("%v", Vault_transit_kv_engine)
 	}
-	vault_transit_engine, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_ENGINE")
+	Vault_transit_engine, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_ENGINE")
 	if ok {
-		kvOptions.vault_transit_engine = fmt.Sprintf("%v", vault_transit_engine)
+		kvOptions.Vault_transit_engine = fmt.Sprintf("%v", Vault_transit_engine)
 	}
-	vault_transit_kv_version, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_VERSION")
+	Vault_transit_kv_version, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_VERSION")
 	if ok {
-		kvOptions.vault_transit_kv_version = fmt.Sprintf("%v", vault_transit_kv_version)
+		kvOptions.Vault_transit_kv_version = fmt.Sprintf("%v", Vault_transit_kv_version)
 	}
-	vault_transit_namespace, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_NAMESPACE")
+	Vault_transit_namespace, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_NAMESPACE")
 	if ok {
-		kvOptions.vault_transit_namespace = fmt.Sprintf("%v", vault_transit_namespace)
+		kvOptions.Vault_transit_namespace = fmt.Sprintf("%v", Vault_transit_namespace)
 	}
-	vault_transit_tokenname, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_TOKENNAME")
+	Vault_transit_kek, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KEK")
 	if ok {
-		kvOptions.vault_transit_tokenname = fmt.Sprintf("%v", vault_transit_tokenname)
-	}
-	vault_transit_kek, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KEK")
-	if ok {
-		kvOptions.vault_transit_kek = fmt.Sprintf("%v", vault_transit_kek)
+		kvOptions.Vault_transit_kek = fmt.Sprintf("%v", Vault_transit_kek)
 	}
 
-	vault_kv_writer_role, ok := AEAD_CONFIG.Get("VAULT_KV_WRITER_ROLE")
+	Vault_kv_writer_role, ok := AEAD_CONFIG.Get("VAULT_KV_WRITER_ROLE")
 	if ok {
-		kvOptions.vault_kv_writer_role = fmt.Sprintf("%v", vault_kv_writer_role)
+		kvOptions.Vault_kv_writer_role = fmt.Sprintf("%v", Vault_kv_writer_role)
 	}
 
-	vault_secretgenerator_iam_role, ok := AEAD_CONFIG.Get("VAULT_KV_SECRETGENERATOR_IAM_ROLE")
+	Vault_secretgenerator_iam_role, ok := AEAD_CONFIG.Get("VAULT_KV_SECRETGENERATOR_IAM_ROLE")
 	if ok {
-		kvOptions.vault_secretgenerator_iam_role = fmt.Sprintf("%v", vault_secretgenerator_iam_role)
+		kvOptions.Vault_secretgenerator_iam_role = fmt.Sprintf("%v", Vault_secretgenerator_iam_role)
 	}
 
 	return nil
 }
 func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 
-	var kvOptions KVOptions
+	var kvOptions kvutils.KVOptions
 	err := resolveKvOptions(&kvOptions)
 	if err != nil {
 		hclog.L().Error("\nfailed to read vault config")
 		return false, err
 	}
 
-	if kvOptions.vault_kv_active == "false" {
+	if kvOptions.Vault_kv_active == "false" {
 		return true, nil
 	}
 
@@ -336,8 +334,8 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 		return true, nil
 	}
 
-	// kh, err := ValidateKeySetJson(potentialAEADKey)
-	_, err = ValidateKeySetJson(potentialAEADKey)
+	// kh, err := aeadutils.ValidateKeySetJson(potentialAEADKey)
+	_, err = aeadutils.ValidateKeySetJson(potentialAEADKey)
 
 	if err != nil {
 		return true, nil
@@ -350,7 +348,7 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 	// hclog.L().Info("saveToKV:" + keyNameIn + " Type: " + keyTypeURL)
 
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, kvOptions.vault_kv_writer_role, kvOptions.vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
 	if err != nil {
 		hclog.L().Error("\nfailed to initialize Vault client2")
 		return false, err
@@ -358,15 +356,15 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 
 	// // create a secret
 	keyJsonInStr := fmt.Sprintf("%s", keyJsonIn)
-	var keySetStruct KeySetStruct
+	var keySetStruct aeadutils.KeySetStruct
 	err = json.Unmarshal([]byte(keyJsonInStr), &keySetStruct)
 	if err != nil {
 		hclog.L().Error("\nfailed to unmarshall the keyset into a struct")
 	}
 
 	keyMap := make(map[string]interface{})
-	// keyMap[RemoveKeyPrefix(keyNameIn)] = keyJsonIn
-	keyMap[RemoveKeyPrefix(keyNameIn)] = keySetStruct
+	// keyMap[aeadutils.RemoveKeyPrefix(keyNameIn)] = keyJsonIn
+	keyMap[aeadutils.RemoveKeyPrefix(keyNameIn)] = keySetStruct
 
 	// Marshal the map into a JSON string.
 	keyData, err := json.Marshal(keyMap)
@@ -376,7 +374,7 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 	jsonKeyStr := string(keyData)
 
 	aadMap := make(map[string]interface{})
-	aadMap[RemoveKeyPrefix(keyNameIn)] = RemoveKeyPrefix(keyNameIn)
+	aadMap[aeadutils.RemoveKeyPrefix(keyNameIn)] = aeadutils.RemoveKeyPrefix(keyNameIn)
 	// Marshal the map into a JSON string.
 	aadData, err := json.Marshal(aadMap)
 	if err != nil {
@@ -391,12 +389,12 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 	secretMap["data"] = jsonKeyStr
 	secretMap["aad"] = jsonAadStr
 
-	secret, err := putAndCheckKvSecret(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, keyNameIn, secretMap)
+	secret, err := putAndCheckKvSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, keyNameIn, secretMap)
 	if err != nil {
 		return false, err
 	}
 
-	if _, _, err = isSecretAnAEADKeyset(secret, RemoveKeyPrefix(keyNameIn)); err != nil {
+	if _, _, err = isSecretAnAEADKeyset(secret, aeadutils.RemoveKeyPrefix(keyNameIn)); err != nil {
 		return false, err
 	}
 
@@ -409,15 +407,15 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 	return true, nil
 }
 
-func putAndCheckKvSecret(client *vault.Client, vault_kv_engine string, vault_kv_version string, keyNameIn string, secretMap map[string]interface{}) (interface{}, error) {
+func putAndCheckKvSecret(client *vault.Client, Vault_kv_engine string, Vault_kv_version string, keyNameIn string, secretMap map[string]interface{}) (interface{}, error) {
 
-	_, err := KvPutSecret(client, vault_kv_engine, vault_kv_version, keyNameIn, secretMap)
+	_, err := kvutils.KvPutSecret(client, Vault_kv_engine, Vault_kv_version, keyNameIn, secretMap)
 	if err != nil {
 		hclog.L().Error("failed to put a secret to KV")
 		return nil, err
 	}
 
-	kvsecret, err := KvGetSecret(client, vault_kv_engine, vault_kv_version, keyNameIn)
+	kvsecret, err := kvutils.KvGetSecret(client, Vault_kv_engine, Vault_kv_version, keyNameIn)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: %s", keyNameIn, err)
 		hclog.L().Error(errMsg)
@@ -474,14 +472,14 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 	   ```
 	*/
 
-	var kvOptions KVOptions
+	var kvOptions kvutils.KVOptions
 	err := resolveKvOptions(&kvOptions)
 	if err != nil {
 		hclog.L().Error("\nfailed to read vault config")
 		return false, err
 	}
 
-	if kvOptions.vault_transit_active == "false" {
+	if kvOptions.Vault_transit_active == "false" {
 		return true, nil
 	}
 
@@ -508,72 +506,36 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 	// OK, we want to sync this key
 
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_transit_url, kvOptions.vault_transit_namespace, kvOptions.vault_transit_approle_id, kvOptions.vault_transit_secret_id, kvOptions.vault_kv_writer_role, kvOptions.vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_transit_url, kvOptions.Vault_transit_namespace, kvOptions.Vault_transit_approle_id, kvOptions.Vault_transit_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
 	if err != nil {
 		hclog.L().Error("\nfailed to initialize Vault client3")
 		return false, err
 	}
 
-	// read the secrets in the transit wrapped secret store
-	keyStr := ""
-	transitTokenStr := ""
-	paths, err := KvGetSecretPaths(client.WithNamespace(kvOptions.vault_transit_namespace), kvOptions.vault_transit_kv_engine, kvOptions.vault_transit_kv_version, "")
-	if err != nil {
-		hclog.L().Error("failed to read paths")
-	}
-	for _, path := range paths {
-		kvsecret, _ := KvGetSecret(client.WithNamespace(kvOptions.vault_transit_namespace), kvOptions.vault_transit_kv_engine, kvOptions.vault_transit_kv_version, path)
-		secret, ok := kvsecret.Data["key"]
-		if ok {
-			if path == kvOptions.vault_transit_tokenname {
-				transitTokenStr = fmt.Sprintf("%v", secret)
-			}
-		}
-	}
-
-	if transitTokenStr == keyStr {
-		hclog.L().Error("oops")
-	}
-
 	// make a new keyname
-	keyname := RemoveKeyPrefix(keyNameIn)
-	newkeyname, err := DeriveKeyName(kvOptions.vault_transit_namespace, keyname, keyjson)
+	keyname := aeadutils.RemoveKeyPrefix(keyNameIn)
+	newkeyname, err := kvutils.DeriveKeyName(kvOptions.Vault_transit_namespace, keyname, keyjson)
 	hclog.L().Info("newkeyname: " + newkeyname)
 
 	//wrap the key
-
-	//url = "http://localhost:8200/v1/transit/encrypt/my-key"
-
-	url := ""
-	if kvOptions.vault_transit_namespace != "" {
-		url = kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_namespace + "/" + kvOptions.vault_transit_engine + "/encrypt/" + kvOptions.vault_transit_kek
-	} else {
-		// no namespace
-		url = kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_engine + "/encrypt/" + kvOptions.vault_transit_kek
-	}
-
-	wrappedkey, err := WrapKeyset(url, transitTokenStr, keyjson)
+	var vaultWrapper kvutils.VaultClientWrapper = kvutils.VaultClientWrapperImpl{Client: client.WithNamespace(kvOptions.Vault_transit_namespace)}
+	wrappedkey, err := kvutils.WrapKeyset(&vaultWrapper, keyjson, kvOptions.Vault_transit_kek, kvOptions.Vault_transit_engine)
 	if err != nil {
 		hclog.L().Error("failed to wrap key")
 	}
 
-	//url = "http://localhost:8200/v1/transit/decrypt/my-key"
-
-	if kvOptions.vault_transit_namespace != "" {
-		url = kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_namespace + "/" + kvOptions.vault_transit_engine + "/decrypt/" + kvOptions.vault_transit_kek
-	} else {
-		url = kvOptions.vault_transit_url + "/v1/" + kvOptions.vault_transit_engine + "/decrypt/" + kvOptions.vault_transit_kek
-
-	}
-
-	_, err = UnwrapKeyset(url, transitTokenStr, wrappedkey)
+	base64Keyset, err := kvutils.UnwrapKeyset(&vaultWrapper, kvutils.EncryptedKVKey{Ciphertext: wrappedkey}, kvOptions.Vault_transit_kek, kvOptions.Vault_transit_engine)
 	if err != nil {
 		hclog.L().Error("failed to unwrap key")
+	}
+	_, err = aeadutils.ValidateB64Key(base64Keyset)
+	if err != nil {
+		hclog.L().Error("Wrapped key is invalid")
 	}
 
 	secretMap := map[string]interface{}{}
 	secretMap["key"] = wrappedkey
-	_, err = KvPutSecret(client.WithNamespace(kvOptions.vault_transit_namespace), kvOptions.vault_transit_kv_engine, kvOptions.vault_transit_kv_version, newkeyname, secretMap)
+	_, err = kvutils.KvPutSecret(client.WithNamespace(kvOptions.Vault_transit_namespace), kvOptions.Vault_transit_kv_engine, kvOptions.Vault_transit_kv_version, newkeyname, secretMap)
 	if err != nil {
 		hclog.L().Error("failed to write to transit")
 	}
@@ -582,8 +544,8 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 
 func isSecretAnAEADKeyset(secret interface{}, fName string) (string, *keyset.Handle, error) {
 	secretStr := fmt.Sprintf("%v", secret)
-	fieldName := RemoveKeyPrefix(fName)
-	var jMap map[string]KeySetStruct
+	fieldName := aeadutils.RemoveKeyPrefix(fName)
+	var jMap map[string]aeadutils.KeySetStruct
 	if err := json.Unmarshal([]byte(secretStr), &jMap); err != nil {
 		hclog.L().Error("failed to unmarshall the secret " + fName)
 		return "", nil, err
@@ -595,7 +557,7 @@ func isSecretAnAEADKeyset(secret interface{}, fName string) (string, *keyset.Han
 		hclog.L().Error("failed to marshall " + fName)
 	}
 	jsonToValidate := string(keysetAsByteArray)
-	kh, err := ValidateKeySetJson(jsonToValidate)
+	kh, err := aeadutils.ValidateKeySetJson(jsonToValidate)
 	if err != nil {
 		hclog.L().Error("failed to recreate a key handle from the json " + fName)
 		return "", nil, err
@@ -605,7 +567,7 @@ func isSecretAnAEADKeyset(secret interface{}, fName string) (string, *keyset.Han
 
 func extractADFromSecret(secret interface{}, fName string) (string, error) {
 	secretStr := fmt.Sprintf("%v", secret)
-	fieldName := RemoveKeyPrefix(fName)
+	fieldName := aeadutils.RemoveKeyPrefix(fName)
 	var jMap map[string]interface{}
 	if err := json.Unmarshal([]byte(secretStr), &jMap); err != nil {
 		hclog.L().Error("failed to unmarshall the secret " + fName)
@@ -621,16 +583,16 @@ func deleteFromKV(k string) (bool, error) {
 	return true, nil
 }
 
-func storeKeysTobeSynced(kvOptions KVOptions, keyMap map[string]interface{}) error {
+func storeKeysTobeSynced(kvOptions kvutils.KVOptions, keyMap map[string]interface{}) error {
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, kvOptions.vault_kv_writer_role, kvOptions.vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
 	if err != nil {
 		hclog.L().Error("Failed to initialise kv:" + err.Error())
 		return err
 	}
 
 	// read the synclist secret
-	kvsecret, err := KvGetSecret(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, "synclist")
+	kvsecret, err := kvutils.KvGetSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, "synclist")
 	if err != nil || kvsecret.Data == nil {
 		// its OK for this to be missing
 		hclog.L().Info("Failed to read the synclist secret:" + err.Error())
@@ -638,7 +600,7 @@ func storeKeysTobeSynced(kvOptions KVOptions, keyMap map[string]interface{}) err
 
 	// do we have a secret with data, if not write a new one
 	if kvsecret == nil || kvsecret.Data == nil {
-		_, err = KvPutSecret(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, "synclist", keyMap)
+		_, err = kvutils.KvPutSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, "synclist", keyMap)
 		if err != nil {
 			hclog.L().Error("failed to put a secret to KV:" + err.Error())
 			return err
@@ -654,7 +616,7 @@ func storeKeysTobeSynced(kvOptions KVOptions, keyMap map[string]interface{}) err
 	}
 
 	// write the updated
-	_, err = KvPutSecret(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, "synclist", kvsecret.Data)
+	_, err = kvutils.KvPutSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, "synclist", kvsecret.Data)
 	if err != nil {
 		hclog.L().Error("failed to put a secret to KV:" + err.Error())
 		return err
@@ -662,16 +624,16 @@ func storeKeysTobeSynced(kvOptions KVOptions, keyMap map[string]interface{}) err
 	return nil
 }
 
-func readKeysTobeSynced(kvOptions KVOptions) (map[string]interface{}, error) {
+func readKeysTobeSynced(kvOptions kvutils.KVOptions) (map[string]interface{}, error) {
 	// get a client
-	client, err := KvGetClient(kvOptions.vault_kv_url, "", kvOptions.vault_kv_approle_id, kvOptions.vault_kv_secret_id, kvOptions.vault_kv_writer_role, kvOptions.vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
 	if err != nil {
 		hclog.L().Error("Failed to initialise kv:" + err.Error())
 		return nil, err
 	}
 
 	// read the synclist secret
-	kvsecret, err := KvGetSecret(client, kvOptions.vault_kv_engine, kvOptions.vault_kv_version, "synclist")
+	kvsecret, err := kvutils.KvGetSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, "synclist")
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to read the secrets in folder %s: %s", "synclist", err)
 		hclog.L().Error(errMsg)

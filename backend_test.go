@@ -3,21 +3,18 @@ package aeadplugin
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
-	"net/url"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/Vodafone/vault-plugin-aead/aeadutils"
+	"github.com/Vodafone/vault-plugin-aead/kvutils"
 	version "github.com/Vodafone/vault-plugin-aead/version"
 	"github.com/google/tink/go/daead"
 	"github.com/google/tink/go/insecurecleartextkeyset"
@@ -67,25 +64,8 @@ vault write auth/gcp/role/vault-gce-auth-role type="gce" policies="secretgen-pol
 // NOTE THE BELOW VALUES ARE FOR A LOCAL VAULT, INSTRUCTIONS ABOVE
 // YOU WILL NEED TO ADJUST YOUR VALUES ACCORDINGLY
 // YOU WILL HAVE DIFFERENT approle AND secret id
-// const vault_kv_url string = "https://zzz.vodafone.com"
-// const vault_kv_active string = "true"
-// const vault_kv_approle_id string = "xxxxxx"
-// const vault_kv_secret_id string = "yyyyyy"
-// const vault_kv_engine string = "secret"
-// const vault_kv_version string = "v2"
 
-// const vault_transit_active string = "true"
-// const vault_transit_url string = "https://zzz.vodafone.com"
-// const vault_transit_kv_approle_id string = "xxxxxx"
-// const vault_transit_kv_secret_id string = "yyyyyy"
-// const vault_transit_kv_engine string = "IT_secrets"
-// const vault_transit_kv_version string = "v2"
-// const vault_transit_namespace string = "kms/LM"
-// const vault_transit_engine string = "LM_transit"
-// const vault_transit_tokenname string = "token_ML"
-// const vault_transit_kek string = "LM_KEK"
-
-const vault_kv_url string = "http://localhost:8200"
+const vault_kv_url string = "https://zzz.vodafone.com"
 const vault_kv_active string = "false"
 const vault_kv_approle_id string = "xxxxxx"
 const vault_kv_secret_id string = "yyyyyy"
@@ -102,7 +82,6 @@ const vault_transit_kv_engine string = "secret"
 const vault_transit_kv_version string = "v2"
 const vault_transit_namespace string = ""
 const vault_transit_engine string = "transit"
-const vault_transit_tokenname string = "transit-token"
 const vault_transit_kek string = "my-key"
 
 const bq_active string = "false"
@@ -197,7 +176,7 @@ func TestBackend(t *testing.T) {
 
 		// now we need to use the same key to encrypt the same data to get the expected value
 		// create key from string
-		h, d, err := CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
+		h, d, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -285,7 +264,7 @@ func TestBackend(t *testing.T) {
 		}
 
 		// re-encrypt the data using our known key
-		_, d, err := CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
+		_, d, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -399,7 +378,7 @@ func TestBackend(t *testing.T) {
 		encryptedData := resp.Data["test7-address4"].(string)
 
 		// create an aead keyhandle from the provided json as string
-		_, a, err := CreateInsecureHandleAndAead(rawKeyset)
+		_, a, err := aeadutils.CreateInsecureHandleAndAead(rawKeyset)
 		if err != nil {
 			t.Errorf("Failed to create aead from %s", rawKeyset)
 		}
@@ -1567,7 +1546,7 @@ func TestBackend(t *testing.T) {
 		// actualJSonKey4Family := configResp.Data["ADDRESS_FAMILY"].(string)
 
 		// // re-encrypt the data using the same key
-		_, d, err := CreateInsecureHandleAndDeterministicAead(DeterministicKeyset)
+		_, d, err := aeadutils.CreateInsecureHandleAndDeterministicAead(DeterministicKeyset)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -1829,65 +1808,23 @@ func checkBQRoutine(projectId string, t *testing.T, datasetName string, routineN
 
 //		})
 //	}
-func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*keyset.Handle, error) {
+func unwrapKeyset(transiturl string, keyStr string) (*keyset.Handle, error) {
 
-	proxyurlStr := os.Getenv("https_proxy")
-
-	var tr *http.Transport
-	if proxyurlStr != "" && !strings.Contains(transiturl, "localhost") {
-		proxyUrl, _ := url.Parse(proxyurlStr)
-
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			Proxy:           http.ProxyURL(proxyUrl),
-		}
-	} else {
-
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
-
-	client := &http.Client{Transport: tr}
-	keyToDecode := `{"ciphertext":"` + keyStr + `"}`
-	var data = strings.NewReader(keyToDecode)
-	// var data = strings.NewReader(`{"ciphertext":"vault:v1:quY+4KUQo6JhfhD5Aac7nyFwApoMRGn44jKKOO2IJpw/KXtjG+kATRE5Gc03sxIt/qnXX6CmKah9tSIVxSbCIW0xdfJ65wB9QETl81kDUiwLzC0eImrm48p2ozG99RoYTuPedusIuur2mFKhMIPEGQloJQeyDXeWcdOkdDcVNnWW1rRb11i43NDjrzloaST9LwHLOrMibXDpC8uHyTMkry0XOYSVlXnJqV/6uKWgXj/0WX72J4jWOkgwOIpT0xBCGJmdBKD18izIq/CYH7pupjwfWt+Yi5jiZUFqQs75hyc/HV7V2fqWW6FXFHGVL2R5EW79CaZC+Q/yyBbnDQTcfjuX41QVGNRI65NjsUEEfo6OpF6OcqDNHweOnLEmwrAzCLg="}`)
-
-	req, err := http.NewRequest("POST", transiturl, data)
+	var kvOptions kvutils.KVOptions
+	err := resolveKvOptions(&kvOptions)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Printf("\nfailed to read vault config")
 	}
-	req.Header.Set("X-Vault-Token", transitTokenStr)
-	// req.Header.Set("X-Vault-Token", "hvs.CAESIDyhl6QeFmqY36dVSiDIaxpnBu-e3PRMNqWjzPLwrANdGicKImh2cy55SHBTbW1JWkFZTTFmckhpQ1dTNlppc00udWYzNE4Q3QE")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := client.Do(req)
+	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_transit_url, kvOptions.Vault_transit_namespace, kvOptions.Vault_transit_approle_id, kvOptions.Vault_transit_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
+	var vaultWrapper kvutils.VaultClientWrapper = kvutils.VaultClientWrapperImpl{Client: client.WithNamespace(kvOptions.Vault_transit_namespace)}
+	base64Keyset, err := kvutils.UnwrapKeyset(&vaultWrapper, kvutils.EncryptedKVKey{Ciphertext: keyStr}, kvOptions.Vault_transit_kek, kvOptions.Vault_transit_engine)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Printf("failed to unwrap key")
 	}
-	defer resp.Body.Close()
-	bodyText, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// fmt.Printf("\n\nBODYTEXT: %s\n", bodyText)
-
-	respBody := map[string]interface{}{}
-	err = json.Unmarshal(bodyText, &respBody)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	unwrappedKeyIntf := respBody["data"]
-	unwrappedKeyMap := unwrappedKeyIntf.(map[string]interface{})
-	base64Keyset := fmt.Sprintf("%v", unwrappedKeyMap["plaintext"])
-	// fmt.Printf("\n\nbase64Keyset: %v\n", base64Keyset)
-	// byteBase64Keyset := []byte(base64Keyset)
 	keysetByte, _ := b64.StdEncoding.DecodeString(base64Keyset)
 	keysetStr := string(keysetByte)
-	// fmt.Printf("\n\nkeysetStr: %s\n", keysetStr)
-
 	// validate the key
-	kh, err := ValidateKeySetJson(keysetStr)
+	kh, err := aeadutils.ValidateKeySetJson(keysetStr)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -1903,14 +1840,14 @@ func unwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*ke
 }
 
 func checkKVSecret(fullName string, t *testing.T) {
-	fieldName := RemoveKeyPrefix(fullName)
+	fieldName := aeadutils.RemoveKeyPrefix(fullName)
 
-	client, err := KvGetClient(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClientWithApprole(vault_kv_url, "", vault_kv_approle_id, vault_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
 	if err != nil {
 		t.Error("\nfailed to initialize Vault client")
 	}
 
-	kvsecret, err := KvGetSecret(client, vault_kv_engine, vault_kv_version, fullName)
+	kvsecret, err := kvutils.KvGetSecret(client, vault_kv_engine, vault_kv_version, fullName)
 	if err != nil {
 		t.Errorf("failed to read the secrets in folder %s: %s", fullName, err)
 	}
@@ -1928,7 +1865,7 @@ func checkKVSecret(fullName string, t *testing.T) {
 		t.Errorf("failed to read back the aead key  %v", fullName)
 	}
 	secretStr := fmt.Sprintf("%v", jsonKey)
-	var jMap map[string]KeySetStruct
+	var jMap map[string]aeadutils.KeySetStruct
 	if err := json.Unmarshal([]byte(secretStr), &jMap); err != nil {
 		t.Errorf("failed to unmarshall the secret  %v", fullName)
 	}
@@ -1938,7 +1875,7 @@ func checkKVSecret(fullName string, t *testing.T) {
 		t.Error("failed to marshall ")
 	}
 	jsonToValidate := string(keysetAsByteArray)
-	_, err = ValidateKeySetJson(jsonToValidate)
+	_, err = aeadutils.ValidateKeySetJson(jsonToValidate)
 	if err != nil {
 		t.Errorf("failed to recreate a key handle from the json for  %v", fullName)
 	}
@@ -1964,7 +1901,7 @@ func checkKVSecret(fullName string, t *testing.T) {
 
 func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 
-	client, err := KvGetClient(vault_kv_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClientWithApprole(vault_transit_url, vault_transit_namespace, vault_transit_kv_approle_id, vault_transit_kv_secret_id, vault_kv_writer_role, vault_secretgenerator_iam_role)
 	if err != nil {
 		t.Error("\nfailed to initialize Vault client")
 	}
@@ -1972,9 +1909,9 @@ func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 	var kvsecret *vault.KVSecret
 
 	if vault_transit_namespace != "" {
-		kvsecret, err = KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, vault_transit_kv_version, fullName)
+		kvsecret, err = kvutils.KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, vault_transit_kv_version, fullName)
 	} else {
-		kvsecret, err = KvGetSecret(client, vault_transit_kv_engine, vault_transit_kv_version, fullName)
+		kvsecret, err = kvutils.KvGetSecret(client, vault_transit_kv_engine, vault_transit_kv_version, fullName)
 	}
 	if err != nil || kvsecret.Data == nil {
 		t.Errorf("failed to read the secrets in folder %v", fullName)
@@ -1987,28 +1924,11 @@ func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 
 	wrappedKeyStr := fmt.Sprintf("%v", wrappedKeyIntf)
 
-	var kvsecretToken *vault.KVSecret
-
-	if vault_transit_namespace != "" {
-		kvsecretToken, err = KvGetSecret(client.WithNamespace(vault_transit_namespace), vault_transit_kv_engine, vault_transit_kv_version, vault_transit_tokenname)
-	} else {
-		kvsecretToken, err = KvGetSecret(client, vault_transit_kv_engine, vault_transit_kv_version, vault_transit_tokenname)
-	}
-	if err != nil || kvsecretToken.Data == nil {
-		t.Errorf("failed to read the secrets in folder %v", fullName)
-	}
-
-	transitTokenIntf, ok := kvsecretToken.Data["key"]
-	if !ok {
-		t.Errorf("failed to read back the transitToken  %v", fullName)
-	}
-	transitToken := fmt.Sprintf("%v", transitTokenIntf)
-
-	if strings.Contains(vault_kv_url, "localhost") {
+	if vault_transit_namespace == "" {
 		// ${VAULT_SERVER}/v1/kms/${LM}/${LM}_transit/decrypt/${LM}_KEK
-		_, err = unwrapKeyset(vault_kv_url+"/v1/"+vault_transit_engine+"/decrypt/"+vault_transit_kek, transitToken, wrappedKeyStr)
+		_, err = unwrapKeyset(vault_transit_url+"/v1/"+vault_transit_engine+"/decrypt/"+vault_transit_kek, wrappedKeyStr)
 	} else {
-		_, err = unwrapKeyset(vault_kv_url+"/v1/"+vault_transit_namespace+"/"+vault_transit_engine+"/decrypt/"+vault_transit_kek, transitToken, wrappedKeyStr)
+		_, err = unwrapKeyset(vault_transit_url+"/v1/"+vault_transit_namespace+"/"+vault_transit_engine+"/decrypt/"+vault_transit_kek, wrappedKeyStr)
 	}
 
 	if err != nil {
@@ -2062,7 +1982,7 @@ func TestTransitKV(t *testing.T) {
 		// we should have a wrapped secret in kv called XXX_DEK_TEST30-KEY1_AES256_GCM
 		ns := "XXX"
 		if vault_transit_namespace != "" && strings.Contains(vault_transit_namespace, "kms/") {
-			ns = strings.TrimPrefix(vault_transit_namespace, "kms/")
+			ns = strings.ToUpper(strings.TrimPrefix(vault_transit_namespace, "kms/"))
 		}
 		checkKVTransitWrappedSecret(ns+"_DEK_TEST30-KEY1_AES256_GCM", t)
 		checkKVTransitWrappedSecret(ns+"_DEK_TEST30-KEY3_AES256_GCM", t)
@@ -2337,23 +2257,20 @@ func rotateConfigKeys(b *backend, storage logical.Storage, data map[string]inter
 
 func createVaultConfig() map[string]interface{} {
 	configMap := map[string]interface{}{
-		"VAULT_KV_ACTIVE": vault_kv_active,
-		"VAULT_KV_URL":    vault_kv_url,
-		// "VAULT_KV_PWD":             vault_test_pwd,
-		"VAULT_KV_ENGINE":      vault_kv_engine,
-		"VAULT_KV_VERSION":     vault_kv_version,
-		"VAULT_KV_APPROLE_ID":  vault_kv_approle_id,
-		"VAULT_KV_SECRET_ID":   vault_kv_secret_id,
-		"VAULT_TRANSIT_ACTIVE": vault_transit_active,
-		"VAULT_TRANSIT_URL":    vault_transit_url,
-		// "VAULT_TRANSIT_PWD":        vault_transit_pwd,
+		"VAULT_KV_ACTIVE":                   vault_kv_active,
+		"VAULT_KV_URL":                      vault_kv_url,
+		"VAULT_KV_ENGINE":                   vault_kv_engine,
+		"VAULT_KV_VERSION":                  vault_kv_version,
+		"VAULT_KV_APPROLE_ID":               vault_kv_approle_id,
+		"VAULT_KV_SECRET_ID":                vault_kv_secret_id,
+		"VAULT_TRANSIT_ACTIVE":              vault_transit_active,
+		"VAULT_TRANSIT_URL":                 vault_transit_url,
 		"VAULT_TRANSIT_APPROLE_ID":          vault_transit_kv_approle_id,
 		"VAULT_TRANSIT_SECRET_ID":           vault_transit_kv_secret_id,
 		"VAULT_TRANSIT_KV_ENGINE":           vault_transit_kv_engine,
 		"VAULT_TRANSIT_KV_VERSION":          vault_transit_kv_version,
 		"VAULT_TRANSIT_NAMESPACE":           vault_transit_namespace,
 		"VAULT_TRANSIT_ENGINE":              vault_transit_engine,
-		"VAULT_TRANSIT_TOKENNAME":           vault_transit_tokenname,
 		"VAULT_TRANSIT_KEK":                 vault_transit_kek,
 		"VAULT_KV_WRITER_ROLE":              vault_kv_writer_role,
 		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": vault_secretgenerator_iam_role,

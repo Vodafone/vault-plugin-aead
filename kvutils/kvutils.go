@@ -1,10 +1,10 @@
-package aeadplugin
+package kvutils
 
 import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	b64 "encoding/base64"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,41 +17,38 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
-	"github.com/google/tink/go/keyset"
+	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-retryablehttp"
 	vault "github.com/hashicorp/vault/api"
 	auth "github.com/hashicorp/vault/api/auth/approle"
 	authgcp "github.com/hashicorp/vault/api/auth/gcp"
+	cmap "github.com/orcaman/concurrent-map"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
 
 type KVOptions struct {
-	vault_kv_url                   string
-	vault_kv_active                string
-	vault_kv_approle_id            string
-	vault_kv_secret_id             string
-	vault_kv_engine                string
-	vault_kv_version               string
-	vault_transit_active           string
-	vault_transit_url              string
-	vault_transit_approle_id       string
-	vault_transit_secret_id        string
-	vault_transit_kv_engine        string
-	vault_transit_kv_version       string
-	vault_transit_namespace        string
-	vault_transit_engine           string
-	vault_transit_tokenname        string
-	vault_transit_kek              string
-	vault_kv_writer_role           string
-	vault_secretgenerator_iam_role string
+	Vault_kv_url             string
+	Vault_kv_active          string
+	Vault_kv_approle_id      string
+	Vault_kv_secret_id       string
+	Vault_kv_engine          string
+	Vault_kv_version         string
+	Vault_transit_active     string
+	Vault_transit_url        string
+	Vault_transit_approle_id string
+	Vault_transit_secret_id  string
+	Vault_transit_kv_engine  string
+	Vault_transit_kv_version string
+	Vault_transit_namespace  string
+	Vault_transit_engine     string
+	// Vault_transit_tokenname        string
+	Vault_transit_kek              string
+	Vault_kv_writer_role           string
+	Vault_secretgenerator_iam_role string
 }
 
-var aead_engine = "aead-secrets"
-
 func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string, vault_kv_writer_role string, vault_secretgenerator_iam_role string) (string, error) {
-
-	fmt.Printf("\nvault_kv_writer_role=%s", vault_kv_writer_role)
-	fmt.Printf("\nvault_secretgenerator_iam_role=%s", vault_secretgenerator_iam_role)
 
 	if vault_writer_secret_id != "" {
 		// we already have the secret id, no need to generate one
@@ -63,7 +60,6 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 		fmt.Printf("oops error from getMetadataInfo=%s", err.Error())
 		saEmail = "restricted-zone-restricted@vf-grp-neuronenabler-nonlive.iam.gserviceaccount.com"
 		projectId = "vf-grp-neuronenabler-nonlive"
-		// log.Fatal()
 	}
 	fmt.Printf("\nsaEmail=%s ProjectId=%s\n", saEmail, projectId)
 	// saEmail = "gke-service-account@vf-grp-clouddmz-lab.iam.gserviceaccount.com"
@@ -73,7 +69,7 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 	_, token, err := getVaultTokenGCPAuthIAM(saEmail, vault_addr, vault_secretgenerator_iam_role)
 	if err != nil {
 		fmt.Printf("oops error from getVaultTokenGCPAuthIAM=%s", err.Error())
-		log.Fatal()
+		return "", err
 	}
 	fmt.Printf("\ntoken from getVaultTokenGCPAuthIAM=%s\n", token)
 
@@ -81,14 +77,14 @@ func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string,
 	newSecretId, err := createSecretIdForRole(vault_addr, token, vault_kv_writer_role)
 	if err != nil {
 		fmt.Printf("oops error from createSecretIdForRole=%s", err.Error())
-		log.Fatal()
+		return "", err
 	}
 	fmt.Printf("\nnewSecretId from createSecretIdForRole=%s\n", newSecretId)
 	return newSecretId, nil
 }
 
 // Fetches a key-value secret (kv-v2) after authenticating via AppRole.
-func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id string, vault_writer_secret_id string, vault_writer_approle_name string, vault_secretgenerator_iam_role_name string) (*vault.Client, error) {
+func KvGetClientWithApprole(vault_addr string, namespace string, vault_writer_approle_id string, vault_writer_secret_id string, vault_writer_approle_name string, vault_secretgenerator_iam_role_name string) (*vault.Client, error) {
 
 	generated_secret_id, err := getGeneratedVaultSecretId(vault_addr, vault_writer_secret_id, vault_writer_approle_name, vault_secretgenerator_iam_role_name)
 	if err != nil {
@@ -96,10 +92,13 @@ func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id st
 	} else {
 		vault_writer_secret_id = generated_secret_id
 	}
+	return KvGetClient(vault_addr, namespace, vault_writer_approle_id, vault_writer_secret_id)
+}
+func KvGetClient(vault_addr string, namespace string, vault_approle_id string, vault_secret_id string) (*vault.Client, error) {
 
 	os.Setenv("VAULT_ADDR", vault_addr)
-	os.Setenv("APPROLE_ROLE_ID", vault_writer_approle_id)
-	os.Setenv("APPROLE_SECRET_ID", vault_writer_secret_id)
+	os.Setenv("APPROLE_ROLE_ID", vault_approle_id)
+	os.Setenv("APPROLE_SECRET_ID", vault_secret_id)
 
 	config := vault.DefaultConfig() // modify for more granular configuration
 
@@ -125,7 +124,7 @@ func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id st
 	secretID := &auth.SecretID{FromEnv: "APPROLE_SECRET_ID"}
 
 	appRoleAuth, err := auth.NewAppRoleAuth(
-		vault_writer_approle_id,
+		vault_approle_id,
 		secretID,
 		// auth.WithWrappingToken(), // Only required if the secret ID is response-wrapped.
 	)
@@ -155,7 +154,7 @@ func KvGetClient(vault_addr string, namespace string, vault_writer_approle_id st
 }
 
 // Fetches a key-value secret (kv-v2) after authenticating via AppRole.
-func KvGetClientPwd(configUrlStr string, configPwdStr string) (*vault.Client, error) {
+func KvGetClientPwd(configUrlStr string, configPwdStr string, AEAD_CONFIG cmap.ConcurrentMap) (*vault.Client, error) {
 
 	vault_url, ok := AEAD_CONFIG.Get(configUrlStr)
 	if !ok {
@@ -217,14 +216,33 @@ func KvPutSecret(client *vault.Client, kv_engine string, kv_version string, secr
 func KvGetSecret(client *vault.Client, kv_engine string, kv_version string, secretPath string) (*vault.KVSecret, error) {
 
 	if kv_version == "v1" {
-		return client.KVv1(kv_engine).Get(context.Background(), secretPath)
+		secret, err := client.KVv1(kv_engine).Get(context.Background(), secretPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to obtain Vault secret: %w", err)
+		}
+		return secret, err
 	} else if kv_version == "v2" {
-		return client.KVv2(kv_engine).Get(context.Background(), secretPath)
+		secret, err := client.KVv2(kv_engine).Get(context.Background(), secretPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to obtain Vault secret: %w", err)
+		}
+		return secret, err
 	} else {
 		return nil, fmt.Errorf("kv_version must be v1 or v2")
 	}
 }
 
+func KvDeleteSecret(client *vault.Client, kv_engine string, kv_version string, secretPath string) error {
+	if kv_version == "v1" {
+		err := client.KVv1(kv_engine).Delete(context.Background(), secretPath)
+		return err
+	} else if kv_version == "v2" {
+		err := client.KVv2(kv_engine).Delete(context.Background(), secretPath)
+		return err
+	} else {
+		return fmt.Errorf("kv_version must be v1 or v2")
+	}
+}
 func KvGetSecretPaths(client *vault.Client, kv_engine string, kv_version string, rootpath string) ([]string, error) {
 
 	// define a var for the recursive function
@@ -332,148 +350,100 @@ func KvGoDoHttp(inputData map[string]interface{}, url string, method string, bod
 	return nil
 }
 
-func UnwrapKeyset(transiturl string, transitTokenStr string, keyStr string) (*keyset.Handle, error) {
-
-	proxyurlStr := os.Getenv("https_proxy")
-
-	var tr *http.Transport
-	if proxyurlStr != "" && !strings.Contains(transiturl, "localhost") {
-		proxyUrl, _ := url.Parse(proxyurlStr)
-
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			Proxy:           http.ProxyURL(proxyUrl),
-		}
-	} else {
-
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
-
-	client := &http.Client{Transport: tr}
-	keyToDecode := `{"ciphertext":"` + keyStr + `"}`
-	var data = strings.NewReader(keyToDecode)
-	// var data = strings.NewReader(`{"ciphertext":"vault:v1:quY+4KUQo6JhfhD5Aac7nyFwApoMRGn44jKKOO2IJpw/KXtjG+kATRE5Gc03sxIt/qnXX6CmKah9tSIVxSbCIW0xdfJ65wB9QETl81kDUiwLzC0eImrm48p2ozG99RoYTuPedusIuur2mFKhMIPEGQloJQeyDXeWcdOkdDcVNnWW1rRb11i43NDjrzloaST9LwHLOrMibXDpC8uHyTMkry0XOYSVlXnJqV/6uKWgXj/0WX72J4jWOkgwOIpT0xBCGJmdBKD18izIq/CYH7pupjwfWt+Yi5jiZUFqQs75hyc/HV7V2fqWW6FXFHGVL2R5EW79CaZC+Q/yyBbnDQTcfjuX41QVGNRI65NjsUEEfo6OpF6OcqDNHweOnLEmwrAzCLg="}`)
-
-	req, err := http.NewRequest("POST", transiturl, data)
-	if err != nil {
-		log.Fatal(err)
-	}
-	req.Header.Set("X-Vault-Token", transitTokenStr)
-	// req.Header.Set("X-Vault-Token", "hvs.CAESIDyhl6QeFmqY36dVSiDIaxpnBu-e3PRMNqWjzPLwrANdGicKImh2cy55SHBTbW1JWkFZTTFmckhpQ1dTNlppc00udWYzNE4Q3QE")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer resp.Body.Close()
-	bodyText, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// fmt.Printf("\n\nBODYTEXT: %s\n", bodyText)
-
-	respBody := map[string]interface{}{}
-	err = json.Unmarshal(bodyText, &respBody)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	unwrappedKeyIntf := respBody["data"]
-	unwrappedKeyMap := unwrappedKeyIntf.(map[string]interface{})
-	base64Keyset := fmt.Sprintf("%v", unwrappedKeyMap["plaintext"])
-	// fmt.Printf("\n\nbase64Keyset: %v\n", base64Keyset)
-	// byteBase64Keyset := []byte(base64Keyset)
-	keysetByte, _ := b64.StdEncoding.DecodeString(base64Keyset)
-	keysetStr := string(keysetByte)
-	// fmt.Printf("\n\nkeysetStr: %s\n", keysetStr)
-
-	// validate the key
-	kh, err := ValidateKeySetJson(keysetStr)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ksi := kh.KeysetInfo()
-	ki := ksi.KeyInfo[len(ksi.KeyInfo)-1]
-	keyTypeURL := ki.GetTypeUrl()
-	if keyTypeURL == "" {
-		return nil, fmt.Errorf("failed to determine the keyType")
-	}
-
-	return kh, nil
+type VaultClientWrapper interface {
+	Write(path string, data map[string]interface{}) (*vault.Secret, error)
+	GetClient() *vault.Client
+}
+type VaultClientWrapperImpl struct {
+	Client *vault.Client
 }
 
-func WrapKeyset(transiturl string, transitTokenStr string, rawKeyset string) (string, error) {
+func (w VaultClientWrapperImpl) Write(path string, data map[string]interface{}) (*vault.Secret, error) {
+	return (*w.Client).Logical().Write(path, data)
+}
+func (w VaultClientWrapperImpl) GetClient() *vault.Client {
+	return w.Client
+}
 
-	proxyurlStr := os.Getenv("https_proxy")
+type DecryptedKVKey struct {
+	Plaintext string `json:"plaintext"`
+}
+type EncryptedKVKey struct {
+	Ciphertext string `json:"ciphertext"`
+}
 
-	var tr *http.Transport
-	if proxyurlStr != "" && !strings.Contains(transiturl, "localhost") {
-		proxyUrl, _ := url.Parse(proxyurlStr)
+// type OptionsResolver func(*KVOptions) error
+// type ClientResolver func(OptionsResolver) (*vault.Client, error)
 
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			Proxy:           http.ProxyURL(proxyUrl),
-		}
-	} else {
-
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
-
-	// tr := &http.Transport{
-	// 	TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	// 	Proxy:           http.ProxyURL(proxyUrl),
-	// }
-	client := &http.Client{Transport: tr}
-
-	// OK wite a new one
-	rawKeysetByte := []byte(rawKeyset)
-	rawKeysetB64Str := b64.StdEncoding.EncodeToString(rawKeysetByte)
-	rawKeySetStr := `{"plaintext":"` + rawKeysetB64Str + `"}`
-	// fmt.Printf("\n\nrawKeySetStr: %s\n", rawKeySetStr)
-	data := strings.NewReader(rawKeySetStr)
-	// data = strings.NewReader(`{"plaintext":"vault:v1:quY+4KUQo6JhfhD5Aac7nyFwApoMRGn44jKKOO2IJpw/KXtjG+kATRE5Gc03sxIt/qnXX6CmKah9tSIVxSbCIW0xdfJ65wB9QETl81kDUiwLzC0eImrm48p2ozG99RoYTuPedusIuur2mFKhMIPEGQloJQeyDXeWcdOkdDcVNnWW1rRb11i43NDjrzloaST9LwHLOrMibXDpC8uHyTMkry0XOYSVlXnJqV/6uKWgXj/0WX72J4jWOkgwOIpT0xBCGJmdBKD18izIq/CYH7pupjwfWt+Yi5jiZUFqQs75hyc/HV7V2fqWW6FXFHGVL2R5EW79CaZC+Q/yyBbnDQTcfjuX41QVGNRI65NjsUEEfo6OpF6OcqDNHweOnLEmwrAzCLg="}`)
-	req, err := http.NewRequest("POST", transiturl, data)
+func UnwrapKeyset(client *VaultClientWrapper, encryptedKVKey EncryptedKVKey, kvTransitKey string, kvTransitEngine string) (string, error) {
+	decryptedKey, err := KVTransitDecrypt(client, encryptedKVKey, kvTransitKey, kvTransitEngine)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
-	req.Header.Set("X-Vault-Token", transitTokenStr)
-	// req.Header.Set("X-Vault-Token", "hvs.CAESIDyhl6QeFmqY36dVSiDIaxpnBu-e3PRMNqWjzPLwrANdGicKImh2cy55SHBTbW1JWkFZTTFmckhpQ1dTNlppc00udWYzNE4Q3QE")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := client.Do(req)
+	return decryptedKey.Plaintext, nil
+}
+func WrapKeyset(client *VaultClientWrapper, rawKeyset string, kvTransitKey string, kvTransitEngine string) (string, error) {
+	encryptedKeyset, err := KVTransitEncrypt(client, rawKeyset, kvTransitKey, kvTransitEngine)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
-	defer resp.Body.Close()
-	bodyText2, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// fmt.Printf("\n\nBODYTEXT2: %s\n", bodyText2)
+	return encryptedKeyset.Ciphertext, nil
+}
+func KVTransitEncrypt(c *VaultClientWrapper, rawKeyset string, kvTransitKey string, kvTransitEngine string) (EncryptedKVKey, error) {
+	base64Keyset := base64.StdEncoding.EncodeToString([]byte(rawKeyset))
 
-	respBody2 := map[string]interface{}{}
-	err = json.Unmarshal(bodyText2, &respBody2)
-	if err != nil {
-		log.Fatal(err)
+	dataToEncrypt := map[string]interface{}{
+		"plaintext": base64Keyset,
 	}
 
-	wrappedKeyIntf := respBody2["data"]
-	wrappedKeyMap := wrappedKeyIntf.(map[string]interface{})
-	cipherKey := fmt.Sprintf("%v", wrappedKeyMap["ciphertext"])
-	// fmt.Printf("\n\ncipherKey: %s\n", cipherKey)
+	if kvTransitEngine == "" {
+		kvTransitEngine = "transit"
+	}
 
-	return cipherKey, nil
+	// Use Transit KV engine to encrypt the data
+	encrypted, err := (*c).Write(kvTransitEngine+"/encrypt/"+kvTransitKey, dataToEncrypt)
+	if err != nil {
+		return EncryptedKVKey{}, nil
+	}
+
+	cipherText, ok := encrypted.Data["ciphertext"].(string)
+	if !ok {
+		hclog.L().Error("ciphertext not found in Vault secret")
+		return EncryptedKVKey{}, nil
+	}
+
+	secretData := EncryptedKVKey{
+		Ciphertext: cipherText,
+	}
+
+	return secretData, nil
+}
+func KVTransitDecrypt(c *VaultClientWrapper, encrypted EncryptedKVKey, kvTransitKey string, kvTransitEngine string) (DecryptedKVKey, error) {
+
+	if kvTransitEngine == "" {
+		kvTransitEngine = "transit"
+	}
+
+	// Use Transit KV engine to decrypt the data
+	decrypted, err := (*c).Write(kvTransitEngine+"/decrypt/"+kvTransitKey, map[string]interface{}{
+		"ciphertext": encrypted.Ciphertext,
+	})
+
+	if err != nil {
+		return DecryptedKVKey{}, fmt.Errorf("failed to obtain Vault secret: %w", err)
+	}
+
+	var retrievedData DecryptedKVKey
+	retrievedData.Plaintext = decrypted.Data["plaintext"].(string)
+
+	return retrievedData, nil
 }
 
 func DeriveKeyName(namespace string, keyname string, keyjson string) (string, error) {
 	newkeyname := ""
 
 	// validate the key
-	kh, err := ValidateKeySetJson(keyjson)
+	kh, err := aeadutils.ValidateKeySetJson(keyjson)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -594,6 +564,22 @@ func callMetadataServer(metadata_url string) (string, error) {
 	return string(body), nil
 }
 
+func GetMetadataInfo() (string, string, error) {
+	url := "http://metadata.google.internal/computeMetadata/v1/project/project-id"
+	projectID, err := callMetadataServer(url)
+	if err != nil {
+		return "", "", fmt.Errorf("Error: unable to contact http://metadata.google.internal: %s", err)
+	}
+
+	url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email"
+	saEmail, err := callMetadataServer(url)
+	if err != nil {
+		return "", "", fmt.Errorf("Error: unable to contact http://metadata.google.internal: %s", err)
+	}
+
+	return saEmail, projectID, nil
+}
+
 func getVaultTokenGCPAuthIAM(serviceAccount string, vaultAddress string, vaultIAM string) (*vault.Client, string, error) {
 	config := vault.DefaultConfig()
 
@@ -660,7 +646,8 @@ func createSecretIdForRole(vaulturl string, token string, approle string) (strin
 	req, err := retryablehttp.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
 		fmt.Printf("oops error from retryablehttp.NewRequest=%s", err.Error())
-		log.Fatal()
+		hclog.L().Error("\nfailed to initialize AppRole auth method: %w", err)
+		return "", err
 	}
 	req.Header.Set("X-Vault-Token", token)
 	// req.Header.Set("Content-Type", "application/json")
@@ -668,17 +655,16 @@ func createSecretIdForRole(vaulturl string, token string, approle string) (strin
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Printf("oops error from client.Do=%s", err.Error())
-		log.Fatal()
+		return "", err
 	}
 
 	defer resp.Body.Close()
 
-	log.Printf("resp=%v", resp)
+	hclog.L().Error("resp=%v", resp)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Printf("goDoHttp io.ReadAll Error=%v\n", err)
-		log.Fatal()
 	}
 
 	bodyMap := map[string]interface{}{}
@@ -686,16 +672,13 @@ func createSecretIdForRole(vaulturl string, token string, approle string) (strin
 	err = json.Unmarshal([]byte(body), &bodyMap)
 	if err != nil {
 		fmt.Printf("goDoHttp Unmarshall Error=%v\n", err)
-		log.Fatal()
 	}
-	log.Printf("\nbodymap=%v", bodyMap)
+	hclog.L().Error("\nbodymap=%v", bodyMap)
 
 	dataMap := bodyMap["data"]
 	// dataMapDeets := map[string]interface{}{}
 	dataMapDeets := dataMap.(map[string]interface{})
-
-	log.Printf("\nnewSecretId=%v", dataMapDeets["secret_id"])
-
+	hclog.L().Error("\nnewSecretId=%v", dataMapDeets["secret_id"])
 	si := fmt.Sprintf("%s", dataMapDeets["secret_id"])
 
 	return si, nil

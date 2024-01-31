@@ -6,6 +6,7 @@ import (
 	b64 "encoding/base64"
 	"fmt"
 
+	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
 	hclog "github.com/hashicorp/go-hclog"
@@ -37,7 +38,7 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 	// iterate through the supplied map, adding it to the config map
 	for k, v := range data.Raw {
 
-		prefix := GetKeyPrefix(k, fmt.Sprintf("%v", v), nil)
+		prefix := aeadutils.GetKeyPrefix(k, fmt.Sprintf("%v", v), nil)
 		k = prefix + k
 
 		if !overwriteConfig {
@@ -109,10 +110,10 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 	}
 	result := make(map[string]interface{}, len(AEAD_CONFIG.Items()))
 	for k, v := range AEAD_CONFIG.Items() {
-		_, err := ValidateKeySetJson(v.(string))
+		_, err := aeadutils.ValidateKeySetJson(v.(string))
 		if err == nil {
 			// key is valid
-			v = muteKeyMaterial(v.(string))
+			v = aeadutils.MuteKeyMaterial(v.(string))
 		}
 		result[k] = v
 	}
@@ -133,7 +134,7 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 	m := map[string]interface{}{}
 	for k, v := range AEAD_CONFIG.Items() {
 		str := ""
-		_, determinstic := isKeyJsonDeterministic(v)
+		_, determinstic := aeadutils.IsKeyJsonDeterministic(v)
 		if determinstic {
 			str = "DETERMINISTIC"
 		} else {
@@ -199,31 +200,31 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 	for keyField, encryptionKey := range AEAD_CONFIG.Items() {
 		fieldName := fmt.Sprintf("%v", keyField)
 		keyStr := fmt.Sprintf("%v", encryptionKey)
-		_, err := ValidateKeySetJson(keyStr)
+		_, err := aeadutils.ValidateKeySetJson(keyStr)
 		if err != nil {
 			// not a valid key
 			continue
 		} else {
-			encryptionKeyStr, deterministic := isKeyJsonDeterministic(encryptionKey)
+			encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionKey)
 			if deterministic {
-				kh, _, err := CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
+				kh, _, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 				if err != nil {
 					hclog.L().Error("feiled to create key handlep")
 					return &logical.Response{
 						Data: make(map[string]interface{}),
 					}, nil
 				}
-				RotateKeys(kh, true)
+				aeadutils.RotateKeys(kh, true)
 				b.saveKeyToConfig(kh, fieldName, ctx, req, true)
 			} else {
-				kh, _, err := CreateInsecureHandleAndAead(encryptionKeyStr)
+				kh, _, err := aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
 				if err != nil {
 					hclog.L().Error("feiled to create key handlep")
 					return &logical.Response{
 						Data: make(map[string]interface{}),
 					}, nil
 				}
-				RotateKeys(kh, false)
+				aeadutils.RotateKeys(kh, false)
 				b.saveKeyToConfig(kh, fieldName, ctx, req, true)
 			}
 		}
@@ -256,7 +257,7 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := getEncryptionKey(fieldName)
+		encryptionkey, ok := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
 		}
@@ -273,7 +274,7 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 			statusStr := fmt.Sprintf("%s", status)
 
 			// update the status, get a new heyhandle
-			newKh, err := UpdateKeyStatus(kh, keyId, statusStr)
+			newKh, err := aeadutils.UpdateKeyStatus(kh, keyId, statusStr)
 			if err != nil || newKh == nil {
 				hclog.L().Error("failed to update the status")
 				resp[fieldName] = "failed to update the status"
@@ -295,10 +296,10 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 
 	mutedResult := make(map[string]interface{}, len(resp))
 	for k, v := range resp {
-		_, err := ValidateKeySetJson(v.(string))
+		_, err := aeadutils.ValidateKeySetJson(v.(string))
 		if err == nil {
 			// we do have a valid key
-			v = muteKeyMaterial(v.(string))
+			v = aeadutils.MuteKeyMaterial(v.(string))
 		}
 		mutedResult[k] = v
 	}
@@ -320,7 +321,7 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := getEncryptionKey(fieldName)
+		encryptionkey, ok := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
 
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
@@ -338,7 +339,7 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 			materialStr := fmt.Sprintf("%s", material)
 
 			// update the status, get a new heyhandle
-			newKh, err := UpdateKeyMaterial(kh, keyId, materialStr)
+			newKh, err := aeadutils.UpdateKeyMaterial(kh, keyId, materialStr)
 			if err != nil {
 				hclog.L().Error("failed to update the material")
 				resp[fieldName] = "failed to update the material"
@@ -360,10 +361,10 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 
 	mutedResult := make(map[string]interface{}, len(resp))
 	for k, v := range resp {
-		_, err := ValidateKeySetJson(v.(string))
+		_, err := aeadutils.ValidateKeySetJson(v.(string))
 		if err == nil {
 			// valid key
-			v = muteKeyMaterial(v.(string))
+			v = aeadutils.MuteKeyMaterial(v.(string))
 		}
 		mutedResult[k] = v
 	}
@@ -385,7 +386,7 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := getEncryptionKey(fieldName)
+		encryptionkey, ok := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
 
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
@@ -401,7 +402,7 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 		newPrimaryKeyStr := fmt.Sprintf("%s", v)
 
 		// update the status, get a new heyhandle
-		newKh, err := UpdatePrimaryKeyID(kh, newPrimaryKeyStr)
+		newKh, err := aeadutils.UpdatePrimaryKeyID(kh, newPrimaryKeyStr)
 		if err != nil {
 			hclog.L().Error("failed to update the keyID")
 			resp[fieldName] = "failed to update the keyID"
@@ -423,10 +424,10 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 
 	mutedResult := make(map[string]interface{}, len(resp))
 	for k, v := range resp {
-		_, err := ValidateKeySetJson(v.(string))
+		_, err := aeadutils.ValidateKeySetJson(v.(string))
 		if err == nil {
 			// valid key
-			v = muteKeyMaterial(v.(string))
+			v = aeadutils.MuteKeyMaterial(v.(string))
 		}
 		mutedResult[k] = v
 	}
@@ -448,7 +449,7 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 
 	for fieldName, v := range data.Raw {
 		// GET THE KEY
-		encryptionkey, ok := getEncryptionKey(fieldName)
+		encryptionkey, ok := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
 
 		if !ok {
 			hclog.L().Error("failed to get an existing key")
@@ -466,7 +467,7 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 			newKeyStr := fmt.Sprintf("%s", newKey)
 
 			// update the status, get a new heyhandle
-			newKh, err := UpdateKeyID(kh, keyId, newKeyStr)
+			newKh, err := aeadutils.UpdateKeyID(kh, keyId, newKeyStr)
 			if err != nil {
 				hclog.L().Error("failed to update the keyid")
 				resp[fieldName] = "failed to update the keyid"
@@ -488,10 +489,10 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 
 	mutedResult := make(map[string]interface{}, len(resp))
 	for k, v := range resp {
-		_, err := ValidateKeySetJson(v.(string))
+		_, err := aeadutils.ValidateKeySetJson(v.(string))
 		if err == nil {
 			// valid key
-			v = muteKeyMaterial(v.(string))
+			v = aeadutils.MuteKeyMaterial(v.(string))
 		}
 		mutedResult[k] = v
 	}
@@ -509,7 +510,7 @@ func (b *backend) pathImportKey(ctx context.Context, req *logical.Request, data 
 		jSonKeyset := fmt.Sprintf("%s", v)
 
 		// is the json a valid key
-		_, err := ValidateKeySetJson(jSonKeyset)
+		_, err := aeadutils.ValidateKeySetJson(jSonKeyset)
 		if err != nil {
 			hclog.L().Error("pathImportKey Invaid Json as key", err.Error())
 			return &logical.Response{
@@ -561,7 +562,7 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 		}
 
 		// create new DAEAD key
-		keysetHandle, tinkDetAead, err := CreateNewDeterministicAead()
+		keysetHandle, tinkDetAead, err := aeadutils.CreateNewDeterministicAead()
 		if err != nil {
 			hclog.L().Error("Failed to create a new key", err)
 			return &logical.Response{
@@ -625,7 +626,7 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 		}
 
 		// create new DAEAD key
-		keysetHandle, tinkAead, err := CreateNewAead()
+		keysetHandle, tinkAead, err := aeadutils.CreateNewAead()
 		if err != nil {
 			hclog.L().Error("Failed to create a new key", err)
 			return &logical.Response{
@@ -661,7 +662,7 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 
 func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string, ctx context.Context, req *logical.Request, overwrite bool) {
 
-	prefix := GetKeyPrefix(fieldName, "", keysetHandle)
+	prefix := aeadutils.GetKeyPrefix(fieldName, "", keysetHandle)
 	fieldName = prefix + fieldName
 
 	// retrive the config from  storage
@@ -680,7 +681,7 @@ func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string,
 	}
 	// extract the key that could be stored
 	// save the new key into config
-	keyAsJson, err := ExtractInsecureKeySetFromKeyhandle(keysetHandle)
+	keyAsJson, err := aeadutils.ExtractInsecureKeySetFromKeyhandle(keysetHandle)
 	if err != nil {
 		hclog.L().Error("Failed to save to config", err)
 	}
