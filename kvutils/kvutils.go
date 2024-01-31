@@ -28,21 +28,21 @@ import (
 )
 
 type KVOptions struct {
-	Vault_kv_url                   string
-	Vault_kv_active                string
-	Vault_kv_approle_id            string
-	Vault_kv_secret_id             string
-	Vault_kv_engine                string
-	Vault_kv_version               string
-	Vault_transit_active           string
-	Vault_transit_url              string
-	Vault_transit_approle_id       string
-	Vault_transit_secret_id        string
-	Vault_transit_kv_engine        string
-	Vault_transit_kv_version       string
-	Vault_transit_namespace        string
-	Vault_transit_engine           string
-	Vault_transit_tokenname        string
+	Vault_kv_url             string
+	Vault_kv_active          string
+	Vault_kv_approle_id      string
+	Vault_kv_secret_id       string
+	Vault_kv_engine          string
+	Vault_kv_version         string
+	Vault_transit_active     string
+	Vault_transit_url        string
+	Vault_transit_approle_id string
+	Vault_transit_secret_id  string
+	Vault_transit_kv_engine  string
+	Vault_transit_kv_version string
+	Vault_transit_namespace  string
+	Vault_transit_engine     string
+	// Vault_transit_tokenname        string
 	Vault_transit_kek              string
 	Vault_kv_writer_role           string
 	Vault_secretgenerator_iam_role string
@@ -375,29 +375,33 @@ type EncryptedKVKey struct {
 // type OptionsResolver func(*KVOptions) error
 // type ClientResolver func(OptionsResolver) (*vault.Client, error)
 
-func UnwrapKeyset(client *VaultClientWrapper, encryptedKVKey EncryptedKVKey, kvTransitKey string) (string, error) {
-	decryptedKey, err := KVTransitDecrypt(client, encryptedKVKey, kvTransitKey)
+func UnwrapKeyset(client *VaultClientWrapper, encryptedKVKey EncryptedKVKey, kvTransitKey string, kvTransitEngine string) (string, error) {
+	decryptedKey, err := KVTransitDecrypt(client, encryptedKVKey, kvTransitKey, kvTransitEngine)
 	if err != nil {
 		return "", err
 	}
 	return decryptedKey.Plaintext, nil
 }
-func WrapKeyset(client *VaultClientWrapper, rawKeyset string, kvTransitKey string) (string, error) {
-	encryptedKeyset, err := KVTransitEncrypt(client, rawKeyset, kvTransitKey)
+func WrapKeyset(client *VaultClientWrapper, rawKeyset string, kvTransitKey string, kvTransitEngine string) (string, error) {
+	encryptedKeyset, err := KVTransitEncrypt(client, rawKeyset, kvTransitKey, kvTransitEngine)
 	if err != nil {
 		return "", err
 	}
 	return encryptedKeyset.Ciphertext, nil
 }
-func KVTransitEncrypt(c *VaultClientWrapper, rawKeyset string, kvTransitKey string) (EncryptedKVKey, error) {
+func KVTransitEncrypt(c *VaultClientWrapper, rawKeyset string, kvTransitKey string, kvTransitEngine string) (EncryptedKVKey, error) {
 	base64Keyset := base64.StdEncoding.EncodeToString([]byte(rawKeyset))
 
 	dataToEncrypt := map[string]interface{}{
 		"plaintext": base64Keyset,
 	}
 
+	if kvTransitEngine == "" {
+		kvTransitEngine = "transit"
+	}
+
 	// Use Transit KV engine to encrypt the data
-	encrypted, err := (*c).Write("transit/encrypt/"+kvTransitKey, dataToEncrypt)
+	encrypted, err := (*c).Write(kvTransitEngine+"/encrypt/"+kvTransitKey, dataToEncrypt)
 	if err != nil {
 		return EncryptedKVKey{}, nil
 	}
@@ -414,15 +418,21 @@ func KVTransitEncrypt(c *VaultClientWrapper, rawKeyset string, kvTransitKey stri
 
 	return secretData, nil
 }
-func KVTransitDecrypt(c *VaultClientWrapper, encrypted EncryptedKVKey, kvTransitKey string) (DecryptedKVKey, error) {
+func KVTransitDecrypt(c *VaultClientWrapper, encrypted EncryptedKVKey, kvTransitKey string, kvTransitEngine string) (DecryptedKVKey, error) {
+
+	if kvTransitEngine == "" {
+		kvTransitEngine = "transit"
+	}
+
 	// Use Transit KV engine to decrypt the data
-	decrypted, err := (*c).Write("transit/decrypt/"+kvTransitKey, map[string]interface{}{
+	decrypted, err := (*c).Write(kvTransitEngine+"/decrypt/"+kvTransitKey, map[string]interface{}{
 		"ciphertext": encrypted.Ciphertext,
 	})
 
 	if err != nil {
 		return DecryptedKVKey{}, fmt.Errorf("failed to obtain Vault secret: %w", err)
 	}
+
 	var retrievedData DecryptedKVKey
 	retrievedData.Plaintext = decrypted.Data["plaintext"].(string)
 

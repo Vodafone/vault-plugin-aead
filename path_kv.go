@@ -299,10 +299,6 @@ func resolveKvOptions(kvOptions *kvutils.KVOptions) error {
 	if ok {
 		kvOptions.Vault_transit_namespace = fmt.Sprintf("%v", Vault_transit_namespace)
 	}
-	Vault_transit_tokenname, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_TOKENNAME")
-	if ok {
-		kvOptions.Vault_transit_tokenname = fmt.Sprintf("%v", Vault_transit_tokenname)
-	}
 	Vault_transit_kek, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KEK")
 	if ok {
 		kvOptions.Vault_transit_kek = fmt.Sprintf("%v", Vault_transit_kek)
@@ -516,40 +512,19 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 		return false, err
 	}
 
-	// read the secrets in the transit wrapped secret store
-	keyStr := ""
-	transitTokenStr := ""
-	paths, err := kvutils.KvGetSecretPaths(client.WithNamespace(kvOptions.Vault_transit_namespace), kvOptions.Vault_transit_kv_engine, kvOptions.Vault_transit_kv_version, "")
-	if err != nil {
-		hclog.L().Error("failed to read paths")
-	}
-	for _, path := range paths {
-		kvsecret, _ := kvutils.KvGetSecret(client.WithNamespace(kvOptions.Vault_transit_namespace), kvOptions.Vault_transit_kv_engine, kvOptions.Vault_transit_kv_version, path)
-		secret, ok := kvsecret.Data["key"]
-		if ok {
-			if path == kvOptions.Vault_transit_tokenname {
-				transitTokenStr = fmt.Sprintf("%v", secret)
-			}
-		}
-	}
-
-	if transitTokenStr == keyStr {
-		hclog.L().Error("oops")
-	}
-
 	// make a new keyname
 	keyname := aeadutils.RemoveKeyPrefix(keyNameIn)
 	newkeyname, err := kvutils.DeriveKeyName(kvOptions.Vault_transit_namespace, keyname, keyjson)
 	hclog.L().Info("newkeyname: " + newkeyname)
 
 	//wrap the key
-	var vaultWrapper kvutils.VaultClientWrapper = kvutils.VaultClientWrapperImpl{Client: client}
-	wrappedkey, err := kvutils.WrapKeyset(&vaultWrapper, keyjson, transitTokenStr)
+	var vaultWrapper kvutils.VaultClientWrapper = kvutils.VaultClientWrapperImpl{Client: client.WithNamespace(kvOptions.Vault_transit_namespace)}
+	wrappedkey, err := kvutils.WrapKeyset(&vaultWrapper, keyjson, kvOptions.Vault_transit_kek, kvOptions.Vault_transit_engine)
 	if err != nil {
 		hclog.L().Error("failed to wrap key")
 	}
 
-	base64Keyset, err := kvutils.UnwrapKeyset(&vaultWrapper, kvutils.EncryptedKVKey{Ciphertext: wrappedkey}, transitTokenStr)
+	base64Keyset, err := kvutils.UnwrapKeyset(&vaultWrapper, kvutils.EncryptedKVKey{Ciphertext: wrappedkey}, kvOptions.Vault_transit_kek, kvOptions.Vault_transit_engine)
 	if err != nil {
 		hclog.L().Error("failed to unwrap key")
 	}
