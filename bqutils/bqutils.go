@@ -15,7 +15,9 @@ import (
 	"github.com/google/tink/go/keyset"
 	hclog "github.com/hashicorp/go-hclog"
 	cmap "github.com/orcaman/concurrent-map"
-	kmspb "google.golang.org/genproto/googleapis/cloud/kms/v1"
+
+	// kmspb "google.golang.org/genproto/googleapis/cloud/kms/v1"
+	kmspb "cloud.google.com/go/kms/apiv1/kmspb"
 )
 
 type Options struct {
@@ -53,8 +55,8 @@ func DoBQSync(kh *keyset.Handle, fieldName string, deterministic bool, envOption
 
 	// if <region> is not there, we can call the create routine
 	// if <region> is there we need to check what is present for <region> EU, europe_west1, europe_west2, europe_west3 and reset name of the dataset and the KMS key to the kms of that region
-	// projects/vf-cis-rubik-tst-kms/locations/<region>/keyRings/hsm-key-tink-pf1-<region>/cryptoKeys/bq-key
-	// projects/vf-cis-rubik-tst-kms/locations/europe/keyRings/hsm-key-tink-pf1-europe/cryptoKeys/bq-key
+	// projects/<project>/locations/<region>/keyRings/hsm-key-tink-<lm>-<region>/cryptoKeys/bq-key
+	// projects/<project>/locations/europe/keyRings/hsm-key-tink-<lm>-europe/cryptoKeys/bq-key
 	// TODO
 	bigqueryClient, err := bigquery.NewClient(ctx, options.projectId)
 	if err != nil {
@@ -68,8 +70,8 @@ func DoBQSync(kh *keyset.Handle, fieldName string, deterministic bool, envOption
 	for _, region := range regionlist {
 
 		newOptions := Options(options)
-		// options.encryptDatasetId = "vfpf1_dh_lake_aead_encrypt_<region>_lv_s"
-		// options.decryptDatasetId = "vfpf1_dh_lake_<category>_aead_decrypt_<region>_lv_s"
+		// options.encryptDatasetId = "vf<lm>_dh_lake_aead_encrypt_<region>_lv_s"
+		// options.decryptDatasetId = "vf<lm>_dh_lake_<category>_aead_decrypt_<region>_lv_s"
 
 		// first a simple substitution for <category>
 		if strings.Contains(options.encryptDatasetId, "_<category>") {
@@ -91,11 +93,11 @@ func DoBQSync(kh *keyset.Handle, fieldName string, deterministic bool, envOption
 
 			// infer the kms name
 			// kms has the form:
-			// projects/vf-cis-rubik-tst-kms/locations/<region>/keyRings/hsm-key-tink-pf1-<region>/cryptoKeys/bq-key
+			// projects/<project>/locations/<region>/keyRings/hsm-key-tink-<lm>-<region>/cryptoKeys/bq-key
 			// and needs to be translated into
-			// projects/vf-cis-rubik-tst-kms/locations/europe/keyRings/hsm-key-tink-pf1-europe/cryptoKeys/bq-key
+			// projects/<project>/locations/europe/keyRings/hsm-key-tink-<lm>-europe/cryptoKeys/bq-key
 			// or
-			// projects/vf-cis-rubik-tst-kms/locations/europe-west1/keyRings/hsm-key-tink-pf1-europe-west1/cryptoKeys/bq-key
+			// projects/<project>/locations/europe-west1/keyRings/hsm-key-tink-<lm>-europe-west1/cryptoKeys/bq-key
 
 			expectedKMSRegion := actualDatasetRegion
 			if actualDatasetRegion == "eu" {
@@ -145,11 +147,11 @@ func DoBQSync(kh *keyset.Handle, fieldName string, deterministic bool, envOption
 
 			// infer the kms name
 			// kms has the form:
-			// projects/vf-cis-rubik-tst-kms/locations/<region>/keyRings/hsm-key-tink-pf1-<region>/cryptoKeys/bq-key
+			// projects/<project>/locations/<region>/keyRings/hsm-key-tink-<lm>-<region>/cryptoKeys/bq-key
 			// and needs to be translated into
-			// projects/vf-cis-rubik-tst-kms/locations/europe/keyRings/hsm-key-tink-pf1-europe/cryptoKeys/bq-key
+			// projects/<project>/locations/europe/keyRings/hsm-key-tink-<lm>-europe/cryptoKeys/bq-key
 			// or
-			// projects/vf-cis-rubik-tst-kms/locations/europe-west1/keyRings/hsm-key-tink-pf1-europe-west1/cryptoKeys/bq-key
+			// projects/<project>/locations/europe-west1/keyRings/hsm-key-tink-<lm>-europe-west1/cryptoKeys/bq-key
 
 			expectedKMSRegion := actualDatasetRegion
 			if actualDatasetRegion == "eu" {
