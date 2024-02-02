@@ -1,0 +1,14 @@
+vaultUrl: url # url of vault
+approleId: aaa-bbb-ccc # vault approle that can read the secret engine
+secretId: ddd-eee-fff # vault secret for the approle
+engine: my-secret-engine # vault secret engine to be read
+engineVersion: v1 # v1 or v2 - the version of the engine 
+projectId: my-project # project to put the aead routines in
+encryptDatasetId: my_encrypt_dataset_<region>_lv_s # template for the encryption dataset
+decryptDatasetId: my_encrypt_dataset_<category>_aead_decrypt_<region>_lv_s # template for the decryption dataset
+detRoutinePrefix: siv
+nondetRoutinePrefix: gcm
+kmsKeyName: projects/my-kms-project/locations/<region>/keyRings/hsm-key-tink-pf1-<region>/cryptoKeys/bq-key # template for the kms to be used
+kvKeys: # optional if not present all keys found will be synced
+  - gcm/addressline
+  - siv/addressline
