@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -12,8 +11,6 @@ import (
 	aeadutils "github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/Vodafone/vault-plugin-aead/bqutils"
 	kvutils "github.com/Vodafone/vault-plugin-aead/kvutils"
-
-	"github.com/google/tink/go/keyset"
 
 	cmap "github.com/orcaman/concurrent-map"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -103,10 +100,10 @@ func readKV(vaultconf conf, bqconfig cmap.ConcurrentMap) {
 			if !ok {
 				fmt.Printf("\nfailed to read back the aead engine %s key %s", vaultconf.Engine, path)
 			}
-			if _, kh, err := isSecretAnAEADKeyset(jsonKey, path); err != nil {
+			if _, kh, err := aeadutils.IsSecretAnAEADKeyset(jsonKey, path); err != nil {
 				fmt.Printf("\nfailed to read valid secret engine %s key %s", vaultconf.Engine, path)
 			} else {
-				fmt.Print("\npath: " + path + " is a valid aeadkey")
+				fmt.Print("\npath: " + path + " is a valid aeadkey\n")
 				newkeyname := aeadutils.RemoveKeyPrefix(path)
 				deterministic := aeadutils.IsKeyHandleDeterministic(kh)
 
@@ -120,27 +117,4 @@ func readKV(vaultconf conf, bqconfig cmap.ConcurrentMap) {
 
 	}
 	return
-}
-
-func isSecretAnAEADKeyset(secret interface{}, fName string) (string, *keyset.Handle, error) {
-	secretStr := fmt.Sprintf("%v", secret)
-	fieldName := aeadutils.RemoveKeyPrefix(fName)
-	var jMap map[string]aeadutils.KeySetStruct
-	if err := json.Unmarshal([]byte(secretStr), &jMap); err != nil {
-		fmt.Printf("\nfailed to unmarshall the secret " + fName)
-		return "", nil, err
-	}
-
-	keysetAsMap := jMap[fieldName]
-	keysetAsByteArray, err := json.Marshal(keysetAsMap)
-	if err != nil {
-		fmt.Printf("failed to marshall " + fName)
-	}
-	jsonToValidate := string(keysetAsByteArray)
-	kh, err := aeadutils.ValidateKeySetJson(jsonToValidate)
-	if err != nil {
-		fmt.Printf("failed to recreate a key handle from the json " + fName)
-		return "", nil, err
-	}
-	return jsonToValidate, kh, nil
 }

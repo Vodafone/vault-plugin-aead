@@ -132,7 +132,11 @@ func DoBQSync(kh *keyset.Handle, fieldName string, deterministic bool, envOption
 				}
 
 				doBQRoutineCreateOrUpdate(ctx, newOptions, escapedWrappedKeyset, deterministic, "encrypt")
+			} else {
+				hclog.L().Info("Failed to find kms key: " + newOptions.kmsKeyName)
 			}
+		} else {
+			hclog.L().Info("Failed to find dataset: " + newOptions.encryptDatasetId)
 		}
 
 		// search for the DECRYPT dataset
@@ -186,7 +190,11 @@ func DoBQSync(kh *keyset.Handle, fieldName string, deterministic bool, envOption
 				}
 
 				doBQRoutineCreateOrUpdate(ctx, newOptions, escapedWrappedKeyset, deterministic, "decrypt")
+			} else {
+				hclog.L().Info("Failed to find kms key: " + newOptions.kmsKeyName)
 			}
+		} else {
+			hclog.L().Info("Failed to find dataset: " + newOptions.decryptDatasetId)
 		}
 
 	}
