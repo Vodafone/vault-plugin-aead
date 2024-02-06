@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	kv "github.com/hashicorp/vault-plugin-secrets-kv"
@@ -17,12 +19,11 @@ import (
 	"github.com/hashicorp/vault/vault"
 )
 
-func SetupVault(t *testing.T) *vault_api.Client {
+func SetupVault(t *testing.T) (*vault_api.Client, func()) {
 	cluster, vaultConfig := CreateVaultTestCluster(t)
 	_ = vaultConfig
-	defer cluster.Cleanup()
 	client := cluster.Cores[0].Client
-	return client
+	return client, cluster.Cleanup
 }
 
 // in memory vault for testing
@@ -43,6 +44,7 @@ func CreateVaultTestCluster(t *testing.T) (*vault.TestCluster, map[string]string
 	}
 	cluster := vault.NewTestCluster(t, coreConfig, &vault.TestClusterOptions{
 		HandlerFunc: vault_http.Handler,
+		NumCores:    1,
 	})
 	cluster.Start()
 	cluster.Cores[0].Client.Sys().Unmount("secret")
@@ -55,12 +57,12 @@ func CreateVaultTestCluster(t *testing.T) (*vault.TestCluster, map[string]string
 	}); err != nil {
 		t.Fatal(err)
 	}
-
 	// ---
-	client := cluster.Cores[0].Client
+	var client *vault_api.Client = cluster.Cores[0].Client
 
 	// configureFf1(client, t, pluginPath)
 	roleID, secretID := ConfigureApprole(client, t)
+
 	return cluster, map[string]string{"VAULT_KV_APPROLE_ID": roleID, "VAULT_KV_SECRET_ID": secretID, "VAULT_KV_URL": client.Address()}
 }
 
@@ -147,6 +149,102 @@ func ConfigureApprole(client *vault_api.Client, t *testing.T) (string, string) {
 	return roleID, secretID
 }
 
+func assertCanPerformOperation(t *testing.T, path string, operation func() (*vault_api.Secret, error), operationName string) {
+	_, err := operation()
+	if err != nil {
+		fmt.Println("Error:", err)
+		t.Error("Should have been able to ", operationName, " at ", path)
+	}
+}
+func assertCannotPerformOperation(t *testing.T, path string, operation func() (*vault_api.Secret, error), operationName string) {
+	_, err := operation()
+	if err == nil {
+		fmt.Println("No error, but expected one.")
+		t.Error("Should not have been able to", operationName, " at ", path)
+	}
+}
+
+func AssertCanRead(c *vault_api.Client, t *testing.T, path string) {
+	assertCanPerformOperation(t, path, func() (*vault_api.Secret, error) {
+		return c.Logical().Read(path)
+	}, "read")
+}
+
+func AssertCanList(c *vault_api.Client, t *testing.T, path string) {
+	assertCanPerformOperation(t, path, func() (*vault_api.Secret, error) {
+		return c.Logical().List(path)
+	}, "list")
+}
+
+func AssertCanDelete(c *vault_api.Client, t *testing.T, path string) {
+	assertCanPerformOperation(t, path, func() (*vault_api.Secret, error) {
+		return c.Logical().Delete(path)
+	}, "delete")
+}
+
+func AssertCanWrite(c *vault_api.Client, t *testing.T, path string) {
+	data := map[string]interface{}{"value": "test value"}
+	assertCanPerformOperation(t, path, func() (*vault_api.Secret, error) {
+		return c.Logical().Write(path, data)
+	}, "write")
+}
+func AssertCannotRead(c *vault_api.Client, t *testing.T, path string) {
+	assertCannotPerformOperation(t, path, func() (*vault_api.Secret, error) {
+		return c.Logical().Read(path)
+	}, "read")
+}
+
+func AssertCannotList(c *vault_api.Client, t *testing.T, path string) {
+	assertCannotPerformOperation(t, path, func() (*vault_api.Secret, error) {
+		return c.Logical().List(path)
+	}, "list")
+}
+
+func AssertCannotDelete(c *vault_api.Client, t *testing.T, path string) {
+	assertCannotPerformOperation(t, path, func() (*vault_api.Secret, error) {
+		return c.Logical().Delete(path)
+	}, "delete")
+}
+
+func AssertCannotWrite(c *vault_api.Client, t *testing.T, path string) {
+	data := map[string]interface{}{"value": "test value"}
+	assertCannotPerformOperation(t, path, func() (*vault_api.Secret, error) {
+		return c.Logical().Write(path, data)
+	}, "write")
+}
+
+func ClearPaths(c *vault_api.Client, paths []string) {
+	for _, path := range paths {
+		c.Sys().Unmount(path)
+	}
+}
+func MockPaths(c *vault_api.Client, paths []string) {
+	for _, path := range paths {
+		c.Sys().Mount(path, &vault_api.MountInput{
+			Type:        "kv",
+			Description: "Mock KV Store",
+			Options:     map[string]string{"version": "1"},
+		})
+	}
+}
+
+func AttachPolicyAndGetClient(client *vault_api.Client, policyName string, policy string) *vault_api.Client {
+	client.Sys().PutPolicy(policyName, policy)
+
+	createRequest := &vault_api.TokenCreateRequest{Policies: []string{policyName}}
+	tokenAuth := client.Auth().Token()
+	secret, err := tokenAuth.Create(createRequest)
+	if err != nil {
+		fmt.Println(err)
+	}
+	token := secret.Auth.ClientToken
+
+	config := client.CloneConfig()
+	newClient, _ := vault_api.NewClient(config)
+	newClient.SetToken(token)
+	return newClient
+}
+
 func configureFf1(client *vault_api.Client, t *testing.T, pluginPath string) {
 	if err := client.Sys().Mount("transit", &vault_api.MountInput{
 		Type: "transit",
@@ -189,4 +287,20 @@ func getSha256(fileName string) string {
 	hashString := fmt.Sprintf("%x", hashValue)
 
 	return hashString
+}
+func ListFilesWithExtension(dir, ext string) ([]string, error) {
+	var files []string
+	fileInfo, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return files, err
+	}
+
+	ext = strings.ToLower(ext)
+	for _, file := range fileInfo {
+		if !file.IsDir() && strings.HasSuffix(strings.ToLower(file.Name()), ext) {
+			files = append(files, filepath.Join(dir, file.Name()))
+		}
+	}
+
+	return files, nil
 }
