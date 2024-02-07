@@ -151,14 +151,16 @@ func ConfigureApprole(client *vault_api.Client, t *testing.T) (string, string) {
 
 func assertCanPerformOperation(t *testing.T, path string, operation func() (*vault_api.Secret, error), operationName string) {
 	_, err := operation()
-	if err != nil {
+	responseError, ok := err.(*vault_api.ResponseError)
+	if err != nil && ok && responseError.StatusCode == 403 {
 		fmt.Println("Error:", err)
 		t.Error("Should have been able to ", operationName, " at ", path)
 	}
 }
 func assertCannotPerformOperation(t *testing.T, path string, operation func() (*vault_api.Secret, error), operationName string) {
 	_, err := operation()
-	if err == nil {
+	responseError, _ := err.(*vault_api.ResponseError)
+	if err == nil || responseError.StatusCode != 403 {
 		fmt.Println("No error, but expected one.")
 		t.Error("Should not have been able to", operationName, " at ", path)
 	}
