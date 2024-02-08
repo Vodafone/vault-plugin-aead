@@ -113,7 +113,6 @@ func setup(t *testing.T) (*vault.Client, func()) {
 }
 
 func TestBackend(t *testing.T) {
-
 	t.Run("example policy test", func(t *testing.T) {
 		client, clusterCleanup := setup(t)
 		defer clusterCleanup()
