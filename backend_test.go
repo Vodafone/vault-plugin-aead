@@ -15,6 +15,7 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/Vodafone/vault-plugin-aead/kvutils"
+	"github.com/Vodafone/vault-plugin-aead/testutils"
 	version "github.com/Vodafone/vault-plugin-aead/version"
 	"github.com/google/tink/go/daead"
 	"github.com/google/tink/go/insecurecleartextkeyset"
@@ -103,8 +104,87 @@ func testBackend(tb testing.TB) (*backend, logical.Storage) {
 
 	return b.(*backend), config.StorageView
 }
+func setup(t *testing.T) (*vault.Client, func()) {
+	backendTestCluster, baseConfig := testutils.CreateVaultTestCluster(t)
+	backendTestClusterConfig := testutils.GetVaultConfig(baseConfig)
+	_ = backendTestClusterConfig
+	client := backendTestCluster.Cores[0].Client
+	return client, backendTestCluster.Cleanup
+}
 
 func TestBackend(t *testing.T) {
+	t.Run("example policy test", func(t *testing.T) {
+		client, clusterCleanup := setup(t)
+		defer clusterCleanup()
+		testutils.MockPaths(client, []string{"all", "plus", "r", "l", "w", "d"})
+
+		//["read", "list", "create", "update", "delete"]
+		policy := `
+		 path "all/*" {
+		   capabilities = ["read", "list", "create", "update", "delete"]
+		 }
+		 path "plus/+" {
+			capabilities = ["read", "list", "create", "update", "delete"]
+		  }
+ 		  path "r/*" {
+			capabilities = ["read"]
+		  }
+ 		  path "l/*" {
+			capabilities = ["list"]
+		  }
+ 		  path "w/*" {
+			capabilities = ["create", "update"]
+		  }
+		  path "d/*" {
+			capabilities = ["delete"]
+		  }
+		 `
+		newClient := testutils.AttachPolicyAndGetClient(client, "test-policy-foo", policy)
+
+		// Read List Write Delete
+		testutils.AssertCanRead(newClient, t, "all/data")
+		testutils.AssertCanList(newClient, t, "all/data")
+		testutils.AssertCanDelete(newClient, t, "all/data")
+		testutils.AssertCanWrite(newClient, t, "all/data")
+		testutils.AssertCanRead(newClient, t, "all/data/test")
+		testutils.AssertCanList(newClient, t, "all/data/test")
+		testutils.AssertCanDelete(newClient, t, "all/data/test")
+		testutils.AssertCanWrite(newClient, t, "all/data/test")
+
+		testutils.AssertCanRead(newClient, t, "plus/data")
+		testutils.AssertCanList(newClient, t, "plus")
+		testutils.AssertCanDelete(newClient, t, "plus/data")
+		testutils.AssertCanWrite(newClient, t, "plus/data")
+		testutils.AssertCannotRead(newClient, t, "plus/data/test")
+		testutils.AssertCannotList(newClient, t, "plus/data/test")
+		testutils.AssertCannotDelete(newClient, t, "plus/data/test")
+		testutils.AssertCannotWrite(newClient, t, "plus/data/test")
+		testutils.AssertCannotRead(newClient, t, "plus")
+		testutils.AssertCannotDelete(newClient, t, "plus")
+		testutils.AssertCannotWrite(newClient, t, "plus")
+
+		testutils.AssertCanRead(newClient, t, "r/data/test")
+		testutils.AssertCannotList(newClient, t, "r/data/test")
+		testutils.AssertCannotDelete(newClient, t, "r/data/test")
+		testutils.AssertCannotWrite(newClient, t, "r/data/test")
+
+		testutils.AssertCanList(newClient, t, "l/data/test")
+		testutils.AssertCannotRead(newClient, t, "l/data/test")
+		testutils.AssertCannotDelete(newClient, t, "l/data/test")
+		testutils.AssertCannotWrite(newClient, t, "l/data/test")
+
+		testutils.AssertCanDelete(newClient, t, "d/data")
+		testutils.AssertCannotRead(newClient, t, "d/data/test")
+		testutils.AssertCannotList(newClient, t, "d/data/test")
+		testutils.AssertCannotWrite(newClient, t, "d/data/test")
+
+		testutils.AssertCanWrite(newClient, t, "w/data")
+		testutils.AssertCannotRead(newClient, t, "w/data/test")
+		testutils.AssertCannotList(newClient, t, "w/data/test")
+		testutils.AssertCannotDelete(newClient, t, "w/data/test")
+
+	})
+
 	t.Run("test1 info read", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
@@ -148,11 +228,14 @@ func TestBackend(t *testing.T) {
 	t.Run("test4 deterministic encryption with supplied DetAEAD key", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
+		backendTestCluster, baseConfig := testutils.CreateVaultTestCluster(t)
+		defer backendTestCluster.Cleanup()
+		backendTestClusterConfig := testutils.GetVaultConfig(baseConfig)
 
-		configMap := createVaultConfig()
+		// configMap := createVaultConfig()
 
 		// store the config
-		saveConfig(b, storage, configMap, false, t)
+		saveConfig(b, storage, backendTestClusterConfig, false, t)
 
 		encryptionJsonKey := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
 		// set up some encryption keys to be used
