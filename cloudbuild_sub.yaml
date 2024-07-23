@@ -44,7 +44,7 @@ steps:
       docker tag ${_TARGET}:${_TARGET_TAG} ${_TARGET}:$${BUILD_TAG}-rc
       docker push ${_TARGET}:$${BUILD_TAG}-rc
 
-timeout: 1200s      
+timeout: 4600s      
 images: [ '${_TARGET}:${_TARGET_TAG}' ]
 logsBucket: 'gs://${_BUILD_PROJECT}-logging'
 options:
