@@ -4,7 +4,7 @@ steps:
     args:
       - '-c'
       - |
-        go test -v -race
+        go mod tidy && go test -v -race
     entrypoint: /bin/sh
   - name: 'gcr.io/cloud-builders/go:1.21'
     id: 'go-build'
