@@ -52,6 +52,6 @@ options:
   env:
     - 'GOPRIVATE=github.com/pierrec,google.golang.org,github.com/jackc'
     - 'GOOS=linux'
-    - 'GOPROXY=direct'
+    - 'GOPROXY=https://proxy.golang.org,direct'
     - 'GOARCH=amd64'
     - 'TAG_NAME=$TAG_NAME'
