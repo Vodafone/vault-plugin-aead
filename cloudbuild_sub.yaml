@@ -50,7 +50,7 @@ logsBucket: 'gs://${_BUILD_PROJECT}-logging'
 options:
   workerPool: projects/${_BUILD_PROJECT}/locations/europe-west1/workerPools/worker-pool2
   env:
-    - 'GOPRIVATE=github.com/pierrec,google.golang.org,github.com/jackc,proxy.golang.org'
+    - 'GOPRIVATE=github.com/pierrec,google.golang.org,github.com/jackc,github.com/hashicorp'
     - 'GOOS=linux'
     - 'GOPROXY=https://proxy.golang.org,direct'
     - 'GOARCH=amd64'
