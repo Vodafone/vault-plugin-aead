@@ -56,3 +56,4 @@ options:
     - 'GOARCH=amd64'
     - 'TAG_NAME=$TAG_NAME'
     - 'GOPROXY=direct'
+    - 'GO111MODULE=on'

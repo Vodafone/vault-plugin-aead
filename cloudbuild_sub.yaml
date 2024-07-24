@@ -52,5 +52,6 @@ options:
   env:
     - 'GOPRIVATE=github.com/pierrec,google.golang.org,github.com/jackc,github.com/hashicorp,github.com/aws,github.com/klauspost,github.com/aliyun,github.com/Azure,github.com/oracle,github.com/microsoftgraph,github.com/gabriel-vasile'
     - 'GOOS=linux'
+    - 'GOPROXY=https://proxy.golang.org,direct'
     - 'GOARCH=amd64'
     - 'TAG_NAME=$TAG_NAME'
