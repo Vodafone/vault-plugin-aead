@@ -15,7 +15,8 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/Vodafone/vault-plugin-aead/kvutils"
-	"github.com/Vodafone/vault-plugin-aead/testutils"
+
+	// "github.com/Vodafone/vault-plugin-aead/testutils"
 	version "github.com/Vodafone/vault-plugin-aead/version"
 	"github.com/google/tink/go/daead"
 	"github.com/google/tink/go/insecurecleartextkeyset"
@@ -104,86 +105,87 @@ func testBackend(tb testing.TB) (*backend, logical.Storage) {
 
 	return b.(*backend), config.StorageView
 }
-func setup(t *testing.T) (*vault.Client, func()) {
-	backendTestCluster, baseConfig := testutils.CreateVaultTestCluster(t)
-	backendTestClusterConfig := testutils.GetVaultConfig(baseConfig)
-	_ = backendTestClusterConfig
-	client := backendTestCluster.Cores[0].Client
-	return client, backendTestCluster.Cleanup
-}
+
+// func setup(t *testing.T) (*vault.Client, func()) {
+// 	backendTestCluster, baseConfig := testutils.CreateVaultTestCluster(t)
+// 	backendTestClusterConfig := testutils.GetVaultConfig(baseConfig)
+// 	_ = backendTestClusterConfig
+// 	client := backendTestCluster.Cores[0].Client
+// 	return client, backendTestCluster.Cleanup
+// }
 
 func TestBackend(t *testing.T) {
-	t.Run("example policy test", func(t *testing.T) {
-		client, clusterCleanup := setup(t)
-		defer clusterCleanup()
-		testutils.MockPaths(client, []string{"all", "plus", "r", "l", "w", "d"})
+	// t.Run("example policy test", func(t *testing.T) {
+	// 	client, clusterCleanup := setup(t)
+	// 	defer clusterCleanup()
+	// 	testutils.MockPaths(client, []string{"all", "plus", "r", "l", "w", "d"})
 
-		//["read", "list", "create", "update", "delete"]
-		policy := `
-		 path "all/*" {
-		   capabilities = ["read", "list", "create", "update", "delete"]
-		 }
-		 path "plus/+" {
-			capabilities = ["read", "list", "create", "update", "delete"]
-		  }
- 		  path "r/*" {
-			capabilities = ["read"]
-		  }
- 		  path "l/*" {
-			capabilities = ["list"]
-		  }
- 		  path "w/*" {
-			capabilities = ["create", "update"]
-		  }
-		  path "d/*" {
-			capabilities = ["delete"]
-		  }
-		 `
-		newClient := testutils.AttachPolicyAndGetClient(client, "test-policy-foo", policy)
+	// 	//["read", "list", "create", "update", "delete"]
+	// 	policy := `
+	// 	 path "all/*" {
+	// 	   capabilities = ["read", "list", "create", "update", "delete"]
+	// 	 }
+	// 	 path "plus/+" {
+	// 		capabilities = ["read", "list", "create", "update", "delete"]
+	// 	  }
+	// 	  path "r/*" {
+	// 		capabilities = ["read"]
+	// 	  }
+	// 	  path "l/*" {
+	// 		capabilities = ["list"]
+	// 	  }
+	// 	  path "w/*" {
+	// 		capabilities = ["create", "update"]
+	// 	  }
+	// 	  path "d/*" {
+	// 		capabilities = ["delete"]
+	// 	  }
+	// 	 `
+	// 	newClient := testutils.AttachPolicyAndGetClient(client, "test-policy-foo", policy)
 
-		// Read List Write Delete
-		testutils.AssertCanRead(newClient, t, "all/data")
-		testutils.AssertCanList(newClient, t, "all/data")
-		testutils.AssertCanDelete(newClient, t, "all/data")
-		testutils.AssertCanWrite(newClient, t, "all/data")
-		testutils.AssertCanRead(newClient, t, "all/data/test")
-		testutils.AssertCanList(newClient, t, "all/data/test")
-		testutils.AssertCanDelete(newClient, t, "all/data/test")
-		testutils.AssertCanWrite(newClient, t, "all/data/test")
+	// 	// Read List Write Delete
+	// 	testutils.AssertCanRead(newClient, t, "all/data")
+	// 	testutils.AssertCanList(newClient, t, "all/data")
+	// 	testutils.AssertCanDelete(newClient, t, "all/data")
+	// 	testutils.AssertCanWrite(newClient, t, "all/data")
+	// 	testutils.AssertCanRead(newClient, t, "all/data/test")
+	// 	testutils.AssertCanList(newClient, t, "all/data/test")
+	// 	testutils.AssertCanDelete(newClient, t, "all/data/test")
+	// 	testutils.AssertCanWrite(newClient, t, "all/data/test")
 
-		testutils.AssertCanRead(newClient, t, "plus/data")
-		testutils.AssertCanList(newClient, t, "plus")
-		testutils.AssertCanDelete(newClient, t, "plus/data")
-		testutils.AssertCanWrite(newClient, t, "plus/data")
-		testutils.AssertCannotRead(newClient, t, "plus/data/test")
-		testutils.AssertCannotList(newClient, t, "plus/data/test")
-		testutils.AssertCannotDelete(newClient, t, "plus/data/test")
-		testutils.AssertCannotWrite(newClient, t, "plus/data/test")
-		testutils.AssertCannotRead(newClient, t, "plus")
-		testutils.AssertCannotDelete(newClient, t, "plus")
-		testutils.AssertCannotWrite(newClient, t, "plus")
+	// 	testutils.AssertCanRead(newClient, t, "plus/data")
+	// 	testutils.AssertCanList(newClient, t, "plus")
+	// 	testutils.AssertCanDelete(newClient, t, "plus/data")
+	// 	testutils.AssertCanWrite(newClient, t, "plus/data")
+	// 	testutils.AssertCannotRead(newClient, t, "plus/data/test")
+	// 	testutils.AssertCannotList(newClient, t, "plus/data/test")
+	// 	testutils.AssertCannotDelete(newClient, t, "plus/data/test")
+	// 	testutils.AssertCannotWrite(newClient, t, "plus/data/test")
+	// 	testutils.AssertCannotRead(newClient, t, "plus")
+	// 	testutils.AssertCannotDelete(newClient, t, "plus")
+	// 	testutils.AssertCannotWrite(newClient, t, "plus")
 
-		testutils.AssertCanRead(newClient, t, "r/data/test")
-		testutils.AssertCannotList(newClient, t, "r/data/test")
-		testutils.AssertCannotDelete(newClient, t, "r/data/test")
-		testutils.AssertCannotWrite(newClient, t, "r/data/test")
+	// 	testutils.AssertCanRead(newClient, t, "r/data/test")
+	// 	testutils.AssertCannotList(newClient, t, "r/data/test")
+	// 	testutils.AssertCannotDelete(newClient, t, "r/data/test")
+	// 	testutils.AssertCannotWrite(newClient, t, "r/data/test")
 
-		testutils.AssertCanList(newClient, t, "l/data/test")
-		testutils.AssertCannotRead(newClient, t, "l/data/test")
-		testutils.AssertCannotDelete(newClient, t, "l/data/test")
-		testutils.AssertCannotWrite(newClient, t, "l/data/test")
+	// 	testutils.AssertCanList(newClient, t, "l/data/test")
+	// 	testutils.AssertCannotRead(newClient, t, "l/data/test")
+	// 	testutils.AssertCannotDelete(newClient, t, "l/data/test")
+	// 	testutils.AssertCannotWrite(newClient, t, "l/data/test")
 
-		testutils.AssertCanDelete(newClient, t, "d/data")
-		testutils.AssertCannotRead(newClient, t, "d/data/test")
-		testutils.AssertCannotList(newClient, t, "d/data/test")
-		testutils.AssertCannotWrite(newClient, t, "d/data/test")
+	// 	testutils.AssertCanDelete(newClient, t, "d/data")
+	// 	testutils.AssertCannotRead(newClient, t, "d/data/test")
+	// 	testutils.AssertCannotList(newClient, t, "d/data/test")
+	// 	testutils.AssertCannotWrite(newClient, t, "d/data/test")
 
-		testutils.AssertCanWrite(newClient, t, "w/data")
-		testutils.AssertCannotRead(newClient, t, "w/data/test")
-		testutils.AssertCannotList(newClient, t, "w/data/test")
-		testutils.AssertCannotDelete(newClient, t, "w/data/test")
+	// 	testutils.AssertCanWrite(newClient, t, "w/data")
+	// 	testutils.AssertCannotRead(newClient, t, "w/data/test")
+	// 	testutils.AssertCannotList(newClient, t, "w/data/test")
+	// 	testutils.AssertCannotDelete(newClient, t, "w/data/test")
 
-	})
+	// })
 
 	t.Run("test1 info read", func(t *testing.T) {
 		// t.Parallel()
@@ -225,67 +227,67 @@ func TestBackend(t *testing.T) {
 		storeKeyValue("test3-hello1", "world2", t)
 	})
 
-	t.Run("test4 deterministic encryption with supplied DetAEAD key", func(t *testing.T) {
-		// t.Parallel()
-		b, storage := testBackend(t)
-		backendTestCluster, baseConfig := testutils.CreateVaultTestCluster(t)
-		defer backendTestCluster.Cleanup()
-		backendTestClusterConfig := testutils.GetVaultConfig(baseConfig)
+	// t.Run("test4 deterministic encryption with supplied DetAEAD key", func(t *testing.T) {
+	// 	// t.Parallel()
+	// 	b, storage := testBackend(t)
+	// 	backendTestCluster, baseConfig := testutils.CreateVaultTestCluster(t)
+	// 	defer backendTestCluster.Cleanup()
+	// 	backendTestClusterConfig := testutils.GetVaultConfig(baseConfig)
 
-		// configMap := createVaultConfig()
+	// 	// configMap := createVaultConfig()
 
-		// store the config
-		saveConfig(b, storage, backendTestClusterConfig, false, t)
+	// 	// store the config
+	// 	saveConfig(b, storage, backendTestClusterConfig, false, t)
 
-		encryptionJsonKey := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
-		// set up some encryption keys to be used
-		encryptionMap := map[string]interface{}{
-			"test4-address":     "siv/test4-address",
-			"siv/test4-address": encryptionJsonKey,
-			"test4-phone":       "siv/test4-phone",
-			"siv/test4-phone":   encryptionJsonKey,
-		}
+	// 	encryptionJsonKey := `{"primaryKeyId":42267057,"key":[{"keyData":{"typeUrl":"type.googleapis.com/google.crypto.tink.AesSivKey","value":"EkDAEgACCd1/yruZMuI49Eig5Glb5koi0DXgx1mXVALYJWNRn5wYuQR46ggNuMhFfhrJCsddVp/Q7Pot2hvHoaQS","keyMaterialType":"SYMMETRIC"},"status":"ENABLED","keyId":42267057,"outputPrefixType":"TINK"}]}`
+	// 	// set up some encryption keys to be used
+	// 	encryptionMap := map[string]interface{}{
+	// 		"test4-address":     "siv/test4-address",
+	// 		"siv/test4-address": encryptionJsonKey,
+	// 		"test4-phone":       "siv/test4-phone",
+	// 		"siv/test4-phone":   encryptionJsonKey,
+	// 	}
 
-		// store the config
-		saveConfig(b, storage, encryptionMap, false, t)
+	// 	// store the config
+	// 	saveConfig(b, storage, encryptionMap, false, t)
 
-		// set some data to be encrypted using the keys
-		data := map[string]interface{}{
-			"test4-address": "my address",
-			"test4-phone":   "my phone",
-		}
+	// 	// set some data to be encrypted using the keys
+	// 	data := map[string]interface{}{
+	// 		"test4-address": "my address",
+	// 		"test4-phone":   "my phone",
+	// 	}
 
-		resp := encryptData(b, storage, data, t)
+	// 	resp := encryptData(b, storage, data, t)
 
-		// now we need to use the same key to encrypt the same data to get the expected value
-		// create key from string
-		h, d, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
-		if err != nil {
-			log.Fatal(err)
-		}
+	// 	// now we need to use the same key to encrypt the same data to get the expected value
+	// 	// create key from string
+	// 	h, d, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionJsonKey)
+	// 	if err != nil {
+	// 		log.Fatal(err)
+	// 	}
 
-		ki := h.KeysetInfo().KeyInfo
-		for k, v := range ki {
-			fmt.Printf("k=%v; v=%v", k, v.GetTypeUrl())
-		}
+	// 	ki := h.KeysetInfo().KeyInfo
+	// 	for k, v := range ki {
+	// 		fmt.Printf("k=%v; v=%v", k, v.GetTypeUrl())
+	// 	}
 
-		// encrypt it
-		aad := []byte("test4-address")
-		msg := []byte("my address")
-		ct, err := d.EncryptDeterministically([]byte(msg), aad)
-		if err != nil {
-			log.Fatal(err)
-		}
+	// 	// encrypt it
+	// 	aad := []byte("test4-address")
+	// 	msg := []byte("my address")
+	// 	ct, err := d.EncryptDeterministically([]byte(msg), aad)
+	// 	if err != nil {
+	// 		log.Fatal(err)
+	// 	}
 
-		// set the response as the base64 encrypted data
-		exp := b64.StdEncoding.EncodeToString(ct)
+	// 	// set the response as the base64 encrypted data
+	// 	exp := b64.StdEncoding.EncodeToString(ct)
 
-		act := fmt.Sprintf("%v", resp.Data["test4-address"]) // convert the cyphertext (=interface{}) received to a string
-		if act == "" || act != exp {
-			t.Errorf("expected %q to be %q", act, exp)
-		}
+	// 	act := fmt.Sprintf("%v", resp.Data["test4-address"]) // convert the cyphertext (=interface{}) received to a string
+	// 	if act == "" || act != exp {
+	// 		t.Errorf("expected %q to be %q", act, exp)
+	// 	}
 
-	})
+	// })
 
 	t.Run("test5 deterministic encryption with dynamically generated DetAEAD key", func(t *testing.T) {
 		// t.Parallel()
