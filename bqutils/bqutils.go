@@ -5,10 +5,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/bigquery"
 	kms "cloud.google.com/go/kms/apiv1"
+	"google.golang.org/api/iterator"
 
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/google/tink/go/insecurecleartextkeyset"
@@ -32,7 +34,34 @@ type Options struct {
 	fieldName           string
 }
 
-func DoBQSync(kh *keyset.Handle, fieldName string, deterministic bool, envOptions cmap.ConcurrentMap) {
+func GetBQDatasets(ctx context.Context, projectId string) (map[string]*bigquery.Dataset, error) {
+
+	bigqueryClient, err := bigquery.NewClient(ctx, projectId)
+	if err != nil {
+		hclog.L().Error("failed to setup bigqueryclient:  %v", err)
+		return nil, err
+	}
+	defer bigqueryClient.Close()
+
+	// Fetch the datasets in the project
+	it := bigqueryClient.Datasets(ctx)
+
+	datasets := map[string]*bigquery.Dataset{}
+	for {
+		ds, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			hclog.L().Error("Failed to iterate through datasets: ", err)
+		}
+
+		datasets[ds.DatasetID] = ds
+	}
+	return datasets, nil
+}
+
+func DoBQSync(ctx context.Context, kh *keyset.Handle, fieldName string, deterministic bool, envOptions cmap.ConcurrentMap, datasets map[string]*bigquery.Dataset) {
 
 	// fieldName might have a "-" in it, but "-" are not allowed in BQ, so translate them to "_"
 	fieldName = strings.Replace(fieldName, "-", "_", -1)
@@ -42,7 +71,6 @@ func DoBQSync(kh *keyset.Handle, fieldName string, deterministic bool, envOption
 	resolveOptions(&options, fieldName, deterministic, envOptions)
 
 	// 0. Initate clients
-	ctx := context.Background()
 	kmsClient, err := kms.NewKeyManagementClient(ctx)
 
 	if err != nil {
@@ -53,20 +81,11 @@ func DoBQSync(kh *keyset.Handle, fieldName string, deterministic bool, envOption
 	binaryKeyset := new(bytes.Buffer)
 	insecurecleartextkeyset.Write(kh, keyset.NewBinaryWriter(binaryKeyset))
 
-	// if <region> is not there, we can call the create routine
-	// if <region> is there we need to check what is present for <region> EU, europe_west1, europe_west2, europe_west3 and reset name of the dataset and the KMS key to the kms of that region
-	// projects/<project>/locations/<region>/keyRings/hsm-key-tink-<lm>-<region>/cryptoKeys/bq-key
-	// projects/<project>/locations/europe/keyRings/hsm-key-tink-<lm>-europe/cryptoKeys/bq-key
-	// TODO
-	bigqueryClient, err := bigquery.NewClient(ctx, options.projectId)
-	if err != nil {
-		hclog.L().Error("failed to setup bigqueryclient:  %v", err)
-		return
-	}
-	defer bigqueryClient.Close()
-
 	// loop through possible permeatations
 	regionlist := [5]string{"unspecified", "eu", "europe_west1", "europe_west2", "europe_west3"} // note that these map to expected dataset names so EU is lower case and europe-west1 has underscore instead of dash
+
+	var wg sync.WaitGroup
+
 	for _, region := range regionlist {
 
 		newOptions := Options(options)
@@ -81,134 +100,142 @@ func DoBQSync(kh *keyset.Handle, fieldName string, deterministic bool, envOption
 			newOptions.decryptDatasetId = strings.Replace(options.decryptDatasetId, "<category>", fieldName, -1)
 		}
 
-		// search for the ENCRYPT dataset
 		if region == "unspecified" {
 			newOptions.encryptDatasetId = strings.Replace(newOptions.encryptDatasetId, "_<region>", "", -1)
-		} else {
-			newOptions.encryptDatasetId = strings.Replace(newOptions.encryptDatasetId, "<region>", region, -1)
-		}
-		md, err := bigqueryClient.Dataset(newOptions.encryptDatasetId).Metadata(ctx)
-		if err == nil {
-			actualDatasetRegion := strings.ToLower(md.Location)
-
-			// infer the kms name
-			// kms has the form:
-			// projects/<project>/locations/<region>/keyRings/hsm-key-tink-<lm>-<region>/cryptoKeys/bq-key
-			// and needs to be translated into
-			// projects/<project>/locations/europe/keyRings/hsm-key-tink-<lm>-europe/cryptoKeys/bq-key
-			// or
-			// projects/<project>/locations/europe-west1/keyRings/hsm-key-tink-<lm>-europe-west1/cryptoKeys/bq-key
-
-			expectedKMSRegion := actualDatasetRegion
-			if actualDatasetRegion == "eu" {
-				expectedKMSRegion = "europe"
-			}
-			newOptions.kmsKeyName = strings.Replace(newOptions.kmsKeyName, "<region>", expectedKMSRegion, -1)
-
-			// // does the kms exist
-			req := &kmspb.GetCryptoKeyRequest{
-				Name: newOptions.kmsKeyName,
-			}
-			_, err := kmsClient.GetCryptoKey(ctx, req)
-
-			if err == nil {
-				// now we have a valid dataset and a valid kms (this doesn't mean we have access though)
-				// 2. Wrap the binary keyset with KMS.
-
-				encryptReq := &kmspb.EncryptRequest{
-					Name:      newOptions.kmsKeyName,
-					Plaintext: binaryKeyset.Bytes(),
-				}
-
-				encryptResp, err := kmsClient.Encrypt(ctx, encryptReq)
-				if err != nil {
-					hclog.L().Error("Failed to encrypt keyset:  %v", err)
-				}
-
-				// 3. Format the wrapped keyset as an escaped bytestring (like '\x00\x01\xAD') so BQ can accept it.
-				escapedWrappedKeyset := ""
-				for _, cbyte := range encryptResp.Ciphertext {
-					escapedWrappedKeyset += fmt.Sprintf("\\x%02x", cbyte)
-				}
-
-				doBQRoutineCreateOrUpdate(ctx, newOptions, escapedWrappedKeyset, deterministic, "encrypt")
-			} else {
-				hclog.L().Info("Failed to find kms key: " + newOptions.kmsKeyName)
-			}
-		} else {
-			hclog.L().Info("Failed to find dataset: " + newOptions.encryptDatasetId)
-		}
-
-		// search for the DECRYPT dataset
-		if region == "unspecified" {
 			newOptions.decryptDatasetId = strings.Replace(newOptions.decryptDatasetId, "_<region>", "", -1)
 		} else {
+			newOptions.encryptDatasetId = strings.Replace(newOptions.encryptDatasetId, "<region>", region, -1)
 			newOptions.decryptDatasetId = strings.Replace(newOptions.decryptDatasetId, "<region>", region, -1)
 		}
-		md, err = bigqueryClient.Dataset(newOptions.decryptDatasetId).Metadata(ctx)
-		if err == nil {
-			actualDatasetRegion := strings.ToLower(md.Location)
 
-			// infer the kms name
-			// kms has the form:
-			// projects/<project>/locations/<region>/keyRings/hsm-key-tink-<lm>-<region>/cryptoKeys/bq-key
-			// and needs to be translated into
-			// projects/<project>/locations/europe/keyRings/hsm-key-tink-<lm>-europe/cryptoKeys/bq-key
-			// or
-			// projects/<project>/locations/europe-west1/keyRings/hsm-key-tink-<lm>-europe-west1/cryptoKeys/bq-key
+		encryptDataset, encryptDatasetExists := datasets[newOptions.encryptDatasetId]
+		decryptDataset, decryptDatasetExists := datasets[newOptions.decryptDatasetId]
 
-			expectedKMSRegion := actualDatasetRegion
-			if actualDatasetRegion == "eu" {
-				expectedKMSRegion = "europe"
-			}
-			newOptions.kmsKeyName = strings.Replace(newOptions.kmsKeyName, "<region>", expectedKMSRegion, -1)
-
-			// // does the kms exist
-			req := &kmspb.GetCryptoKeyRequest{
-				Name: newOptions.kmsKeyName,
-			}
-			_, err := kmsClient.GetCryptoKey(ctx, req)
-
+		if encryptDatasetExists {
+			// search for the ENCRYPT dataset
+			md, err := encryptDataset.Metadata(ctx)
 			if err == nil {
-				// now we have a valid dataset and a valid kms (this doesn't mean we have access though)
-				// 2. Wrap the binary keyset with KMS.
+				actualDatasetRegion := strings.ToLower(md.Location)
 
-				encryptReq := &kmspb.EncryptRequest{
-					Name:      newOptions.kmsKeyName,
-					Plaintext: binaryKeyset.Bytes(),
+				// infer the kms name
+				// kms has the form:
+				// projects/<project>/locations/<region>/keyRings/hsm-key-tink-<lm>-<region>/cryptoKeys/bq-key
+				// and needs to be translated into
+				// projects/<project>/locations/europe/keyRings/hsm-key-tink-<lm>-europe/cryptoKeys/bq-key
+				// or
+				// projects/<project>/locations/europe-west1/keyRings/hsm-key-tink-<lm>-europe-west1/cryptoKeys/bq-key
+
+				expectedKMSRegion := actualDatasetRegion
+				if actualDatasetRegion == "eu" {
+					expectedKMSRegion = "europe"
 				}
+				newOptions.kmsKeyName = strings.Replace(newOptions.kmsKeyName, "<region>", expectedKMSRegion, -1)
 
-				encryptResp, err := kmsClient.Encrypt(ctx, encryptReq)
-				if err != nil {
-					hclog.L().Error("Failed to encrypt keyset:  %v", err)
+				// // does the kms exist
+				req := &kmspb.GetCryptoKeyRequest{
+					Name: newOptions.kmsKeyName,
 				}
+				_, err := kmsClient.GetCryptoKey(ctx, req)
 
-				// 3. Format the wrapped keyset as an escaped bytestring (like '\x00\x01\xAD') so BQ can accept it.
-				escapedWrappedKeyset := ""
-				for _, cbyte := range encryptResp.Ciphertext {
-					escapedWrappedKeyset += fmt.Sprintf("\\x%02x", cbyte)
+				if err == nil {
+					// now we have a valid dataset and a valid kms (this doesn't mean we have access though)
+					// 2. Wrap the binary keyset with KMS.
+
+					encryptReq := &kmspb.EncryptRequest{
+						Name:      newOptions.kmsKeyName,
+						Plaintext: binaryKeyset.Bytes(),
+					}
+
+					encryptResp, err := kmsClient.Encrypt(ctx, encryptReq)
+					if err != nil {
+						hclog.L().Error("Failed to encrypt keyset:  %v", err)
+					}
+
+					// 3. Format the wrapped keyset as an escaped bytestring (like '\x00\x01\xAD') so BQ can accept it.
+					escapedWrappedKeyset := ""
+					for _, cbyte := range encryptResp.Ciphertext {
+						escapedWrappedKeyset += fmt.Sprintf("\\x%02x", cbyte)
+					}
+
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						doBQRoutineCreateOrUpdate(ctx, newOptions, escapedWrappedKeyset, deterministic, "encrypt", encryptDataset)
+					}()
+				} else {
+					hclog.L().Info("Failed to find kms key: " + newOptions.kmsKeyName)
 				}
-
-				doBQRoutineCreateOrUpdate(ctx, newOptions, escapedWrappedKeyset, deterministic, "decrypt")
 			} else {
-				hclog.L().Info("Failed to find kms key: " + newOptions.kmsKeyName)
+				hclog.L().Info("Failed to find dataset: " + newOptions.encryptDatasetId)
 			}
-		} else {
-			hclog.L().Info("Failed to find dataset: " + newOptions.decryptDatasetId)
+
+		}
+		if decryptDatasetExists {
+			// search for the DECRYPT dataset
+			md, err := decryptDataset.Metadata(ctx)
+			if err == nil {
+				actualDatasetRegion := strings.ToLower(md.Location)
+
+				// infer the kms name
+				// kms has the form:
+				// projects/<project>/locations/<region>/keyRings/hsm-key-tink-<lm>-<region>/cryptoKeys/bq-key
+				// and needs to be translated into
+				// projects/<project>/locations/europe/keyRings/hsm-key-tink-<lm>-europe/cryptoKeys/bq-key
+				// or
+				// projects/<project>/locations/europe-west1/keyRings/hsm-key-tink-<lm>-europe-west1/cryptoKeys/bq-key
+
+				expectedKMSRegion := actualDatasetRegion
+				if actualDatasetRegion == "eu" {
+					expectedKMSRegion = "europe"
+				}
+				newOptions.kmsKeyName = strings.Replace(newOptions.kmsKeyName, "<region>", expectedKMSRegion, -1)
+
+				// // does the kms exist
+				req := &kmspb.GetCryptoKeyRequest{
+					Name: newOptions.kmsKeyName,
+				}
+				_, err := kmsClient.GetCryptoKey(ctx, req)
+
+				if err == nil {
+					// now we have a valid dataset and a valid kms (this doesn't mean we have access though)
+					// 2. Wrap the binary keyset with KMS.
+
+					encryptReq := &kmspb.EncryptRequest{
+						Name:      newOptions.kmsKeyName,
+						Plaintext: binaryKeyset.Bytes(),
+					}
+
+					encryptResp, err := kmsClient.Encrypt(ctx, encryptReq)
+					if err != nil {
+						hclog.L().Error("Failed to encrypt keyset:  %v", err)
+					}
+
+					// 3. Format the wrapped keyset as an escaped bytestring (like '\x00\x01\xAD') so BQ can accept it.
+					escapedWrappedKeyset := ""
+					for _, cbyte := range encryptResp.Ciphertext {
+						escapedWrappedKeyset += fmt.Sprintf("\\x%02x", cbyte)
+					}
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						doBQRoutineCreateOrUpdate(ctx, newOptions, escapedWrappedKeyset, deterministic, "decrypt", decryptDataset)
+					}()
+				} else {
+					hclog.L().Info("Failed to find kms key: " + newOptions.kmsKeyName)
+				}
+			} else {
+				hclog.L().Info("Failed to find dataset: " + newOptions.decryptDatasetId)
+			}
+
 		}
 
 	}
-
+	wg.Wait()
 }
 
-func doBQRoutineCreateOrUpdate(ctx context.Context, options Options, escapedWrappedKeyset string, deterministic bool, routineType string) {
+func doBQRoutineCreateOrUpdate(ctx context.Context, options Options, escapedWrappedKeyset string, deterministic bool, routineType string, dataset *bigquery.Dataset) {
 
-	bigqueryClient, err := bigquery.NewClient(ctx, options.projectId)
-	if err != nil {
-		hclog.L().Error("Failed to create a bigquery client:  %v", err)
-
-	}
-	defer bigqueryClient.Close()
+	var err error
 
 	if routineType == "encrypt" {
 		// 4. Create a BigQuery Routine. You'll likely want to create one Routine each for encryption/decryption.
@@ -217,14 +244,14 @@ func doBQRoutineCreateOrUpdate(ctx context.Context, options Options, escapedWrap
 			routineEncryptBody = fmt.Sprintf("DETERMINISTIC_ENCRYPT(KEYS.KEYSET_CHAIN(\"gcp-kms://%s\", b\"%s\"), plaintext, aad)", options.kmsKeyName, escapedWrappedKeyset)
 		}
 
-		routineEncryptRef := bigqueryClient.Dataset(options.encryptDatasetId).Routine(options.encryptRoutineId)
+		routineEncryptRef := dataset.Routine(options.encryptRoutineId)
 		routineExists := true
 		var rm *bigquery.RoutineMetadata
 		rm, err = routineEncryptRef.Metadata(ctx)
 		if err != nil {
 			// try again - api's seem a bit flakey
 			time.Sleep(1 * time.Second)
-			routineEncryptRef := bigqueryClient.Dataset(options.encryptDatasetId).Routine(options.encryptRoutineId)
+			routineEncryptRef := dataset.Routine(options.encryptRoutineId)
 			rm, err = routineEncryptRef.Metadata(ctx)
 			if err != nil {
 				routineExists = false
@@ -272,7 +299,7 @@ func doBQRoutineCreateOrUpdate(ctx context.Context, options Options, escapedWrap
 			routineDecryptBody = fmt.Sprintf("DETERMINISTIC_DECRYPT_STRING(KEYS.KEYSET_CHAIN(\"gcp-kms://%s\", b\"%s\"), ciphertext, aad)", options.kmsKeyName, escapedWrappedKeyset)
 		}
 
-		routineDecryptRef := bigqueryClient.Dataset(options.decryptDatasetId).Routine(options.decryptRoutineId)
+		routineDecryptRef := dataset.Routine(options.decryptRoutineId)
 
 		routineExists := true
 		rm, err := routineDecryptRef.Metadata(ctx)

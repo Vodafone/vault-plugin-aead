@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v2"
 
@@ -64,6 +66,7 @@ func (c *conf) getConf() *conf {
 }
 
 func readKV(vaultconf conf, bqconfig cmap.ConcurrentMap) {
+	ctx := context.Background()
 
 	// get a client
 	client, err := kvutils.KvGetClient(vaultconf.VaultUrl, "", vaultconf.ApproleId, vaultconf.SecretId)
@@ -84,9 +87,17 @@ func readKV(vaultconf conf, bqconfig cmap.ConcurrentMap) {
 	if err != nil || paths == nil {
 		fmt.Print("failed to read paths")
 	}
+
+	datasets, err := bqutils.GetBQDatasets(ctx, vaultconf.ProjectId)
+	if err != nil {
+		fmt.Println("Failed to list Datasets")
+		return
+	}
+
+	var wg sync.WaitGroup
+
 	// iterate through the paths
 	for _, path := range paths {
-
 		keyFound := false
 		kvsecret, err := kvutils.KvGetSecret(client, vaultconf.Engine, vaultconf.EngineVersion, path)
 		if err != nil || kvsecret.Data == nil {
@@ -107,7 +118,11 @@ func readKV(vaultconf conf, bqconfig cmap.ConcurrentMap) {
 				newkeyname := aeadutils.RemoveKeyPrefix(path)
 				deterministic := aeadutils.IsKeyHandleDeterministic(kh)
 
-				bqutils.DoBQSync(kh, newkeyname, deterministic, bqconfig)
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					bqutils.DoBQSync(ctx, kh, newkeyname, deterministic, bqconfig, datasets)
+				}()
 			}
 		}
 
@@ -116,5 +131,6 @@ func readKV(vaultconf conf, bqconfig cmap.ConcurrentMap) {
 		}
 
 	}
+	wg.Wait()
 	return
 }
