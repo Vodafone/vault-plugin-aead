@@ -2,8 +2,10 @@ package aeadplugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/Vodafone/vault-plugin-aead/bqutils"
@@ -20,12 +22,46 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 		return nil, err
 	}
 
+	keysToSync := data.Raw
+
+	keysMap := make(map[string]interface{})
+
 	for keyField, encryptionKey := range AEAD_CONFIG.Items() {
 		fieldName := fmt.Sprintf("%v", keyField)
 		keyStr := fmt.Sprintf("%v", encryptionKey)
 		if !strings.Contains(keyStr, "primaryKeyId") {
 			continue
 		}
+
+		if len(keysToSync) != 0 {
+			if _, okay := keysToSync[fieldName]; !okay {
+				continue
+			}
+		}
+
+		// if kvKeysExists && !slices.Contains(paths["keys"], fieldName) {
+		// 	continue
+		// }
+		keysMap[fieldName] = encryptionKey
+	}
+
+	projectIdInterface, ok := AEAD_CONFIG.Get("BQ_PROJECT")
+	projectId := fmt.Sprintf("%s", projectIdInterface)
+	if !ok {
+		return nil, &logical.KeyNotFoundError{
+			Err: errors.New("No BQ_PROJECT"),
+		}
+	}
+
+	datasets, err := bqutils.GetBQDatasets(ctx, projectId)
+	if err != nil {
+		hclog.L().Error("Failed to list Datasets")
+		return nil, err
+	}
+
+	// hclog.L().Info("datasets: ", datasets)
+	var wg sync.WaitGroup
+	for fieldName, encryptionKey := range keysMap {
 
 		encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionKey)
 		if deterministic {
@@ -36,7 +72,11 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 					Data: make(map[string]interface{}),
 				}, err
 			}
-			bqutils.DoBQSync(kh, fieldName, true, AEAD_CONFIG)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				bqutils.DoBQSync(ctx, kh, fieldName, true, AEAD_CONFIG, datasets)
+			}()
 			// do deterministic sync
 		} else {
 			kh, _, err := aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
@@ -47,10 +87,15 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 				}, err
 			}
 			// do non- deterministic sync
-			bqutils.DoBQSync(kh, fieldName, false, AEAD_CONFIG)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				bqutils.DoBQSync(ctx, kh, fieldName, false, AEAD_CONFIG, datasets)
+			}()
 		}
 
 	}
+	wg.Wait()
 
 	return nil, nil
 }
