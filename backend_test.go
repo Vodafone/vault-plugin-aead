@@ -76,11 +76,8 @@ const vault_kv_version string = "v2"
 const vault_kv_writer_role = "kv-writer-role"
 const vault_secretgenerator_iam_role = "secretgenerator-iam-role"
 
-const vault_transit_active string = "false"
-const vault_transit_url string = "http://localhost:8200"
-const vault_transit_kv_approle_id string = "xxxxxx"
-const vault_transit_kv_secret_id string = "yyyyyy"
-const vault_transit_kv_engine string = "secret"
+const vault_transit_kv_push_path string = "in/foo/bar"
+const vault_transit_kv_pull_path string = "out/foo/bar"
 const vault_transit_kv_version string = "v2"
 const vault_transit_namespace string = ""
 const vault_transit_engine string = "transit"
@@ -2353,6 +2350,8 @@ func createVaultConfig() map[string]interface{} {
 		"VAULT_TRANSIT_APPROLE_ID":          vault_transit_kv_approle_id,
 		"VAULT_TRANSIT_SECRET_ID":           vault_transit_kv_secret_id,
 		"VAULT_TRANSIT_KV_ENGINE":           vault_transit_kv_engine,
+		"VAULT_TRANSIT_KV_PUSH_PATH":        vault_transit_kv_push_path,
+		"VAULT_TRANSIT_KV_PULL_PATH":        vault_transit_kv_pull_path,
 		"VAULT_TRANSIT_KV_VERSION":          vault_transit_kv_version,
 		"VAULT_TRANSIT_NAMESPACE":           vault_transit_namespace,
 		"VAULT_TRANSIT_ENGINE":              vault_transit_engine,

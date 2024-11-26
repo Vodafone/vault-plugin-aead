@@ -28,20 +28,22 @@ import (
 )
 
 type KVOptions struct {
-	Vault_kv_url             string
-	Vault_kv_active          string
-	Vault_kv_approle_id      string
-	Vault_kv_secret_id       string
-	Vault_kv_engine          string
-	Vault_kv_version         string
-	Vault_transit_active     string
-	Vault_transit_url        string
-	Vault_transit_approle_id string
-	Vault_transit_secret_id  string
-	Vault_transit_kv_engine  string
-	Vault_transit_kv_version string
-	Vault_transit_namespace  string
-	Vault_transit_engine     string
+	Vault_kv_url               string
+	Vault_kv_active            string
+	Vault_kv_approle_id        string
+	Vault_kv_secret_id         string
+	Vault_kv_engine            string
+	Vault_kv_version           string
+	Vault_transit_active       string
+	Vault_transit_url          string
+	Vault_transit_approle_id   string
+	Vault_transit_secret_id    string
+	Vault_transit_kv_engine    string
+	Vault_transit_kv_version   string
+	Vault_transit_kv_push_path string
+	Vault_transit_kv_pull_path string
+	Vault_transit_namespace    string
+	Vault_transit_engine       string
 	// Vault_transit_tokenname        string
 	Vault_transit_kek              string
 	Vault_kv_writer_role           string

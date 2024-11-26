@@ -287,6 +287,14 @@ func resolveKvOptions(kvOptions *kvutils.KVOptions) error {
 	if ok {
 		kvOptions.Vault_transit_kv_engine = fmt.Sprintf("%v", Vault_transit_kv_engine)
 	}
+	Vault_transit_kv_pull_path, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_PULL_PATH")
+	if ok {
+		kvOptions.Vault_transit_kv_pull_path = fmt.Sprintf("%v", Vault_transit_kv_pull_path)
+	}
+	Vault_transit_kv_push_path, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_PUSH_PATH")
+	if ok {
+		kvOptions.Vault_transit_kv_push_path = fmt.Sprintf("%v", Vault_transit_kv_push_path)
+	}
 	Vault_transit_engine, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_ENGINE")
 	if ok {
 		kvOptions.Vault_transit_engine = fmt.Sprintf("%v", Vault_transit_engine)
