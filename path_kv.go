@@ -543,7 +543,7 @@ func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
 
 	secretMap := map[string]interface{}{}
 	secretMap["key"] = wrappedkey
-	_, err = kvutils.KvPutSecret(client.WithNamespace(kvOptions.Vault_transit_namespace), kvOptions.Vault_transit_kv_engine, kvOptions.Vault_transit_kv_version, newkeyname, secretMap)
+	_, err = kvutils.KvPutSecret(client.WithNamespace(kvOptions.Vault_transit_namespace), kvOptions.Vault_transit_kv_engine, kvOptions.Vault_transit_kv_version, kvOptions.Vault_transit_kv_push_path+"/"+newkeyname, secretMap)
 	if err != nil {
 		hclog.L().Error("failed to write to transit")
 	}
