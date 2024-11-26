@@ -15,7 +15,7 @@ import (
 	"github.com/hashicorp/vault/sdk/logical"
 )
 
-func (b *backend) pathSyncTransitKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+func (b *backend) pathSyncToExternalKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
 	rtnMap := make(map[string]interface{})
 
@@ -45,7 +45,7 @@ func (b *backend) pathSyncTransitKV(ctx context.Context, req *logical.Request, d
 					} else {
 						// ok we have the key in KV, lets extract the json as a string and send it to transitkv
 						keyJson := fmt.Sprint(jsonIntf)
-						_, err := saveToTransitKV(keyName, keyJson)
+						_, err := saveToExternalKV(keyName, keyJson)
 						if err != nil {
 							rtnMap[keyName] = "Error saving to transit: " + err.Error()
 						}
@@ -406,7 +406,7 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 		return false, err
 	}
 
-	_, err = saveToTransitKV(keyNameIn, fmt.Sprintf("%s", keyJsonIn))
+	_, err = saveToExternalKV(keyNameIn, fmt.Sprintf("%s", keyJsonIn))
 	if err != nil {
 		return false, err
 	}
@@ -450,7 +450,7 @@ func putAndCheckKvSecret(client *vault.Client, Vault_kv_engine string, Vault_kv_
 	return secret, nil
 }
 
-func saveToTransitKV(keyNameIn string, keyjson string) (bool, error) {
+func saveToExternalKV(keyNameIn string, keyjson string) (bool, error) {
 	/*
 	   // get the wrapped key
 	   ```

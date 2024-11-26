@@ -2020,7 +2020,7 @@ func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 }
 func TestTransitKV(t *testing.T) {
 
-	t.Run("testtransitkv1 transit kv sync", func(t *testing.T) {
+	t.Run("testexternalkv1 external kv push sync", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
 
@@ -2054,7 +2054,7 @@ func TestTransitKV(t *testing.T) {
 		}
 
 		// sync 2 of them
-		resp := syncTransitKV(b, storage, syncMap, t)
+		resp := syncToExternalKV(b, storage, syncMap, t)
 
 		for k, v := range resp.Data {
 			fmt.Printf("\nresp-k=%v resp-v=%v", k, v)
@@ -2249,16 +2249,16 @@ func syncKV(b *backend, storage logical.Storage, t *testing.T) *logical.Response
 	return resp
 }
 
-func syncTransitKV(b *backend, storage logical.Storage, data map[string]interface{}, t *testing.T) *logical.Response {
+func syncToExternalKV(b *backend, storage logical.Storage, data map[string]interface{}, t *testing.T) *logical.Response {
 
 	resp, err := b.HandleRequest(context.Background(), &logical.Request{
 		Storage:   storage,
 		Operation: logical.UpdateOperation,
-		Path:      "synctransitkv",
+		Path:      "synctoexternalkv",
 		Data:      data,
 	})
 	if err != nil {
-		t.Fatal("synctransitkv", err)
+		t.Fatal("synctoexternalkv", err)
 	}
 	return resp
 }
