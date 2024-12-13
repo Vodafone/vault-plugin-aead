@@ -76,6 +76,11 @@ const vault_kv_version string = "v2"
 const vault_kv_writer_role = "kv-writer-role"
 const vault_secretgenerator_iam_role = "secretgenerator-iam-role"
 
+const vault_transit_active string = "false"
+const vault_transit_url string = "http://localhost:8200"
+const vault_transit_kv_approle_id string = "xxxxxx"
+const vault_transit_kv_secret_id string = "yyyyyy"
+const vault_transit_kv_engine string = "secret"
 const vault_transit_kv_push_path string = "in/foo/bar"
 const vault_transit_kv_pull_path string = "out/foo/bar"
 const vault_transit_kv_version string = "v2"
@@ -2018,10 +2023,11 @@ func checkKVTransitWrappedSecret(fullName string, t *testing.T) {
 	}
 
 }
-func TestTransitKV(t *testing.T) {
+func TestExternalKV(t *testing.T) {
 
 	t.Run("testexternalkv1 external kv push sync", func(t *testing.T) {
 		// t.Parallel()
+		// t.Skip()
 		b, storage := testBackend(t)
 
 		if vault_transit_active == "false" {
@@ -2069,6 +2075,48 @@ func TestTransitKV(t *testing.T) {
 		checkKVTransitWrappedSecret(ns+"_DEK_TEST30-KEY1_AES256_GCM", t)
 		checkKVTransitWrappedSecret(ns+"_DEK_TEST30-KEY3_AES256_GCM", t)
 
+	})
+	t.Run("testexternalkv1 external kv pull sync", func(t *testing.T) {
+		// t.Parallel()
+		// t.Skip()
+		b, storage := testBackend(t)
+
+		if vault_transit_active == "false" {
+			t.SkipNow()
+		}
+
+		configMap := createVaultConfig()
+
+		// store the config and create 3 keys
+		saveConfig(b, storage, configMap, true, t)
+		// set up config (sync to transit = false)
+
+		// keyMap := map[string]interface{}{
+		// 	"gcm/test30-key1": NonDeterministicKeyset,
+		// 	"gcm/test30-key2": NonDeterministicKeyset,
+		// 	"gcm/test30-key3": NonDeterministicKeyset,
+		// }
+		// saveConfig(b, storage, keyMap, true, t)
+
+		// set up config (sync to transit = true)
+		newMap := map[string]interface{}{
+			"VAULT_TRANSIT_ACTIVE": "true",
+		}
+		saveConfig(b, storage, newMap, true, t)
+
+		syncMap := map[string]interface{}{
+			"IT_DEK_TEST31-key1_AES256_GCM": "false",
+			"IT_DEK_TEST31-key1_AES256_SIV": "true",
+			"IT_DEK_TEST31-key2_AES256_GCM": "true",
+		}
+
+		// sync 2 of them
+		resp := syncFromExternalKV(b, storage, syncMap, t)
+		fmt.Printf("resp=%v", resp)
+		for k, v := range resp.Data {
+			fmt.Printf("\nresp-k=%v resp-v=%v", k, v)
+
+		}
 	})
 }
 
@@ -2259,6 +2307,20 @@ func syncToExternalKV(b *backend, storage logical.Storage, data map[string]inter
 	})
 	if err != nil {
 		t.Fatal("synctoexternalkv", err)
+	}
+	return resp
+}
+
+func syncFromExternalKV(b *backend, storage logical.Storage, data map[string]interface{}, t *testing.T) *logical.Response {
+
+	resp, err := b.HandleRequest(context.Background(), &logical.Request{
+		Storage:   storage,
+		Operation: logical.UpdateOperation,
+		Path:      "syncfromexternalkv",
+		Data:      data,
+	})
+	if err != nil {
+		t.Fatal("syncfromexternalkv", err)
 	}
 	return resp
 }

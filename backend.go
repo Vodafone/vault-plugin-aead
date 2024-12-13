@@ -460,6 +460,17 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
+			&framework.Path{
+				Pattern:         "syncfromexternalkv",
+				HelpSynopsis:    "Sync from External KV",
+				HelpDescription: "Sync from External KV",
+				Fields:          map[string]*framework.FieldSchema{},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback: b.pathSyncFromExternalKV,
+					},
+				},
+			},
 		},
 	}
 	return &b

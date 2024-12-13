@@ -2,7 +2,9 @@ package aeadplugin
 
 import (
 	"context"
+	b64 "encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -16,53 +18,24 @@ import (
 )
 
 func (b *backend) pathSyncToExternalKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-
-	rtnMap := make(map[string]interface{})
-
-	var kvOptions kvutils.KVOptions
-	err := resolveKvOptions(&kvOptions)
-	if err != nil {
-		hclog.L().Error("\nfailed to read vault config: " + err.Error())
-		return nil, err
-	}
-
-	if kvOptions.Vault_kv_active == "true" {
-
-		err := storeKeysTobeSynced(kvOptions, data.Raw)
-
-		// get all the keys in KV
-		kvMap, err := b.readKV(ctx, req.Storage, false)
-
-		if err != nil || kvMap == nil {
-			rtnMap["Error"] = err.Error()
-		} else {
-
-			for keyName, v := range data.Raw {
-				if "true" == fmt.Sprintf("%s", v) {
-					jsonIntf, ok := kvMap[keyName]
-					if !ok {
-						rtnMap[keyName] = "Error: key not found in KV: " + keyName
-					} else {
-						// ok we have the key in KV, lets extract the json as a string and send it to transitkv
-						keyJson := fmt.Sprint(jsonIntf)
-						_, err := saveToExternalKV(keyName, keyJson)
-						if err != nil {
-							rtnMap[keyName] = "Error saving to transit: " + err.Error()
-						}
-					}
-				}
-			}
-		}
-	}
+	output, err := SyncToExternalKV(b, ctx, req, data)
 	return &logical.Response{
-		Data: rtnMap,
-	}, nil
+		Data: output,
+	}, err
+}
+func (b *backend) pathSyncFromExternalKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	output, err := SyncFromExternalKV(b, ctx, req, data)
+	return &logical.Response{
+		Data: output,
+	}, err
 }
 
 func (b *backend) pathSyncKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
 	kvMap := map[string]interface{}{}
 	rtnMap := make(map[string]interface{})
+	var res *logical.Response
 
 	var kvOptions kvutils.KVOptions
 	err := resolveKvOptions(&kvOptions)
@@ -73,7 +46,16 @@ func (b *backend) pathSyncKV(ctx context.Context, req *logical.Request, data *fr
 
 	if kvOptions.Vault_kv_active == "true" {
 
-		kvMap, err = b.readKV(ctx, req.Storage, false)
+		// get the kv client
+		kvClient, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
+		if err != nil {
+			rtnMap["Error"] = "failed to connect to vault: " + err.Error()
+			res.Data = rtnMap
+			return res, nil
+		}
+		kvConnection := kvutils.KVConnection{Client: kvClient, Engine: kvOptions.Vault_kv_engine, Version: kvOptions.Vault_kv_version, Url: kvOptions.Vault_kv_url}
+
+		kvMap, err = b.readKV(ctx, kvConnection, false)
 
 		if err != nil {
 			rtnMap["error"] = err.Error()
@@ -121,8 +103,17 @@ func (b *backend) pathReadKV(ctx context.Context, req *logical.Request, data *fr
 	}
 
 	if kvOptions.Vault_kv_active == "true" {
+		// get the kv client
+		kvClient, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
+		if err != nil {
+			m["Error"] = "failed to connect to vault: " + err.Error()
+			return &logical.Response{
+				Data: m,
+			}, nil
+		}
+		kvConnection := kvutils.KVConnection{Client: kvClient, Engine: kvOptions.Vault_kv_engine, Version: kvOptions.Vault_kv_version, Url: kvOptions.Vault_kv_url}
 
-		m, err = b.readKV(ctx, req.Storage)
+		m, err = b.readKV(ctx, kvConnection)
 
 		if err != nil {
 			m = map[string]interface{}{}
@@ -134,33 +125,19 @@ func (b *backend) pathReadKV(ctx context.Context, req *logical.Request, data *fr
 	}, nil
 }
 
-func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (map[string]interface{}, error) {
-
-	var kvOptions kvutils.KVOptions
-	err := resolveKvOptions(&kvOptions)
-	if err != nil {
-		hclog.L().Error("\nfailed to read vault config")
-		return nil, err
-	}
-
-	if kvOptions.Vault_kv_active == "false" {
-		return nil, nil
-	}
-	// get a client
-	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
-
-	if err != nil {
-		hclog.L().Error("\nfailed to initialize Vault client1")
-		return nil, err
-	}
-
+func (b *backend) readKV(
+	ctx context.Context,
+	kv kvutils.KVConnection,
+	mask ...bool,
+) (map[string]interface{}, error) {
+	client := kv.Client
 	// we are looking for:
 	// engine: kv_engine
 	// path: gcm/addressline and siv/addressline
 	// data and aad
 
 	// read the paths
-	paths, err := kvutils.KvGetSecretPaths(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, "")
+	paths, err := kvutils.KvGetSecretPaths(client, kv.Engine, kv.Version, kv.Path)
 
 	if err != nil || paths == nil {
 		hclog.L().Error("failed to read paths")
@@ -169,9 +146,8 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 
 	// iterate through the paths
 	for _, path := range paths {
-
 		keyFound := false
-		kvsecret, err := kvutils.KvGetSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, path)
+		kvsecret, err := kvutils.KvGetSecret(client, kv.Engine, kv.Version, path)
 		if err != nil {
 			errMsg := fmt.Sprintf("failed to read the secrets in folder %s: %s", path, err)
 			hclog.L().Error(errMsg)
@@ -206,7 +182,6 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 				} else {
 					consulKV[path] = extractedKeySet
 				}
-
 			}
 
 			jsonAad, ok := kvsecret.Data["aad"]
@@ -214,10 +189,77 @@ func (b *backend) readKV(ctx context.Context, s logical.Storage, mask ...bool) (
 				hclog.L().Error("failed to read back the aad key " + path)
 			}
 			if extractedAD, err := extractADFromSecret(jsonAad, path); err != nil {
-				hclog.L().Error("failed to read vailid secret key " + path)
+				hclog.L().Error("failed to read valid secret key " + path)
 			} else {
 				consulKV["ADDITIONAL_DATA-"+path] = extractedAD
 			}
+		} else if strings.HasSuffix(path, "GCM") || strings.HasSuffix(path, "SIV") {
+			keyFound = true
+			// process the path
+			pathParts := strings.Split(path, "/")
+			secretName := pathParts[len(pathParts)-1]
+			secretParts := strings.Split(secretName, "_")
+			// TODO: split into different func
+			secretMetadata := map[string]string{}
+
+			// secretMetadata["namespace"] = secretParts[0]
+			// secretMetadata["encryption-type"] = secretParts[1]
+			secretMetadata["key-name"] = strings.ToLower(secretParts[2])
+			// secretMetadata["alg"] = secretParts[3]
+			secretMetadata["type"] = strings.ToLower(secretParts[4])
+
+			newPath := secretMetadata["type"] + "/" + secretMetadata["key-name"]
+
+			var vaultWrapper kvutils.VaultClientWrapper = kvutils.VaultClientWrapperImpl{Client: client}
+			wrappedkey := fmt.Sprintf("%v", kvsecret.Data["key"])
+			base64Keyset, err := kvutils.UnwrapKeyset(&vaultWrapper, kvutils.EncryptedKVKey{Ciphertext: wrappedkey}, kv.Kek, kv.Transit_engine)
+			if err != nil {
+				hclog.L().Error("failed to unwrap key")
+			}
+			// TODO: Use the output key instead of _
+			_, err = aeadutils.ValidateB64Key(base64Keyset)
+			if err != nil {
+				hclog.L().Error("Wrapped key is invalid")
+			}
+			// Decode the B64 key to bytes
+			keysetByte, err := b64.StdEncoding.DecodeString(base64Keyset)
+			if err != nil {
+				hclog.L().Error("failed to read back the aead key " + secretMetadata["key-name"])
+			}
+			// validate the json bytes
+			valid := json.Valid(keysetByte)
+			if !valid {
+				hclog.L().Error("the JSON is not valid for the key " + secretMetadata["key-name"])
+			}
+			// Get the json string of the key
+			var keysetString string = string(keysetByte)
+			// TODO: Find the duplicate code
+			// extract the json data into a Map
+			var key map[string]interface{}
+			err = json.Unmarshal([]byte(keysetString), &key)
+			if err != nil {
+				hclog.L().Error("failed to extract the keysetstring for the key " + secretMetadata["key-name"])
+			}
+
+			// struct the vault secret instace
+			secret := map[string]interface{}{}
+			secret[secretMetadata["key-name"]] = key
+			secretBytes, _ := json.Marshal(secret)
+			secretString := string(secretBytes)
+			if extractedKeySet, _, err := isSecretAnAEADKeyset(secretString, newPath); err != nil {
+				hclog.L().Error("failed to read valid secret key " + newPath)
+			} else {
+				// hclog.L().Info("valid secret key")
+				if mask == nil || mask[0] == true {
+					consulKV[secretName] = aeadutils.MuteKeyMaterial(extractedKeySet)
+				} else {
+					consulKV[secretName] = extractedKeySet
+				}
+			}
+
+			// var jsonAad map[string]interface{}
+			// jsonAad[path] = path
+			// consulKV["ADDITIONAL_DATA-"+newPath] = newPath
 		}
 
 		if !keyFound {
@@ -324,13 +366,18 @@ func resolveKvOptions(kvOptions *kvutils.KVOptions) error {
 
 	return nil
 }
-func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
+func saveToKV(keyNameIn string, keyJsonIn interface{}, env ...KVEnvitonment) (bool, error) {
 
+	var err error
 	var kvOptions kvutils.KVOptions
-	err := resolveKvOptions(&kvOptions)
-	if err != nil {
-		hclog.L().Error("\nfailed to read vault config")
-		return false, err
+	if env == nil || env[0].Options == (kvutils.KVOptions{}) {
+		err := resolveKvOptions(&kvOptions)
+		if err != nil {
+			hclog.L().Error("\nfailed to read vault config")
+			return false, err
+		}
+	} else {
+		kvOptions = env[0].Options
 	}
 
 	if kvOptions.Vault_kv_active == "false" {
@@ -356,10 +403,16 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 	// hclog.L().Info("saveToKV:" + keyNameIn + " Type: " + keyTypeURL)
 
 	// get a client
-	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
-	if err != nil {
-		hclog.L().Error("\nfailed to initialize Vault client2")
-		return false, err
+	// get a client
+	var client *vault.Client
+	if env == nil || env[0].Connection == (kvutils.KVConnection{}) {
+		client, err = kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
+		if err != nil {
+			hclog.L().Error("\nfailed to initialize Vault client2")
+			return false, err
+		}
+	} else {
+		client = env[0].Connection.Client
 	}
 
 	// // create a secret
@@ -405,8 +458,10 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}) (bool, error) {
 	if _, _, err = isSecretAnAEADKeyset(secret, aeadutils.RemoveKeyPrefix(keyNameIn)); err != nil {
 		return false, err
 	}
-
-	_, err = saveToExternalKV(keyNameIn, fmt.Sprintf("%s", keyJsonIn))
+	if env != nil {
+		env[0].Connection = (kvutils.KVConnection{})
+	}
+	_, err = saveToExternalKV(keyNameIn, fmt.Sprintf("%s", keyJsonIn), env...)
 	if err != nil {
 		return false, err
 	}
@@ -450,7 +505,13 @@ func putAndCheckKvSecret(client *vault.Client, Vault_kv_engine string, Vault_kv_
 	return secret, nil
 }
 
-func saveToExternalKV(keyNameIn string, keyjson string) (bool, error) {
+type KVEnvitonment struct {
+	Options    kvutils.KVOptions
+	Connection kvutils.KVConnection
+	Synclist   map[string]interface{}
+}
+
+func saveToExternalKV(keyNameIn string, keyjson string, env ...KVEnvitonment) (bool, error) {
 	/*
 	   // get the wrapped key
 	   ```
@@ -480,49 +541,67 @@ func saveToExternalKV(keyNameIn string, keyjson string) (bool, error) {
 	   ```
 	*/
 
+	var err error
 	var kvOptions kvutils.KVOptions
-	err := resolveKvOptions(&kvOptions)
-	if err != nil {
-		hclog.L().Error("\nfailed to read vault config")
-		return false, err
+	if env == nil || env[0].Options == (kvutils.KVOptions{}) {
+		err := resolveKvOptions(&kvOptions)
+		if err != nil {
+			hclog.L().Error("\nfailed to read vault config")
+			return false, err
+		}
+	} else {
+		kvOptions = env[0].Options
 	}
 
 	if kvOptions.Vault_transit_active == "false" {
 		return true, nil
 	}
 
-	syncMap, err := readKeysTobeSynced(kvOptions)
-	if err != nil {
-		// not an error just means we won't sync to the transit kv
-		hclog.L().Info("\nfailed to read keys to be synced" + err.Error())
-		return true, nil
+	var syncMap map[string]interface{}
+	if env == nil || env[0].Synclist == nil {
+		syncMap, err = readKeysTobeSynced(kvOptions)
+		if err != nil {
+			// not an error just means we won't sync to the transit kv
+			hclog.L().Info("\nfailed to read keys to be synced" + err.Error())
+			return true, nil
+		}
+	} else {
+		syncMap = env[0].Synclist
 	}
 
 	// do we have the same key in the list to be synced
 	toSyncIntf, ok := syncMap[keyNameIn]
 	if !ok {
 		// not an error just means we won't sync to the transit kv
-		hclog.L().Info("don't sync this key" + keyNameIn)
+		hclog.L().Info("don't sync this key " + keyNameIn)
 		return true, nil
 	}
 	toSync := fmt.Sprintf("%v", toSyncIntf)
 	if toSync != "true" {
-		hclog.L().Info("don't sync this key" + keyNameIn)
+		hclog.L().Info("don't sync this key " + keyNameIn)
 		return true, nil
 	}
 
 	// OK, we want to sync this key
 
 	// get a client
-	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_transit_url, kvOptions.Vault_transit_namespace, kvOptions.Vault_transit_approle_id, kvOptions.Vault_transit_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
-	if err != nil {
-		hclog.L().Error("\nfailed to initialize Vault client3")
-		return false, err
+	var client *vault.Client
+	if env == nil || env[0].Connection == (kvutils.KVConnection{}) {
+		client, err = kvutils.KvGetClientWithApprole(kvOptions.Vault_transit_url, kvOptions.Vault_transit_namespace, kvOptions.Vault_transit_approle_id, kvOptions.Vault_transit_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
+		if err != nil {
+			hclog.L().Error("\nfailed to initialize Vault client3")
+			return false, err
+		}
+	} else {
+		client = env[0].Connection.Client
 	}
 
 	// make a new keyname
 	keyname := aeadutils.RemoveKeyPrefix(keyNameIn)
 	newkeyname, err := kvutils.DeriveKeyName(kvOptions.Vault_transit_namespace, keyname, keyjson)
+	if err != nil {
+		return false, err
+	}
 	hclog.L().Info("newkeyname: " + newkeyname)
 
 	//wrap the key
@@ -662,4 +741,168 @@ func readKeysTobeSynced(kvOptions kvutils.KVOptions) (map[string]interface{}, er
 
 	// return the map of keys to be synced
 	return kvsecret.Data, nil
+}
+
+func SyncToExternalKV(b *backend, ctx context.Context, req *logical.Request, data *framework.FieldData) (map[string]interface{}, error) {
+	rtnMap := make(map[string]interface{})
+
+	var kvOptions kvutils.KVOptions
+	err := resolveKvOptions(&kvOptions)
+	if err != nil {
+		hclog.L().Error("\nfailed to read vault config: " + err.Error())
+		rtnMap["Error"] = "failed to read vault config: " + err.Error()
+		return rtnMap, err
+	}
+
+	if kvOptions.Vault_kv_active != "true" {
+		err = errors.New("the config value VAULT_KV_ACTIVE must set to true")
+		rtnMap["Error"] = err.Error()
+		return rtnMap, err
+	}
+
+	err = storeKeysTobeSynced(kvOptions, data.Raw)
+	if err != nil {
+		rtnMap["Error"] = "failed to store synclist: " + err.Error()
+		return rtnMap, err
+	}
+
+	// get the kv client
+	kvClient, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
+	if err != nil {
+		rtnMap["Error"] = "failed to connect to vault: " + err.Error()
+		return rtnMap, err
+	}
+	kvConnection := kvutils.KVConnection{Client: kvClient, Engine: kvOptions.Vault_kv_engine, Version: kvOptions.Vault_kv_version, Url: kvOptions.Vault_kv_url}
+
+	// get all the keys in KV
+	kvMap, err := b.readKV(ctx, kvConnection, false)
+	if err != nil || kvMap == nil {
+		rtnMap["Error"] = err.Error()
+		return rtnMap, err
+	}
+
+	var syncMap map[string]interface{}
+	syncMap, err = readKeysTobeSynced(kvOptions)
+	if err != nil {
+		// not an error just means we won't sync to the transit kv
+		hclog.L().Info("\nfailed to read keys to be synced" + err.Error())
+		rtnMap["Error"] = "failed to read keys to be synced : " + err.Error()
+		return rtnMap, err
+	}
+	var env KVEnvitonment
+	env.Options = kvOptions
+	env.Synclist = syncMap
+	for keyName, v := range syncMap {
+		if fmt.Sprintf("%s", v) != "true" {
+			rtnMap[keyName] = "Skipping key" + keyName
+			continue
+		}
+		jsonIntf, ok := kvMap[keyName]
+		if !ok {
+			rtnMap[keyName] = "Error: key not found in KV: " + keyName
+			continue
+		}
+		// ok we have the key in KV, lets extract the json as a string and send it to transitkv
+		keyJson := fmt.Sprint(jsonIntf)
+
+		_, err := saveToExternalKV(keyName, keyJson, env)
+		if err != nil {
+			rtnMap[keyName] = "Error saving to transit: " + err.Error()
+		} else {
+			rtnMap[keyName] = "OK"
+		}
+	}
+	return rtnMap, nil
+}
+
+func SyncFromExternalKV(b *backend, ctx context.Context, req *logical.Request, data *framework.FieldData) (map[string]interface{}, error) {
+
+	rtnMap := make(map[string]interface{})
+
+	var kvOptions kvutils.KVOptions
+	err := resolveKvOptions(&kvOptions)
+	if err != nil {
+		hclog.L().Error("\nfailed to read vault config: " + err.Error())
+		rtnMap["Error"] = "failed to read vault config: " + err.Error()
+		return rtnMap, err
+	}
+
+	if kvOptions.Vault_kv_active != "true" {
+		err = errors.New("the config value VAULT_KV_ACTIVE must set to true")
+		rtnMap["Error"] = err.Error()
+		return rtnMap, err
+	}
+	if kvOptions.Vault_transit_active != "true" {
+		err = errors.New("the config value VAULT_TRANSIT_ACTIVE must set to true")
+		rtnMap["Error"] = err.Error()
+		return rtnMap, err
+	}
+
+	err = storeKeysTobeSynced(kvOptions, data.Raw)
+	if err != nil {
+		rtnMap["Error"] = "failed to store synclist: " + err.Error()
+		return rtnMap, err
+	}
+
+	// get the kv client
+	externalKvClient, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_transit_url, kvOptions.Vault_transit_namespace, kvOptions.Vault_transit_approle_id, kvOptions.Vault_transit_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
+	if err != nil {
+		rtnMap["Error"] = "failed to connect to external vault: " + err.Error()
+		return rtnMap, err
+	}
+	externalKVConnection := kvutils.KVConnection{
+		Client: externalKvClient.WithNamespace(kvOptions.Vault_transit_namespace),
+		Engine: kvOptions.Vault_transit_kv_engine, Version: kvOptions.Vault_transit_kv_version,
+		Url:            kvOptions.Vault_transit_url,
+		Namespace:      kvOptions.Vault_transit_namespace,
+		Path:           kvOptions.Vault_transit_kv_pull_path + "/",
+		Kek:            kvOptions.Vault_transit_kek,
+		Transit_engine: kvOptions.Vault_transit_engine,
+	}
+
+	// get all the keys in KV
+	kvMap, err := b.readKV(ctx, externalKVConnection, false)
+	if err != nil || kvMap == nil {
+		rtnMap["Error"] = err.Error()
+		return rtnMap, err
+	}
+	var syncMap map[string]interface{}
+	syncMap, err = readKeysTobeSynced(kvOptions)
+	if err != nil {
+		// not an error just means we won't sync to the transit kv
+		hclog.L().Info("\nfailed to read keys to be synced" + err.Error())
+		rtnMap["Error"] = "failed to read keys to be synced : " + err.Error()
+		return rtnMap, err
+	}
+	var env KVEnvitonment
+	env.Options = kvOptions
+	env.Synclist = syncMap
+
+	for keyName, v := range syncMap {
+		if fmt.Sprintf("%s", v) != "true" {
+			rtnMap[keyName] = "Skipping key" + keyName
+			continue
+		}
+		jsonIntf, ok := kvMap[keyName]
+		if !ok {
+			rtnMap[keyName] = "Error: key not found in KV: " + keyName
+			continue
+		}
+		// ok we have the key in KV, lets extract the json as a string and send it to transitkv
+		keyJson := fmt.Sprint(jsonIntf)
+		//derive keyname
+		newKeyName, err := kvutils.DeriveKVKeyName("", keyName, keyJson)
+		if err != nil {
+			rtnMap[keyName] = "failed to derive keyname: " + err.Error()
+			continue
+		}
+		_, err = saveToKV(newKeyName, keyJson, env)
+		if err != nil {
+			rtnMap[keyName] = "Error saving to transit: " + err.Error()
+			continue
+		}
+		rtnMap[keyName] = "OK"
+
+	}
+	return rtnMap, nil
 }
