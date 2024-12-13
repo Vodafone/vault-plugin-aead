@@ -450,13 +450,24 @@ func Backend(c *logical.BackendConfig) *backend {
 
 			// aead/synckv
 			&framework.Path{
-				Pattern:         "synctransitkv",
-				HelpSynopsis:    "Sync Transit kv",
-				HelpDescription: "Sync Transit kv",
+				Pattern:         "synctoexternalkv",
+				HelpSynopsis:    "Sync to External KV",
+				HelpDescription: "Sync to External KV",
 				Fields:          map[string]*framework.FieldSchema{},
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
-						Callback: b.pathSyncTransitKV,
+						Callback: b.pathSyncToExternalKV,
+					},
+				},
+			},
+			&framework.Path{
+				Pattern:         "syncfromexternalkv",
+				HelpSynopsis:    "Sync from External KV",
+				HelpDescription: "Sync from External KV",
+				Fields:          map[string]*framework.FieldSchema{},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback: b.pathSyncFromExternalKV,
 					},
 				},
 			},

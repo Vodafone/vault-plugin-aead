@@ -28,24 +28,39 @@ import (
 )
 
 type KVOptions struct {
-	Vault_kv_url             string
-	Vault_kv_active          string
-	Vault_kv_approle_id      string
-	Vault_kv_secret_id       string
-	Vault_kv_engine          string
-	Vault_kv_version         string
-	Vault_transit_active     string
-	Vault_transit_url        string
-	Vault_transit_approle_id string
-	Vault_transit_secret_id  string
-	Vault_transit_kv_engine  string
-	Vault_transit_kv_version string
-	Vault_transit_namespace  string
-	Vault_transit_engine     string
+	Vault_kv_url               string
+	Vault_kv_active            string
+	Vault_kv_approle_id        string
+	Vault_kv_secret_id         string
+	Vault_kv_engine            string
+	Vault_kv_version           string
+	Vault_transit_active       string
+	Vault_transit_url          string
+	Vault_transit_approle_id   string
+	Vault_transit_secret_id    string
+	Vault_transit_kv_engine    string
+	Vault_transit_kv_version   string
+	Vault_transit_kv_push_path string
+	Vault_transit_kv_pull_path string
+	Vault_transit_namespace    string
+	Vault_transit_engine       string
 	// Vault_transit_tokenname        string
 	Vault_transit_kek              string
 	Vault_kv_writer_role           string
 	Vault_secretgenerator_iam_role string
+}
+
+type KVConnection struct {
+	Client         *vault.Client
+	Engine         string
+	Version        string `default:"v1"`
+	Url            string
+	Approle_id     string
+	Secret_id      string
+	Namespace      string
+	Path           string `default:""`
+	Kek            string
+	Transit_engine string
 }
 
 func getGeneratedVaultSecretId(vault_addr string, vault_writer_secret_id string, vault_kv_writer_role string, vault_secretgenerator_iam_role string) (string, error) {
@@ -468,6 +483,33 @@ func DeriveKeyName(namespace string, keyname string, keyjson string) (string, er
 		keyType = "GCM"
 	}
 	newkeyname = lmUpper + "_DEK_" + keynameUpper + "_AES256_" + keyType
+
+	return newkeyname, nil
+}
+func DeriveKVKeyName(namespace string, keyname string, keyjson string) (string, error) {
+	newkeyname := ""
+
+	// validate the key
+	kh, err := aeadutils.ValidateKeySetJson(keyjson)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// namespace example would be "kms/XX"
+	keynameLower := strings.ToLower(keyname)
+
+	ksi := kh.KeysetInfo()
+	ki := ksi.KeyInfo[len(ksi.KeyInfo)-1]
+	keyTypeURL := ki.GetTypeUrl()
+	keyType := ""
+	// fmt.Printf("\n\nkeyTypeURL: %s\n", keyTypeURL)
+	if keyTypeURL == "type.googleapis.com/google.crypto.tink.AesSivKey" {
+		keyType = "siv"
+	} else if keyTypeURL == "type.googleapis.com/google.crypto.tink.AesGcmKey" {
+		keyType = "gcm"
+	}
+	secretParts := strings.Split(keynameLower, "_")
+	newkeyname = keyType + "/" + secretParts[2]
 
 	return newkeyname, nil
 }
