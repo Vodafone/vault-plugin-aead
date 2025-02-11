@@ -131,6 +131,8 @@ func readKV(vaultconf conf, bqconfig cmap.ConcurrentMap) {
 			if !ok {
 				fmt.Printf("\nfailed to read back the aead engine %s key %s", vaultconf.Engine, path)
 			}
+			fmt.Printf("\njSonKey=%s", jsonKey)
+
 			if _, kh, err := aeadutils.IsSecretAnAEADKeyset(jsonKey, path); err != nil {
 				fmt.Printf("\nfailed to read valid aead key %s/%s", vaultconf.Engine, path)
 			} else {

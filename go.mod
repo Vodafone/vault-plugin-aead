@@ -6,6 +6,7 @@ toolchain go1.21.6
 
 require (
 	cloud.google.com/go v0.110.10
+	cloud.google.com/go/asset v1.15.1
 	cloud.google.com/go/bigquery v1.57.1
 	cloud.google.com/go/kms v1.15.5
 	cloud.google.com/go/pubsub v1.33.0
@@ -23,6 +24,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	golang.org/x/oauth2 v0.15.0
+	google.golang.org/genproto v0.0.0-20231016165738-49dd2c1f3d0b
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/apimachinery v0.28.4
 	k8s.io/client-go v0.28.1
@@ -30,9 +32,13 @@ require (
 )
 
 require (
+	cloud.google.com/go/accesscontextmanager v1.8.2 // indirect
 	cloud.google.com/go/compute v1.23.3 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	cloud.google.com/go/iam v1.1.5 // indirect
+	cloud.google.com/go/longrunning v0.5.2 // indirect
+	cloud.google.com/go/orgpolicy v1.11.2 // indirect
+	cloud.google.com/go/osconfig v1.12.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/andybalholm/brotli v1.0.6 // indirect
@@ -141,7 +147,6 @@ require (
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/api v0.149.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
-	google.golang.org/genproto v0.0.0-20231016165738-49dd2c1f3d0b // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20231016165738-49dd2c1f3d0b // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231016165738-49dd2c1f3d0b // indirect
 	google.golang.org/grpc v1.60.1 // indirect
