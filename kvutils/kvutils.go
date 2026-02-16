@@ -364,7 +364,6 @@ func KvPutSecret(client *vault.Client, kv_engine string, kv_version string, secr
 		// This guarantees we won't hang forever even if gRPC connection breaks during HA failover
 		select {
 		case res := <-resultCh:
-			result = res.secret
 			writeErr = res.err
 			if writeErr != nil {
 				hclog.L().Debug("KvPutSecret returned error", "attempt", writeAttempt, "path", secretPath, "error", writeErr)
