@@ -305,7 +305,6 @@ func KvPutSecret(client *vault.Client, kv_engine string, kv_version string, secr
 	// Retry logic for writing to KV with exponential backoff
 	writeAttempt := 0
 	totalStartTime := time.Now()
-	var result *vault.KVSecret
 
 	writeOperation := func() error {
 		writeAttempt++
