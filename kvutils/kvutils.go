@@ -18,6 +18,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
+	"github.com/cenkalti/backoff/v4"
 	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-retryablehttp"
 	vault "github.com/hashicorp/vault/api"
@@ -107,7 +108,41 @@ func KvGetClientWithApprole(vault_addr string, namespace string, vault_writer_ap
 	} else {
 		vault_writer_secret_id = generated_secret_id
 	}
-	return KvGetClient(vault_addr, namespace, vault_writer_approle_id, vault_writer_secret_id)
+
+	// Retry authentication with exponential backoff to handle transient failures
+	// (e.g., HA leader election, secret-id generation timing, network issues)
+	var client *vault.Client
+	var authErr error
+	authAttempt := 0
+
+	authOperation := func() error {
+		authAttempt++
+		hclog.L().Info("attempting to authenticate with AppRole", "attempt", authAttempt, "function", "KvGetClientWithApprole")
+
+		client, authErr = KvGetClient(vault_addr, namespace, vault_writer_approle_id, vault_writer_secret_id)
+		if authErr != nil {
+			hclog.L().Warn("authentication attempt failed, will retry with exponential backoff", "attempt", authAttempt, "error", authErr)
+			return authErr
+		}
+
+		hclog.L().Info("authentication successful", "attempt", authAttempt)
+		return nil
+	}
+
+	// Configure exponential backoff for auth retries
+	authBackoff := backoff.NewExponentialBackOff()
+	authBackoff.InitialInterval = 500 * time.Millisecond
+	authBackoff.MaxInterval = 5 * time.Second
+	authBackoff.MaxElapsedTime = 30 * time.Second
+	authBackoffWithRetries := backoff.WithMaxRetries(authBackoff, 5) // Max 6 attempts (initial + 5 retries)
+
+	err = backoff.Retry(authOperation, authBackoffWithRetries)
+	if err != nil {
+		hclog.L().Error("failed to authenticate with AppRole after retries", "attempts", authAttempt, "error", err)
+		return nil, err
+	}
+
+	return client, nil
 }
 func KvGetClient(vault_addr string, namespace string, vault_approle_id string, vault_secret_id string) (*vault.Client, error) {
 
@@ -202,84 +237,367 @@ func KvGetClientPwd(configUrlStr string, configPwdStr string, AEAD_CONFIG cmap.C
 	return client, nil
 }
 
-func KvPatchSecret(client *vault.Client, kv_engine string, kv_version string) (*vault.KVSecret, error) {
-	// TODO
-	dmp := make(map[string]interface{})
-	dmp["foo"] = "bar"
+func KvPatchSecret(client *vault.Client, kv_engine string, kv_version string, secretPath string, patchData map[string]interface{}) (*vault.KVSecret, error) {
 
-	if kv_version == "v1" {
-		return nil, client.KVv1(kv_engine).Put(context.Background(), "tmp", dmp)
-	} else if kv_version == "v2" {
-		return client.KVv2(kv_engine).Patch(context.Background(), "tmp", dmp)
-	} else {
-		return nil, fmt.Errorf("kv_version must be v1 or v2")
+	// Validate inputs
+	if client == nil {
+		return nil, fmt.Errorf("vault client is nil, cannot patch KV")
 	}
+	if patchData == nil {
+		return nil, fmt.Errorf("patchData is nil, cannot patch KV")
+	}
+
+	// Retry logic for patch operations with exponential backoff
+	var result *vault.KVSecret
+	attempt := 0
+	patchOperation := func() error {
+		attempt++
+		hclog.L().Info("attempting to patch secret in KV", "attempt", attempt, "path", secretPath)
+
+		var err error
+		if kv_version == "v1" {
+			// KV v1 doesn't support patch, use put instead
+			err = client.KVv1(kv_engine).Put(context.Background(), secretPath, patchData)
+			result = nil
+		} else if kv_version == "v2" {
+			result, err = client.KVv2(kv_engine).Patch(context.Background(), secretPath, patchData)
+		} else {
+			return fmt.Errorf("kv_version must be v1 or v2")
+		}
+
+		if err != nil {
+			hclog.L().Warn("patch failed, retrying with exponential backoff", "attempt", attempt, "path", secretPath, "error", err)
+			return err
+		}
+
+		hclog.L().Info("secret patched successfully", "attempt", attempt, "path", secretPath)
+		return nil
+	}
+
+	// Configure exponential backoff for patch retries
+	patchBackoff := backoff.NewExponentialBackOff()
+	patchBackoff.InitialInterval = 500 * time.Millisecond
+	patchBackoff.MaxInterval = 3 * time.Second
+	patchBackoff.MaxElapsedTime = 20 * time.Second
+	patchBackoffWithRetries := backoff.WithMaxRetries(patchBackoff, 5) // Max 6 attempts (initial + 5 retries)
+
+	err := backoff.Retry(patchOperation, patchBackoffWithRetries)
+	if err != nil {
+		hclog.L().Error("failed to patch secret after retries", "attempts", attempt, "path", secretPath, "error", err)
+		return nil, fmt.Errorf("failed to patch key %s after %d attempts: %w", secretPath, attempt, err)
+	}
+
+	return result, nil
 }
 
 func KvPutSecret(client *vault.Client, kv_engine string, kv_version string, secretPath string, secretMap map[string]interface{}) (*vault.KVSecret, error) {
 
-	if kv_version == "v1" {
-		return nil, client.KVv1(kv_engine).Put(context.Background(), secretPath, secretMap)
-	} else if kv_version == "v2" {
-		return client.KVv2(kv_engine).Put(context.Background(), secretPath, secretMap)
-	} else {
-		return nil, fmt.Errorf("kv_version must be v1 or v2")
+	hclog.L().Debug("KvPutSecret called", "engine", kv_engine, "version", kv_version, "path", secretPath)
+
+	// Validate client before attempting writes
+	if client == nil {
+		return nil, fmt.Errorf("vault client is nil, cannot write to KV")
+	}
+	if secretMap == nil {
+		return nil, fmt.Errorf("secretMap is nil, cannot write to KV")
 	}
 
+	// Retry logic for writing to KV with exponential backoff
+	writeAttempt := 0
+	totalStartTime := time.Now()
+
+	writeOperation := func() error {
+		writeAttempt++
+		attemptStartTime := time.Now()
+		hclog.L().Info("attempting to write secret to KV", "attempt", writeAttempt, "path", secretPath, "totalElapsedSoFar", time.Since(totalStartTime))
+
+		var writeErr error
+		var attemptDuration time.Duration
+		var totalElapsed time.Duration
+
+		// Use defer to ensure timing is always logged, even on panic
+		defer func() {
+			if r := recover(); r != nil {
+				hclog.L().Error("panic in write operation", "panic", r, "attempt", writeAttempt, "path", secretPath)
+				writeErr = fmt.Errorf("panic in write operation: %v", r)
+			}
+			attemptDuration = time.Since(attemptStartTime)
+			totalElapsed = time.Since(totalStartTime)
+			if writeErr != nil {
+				hclog.L().Error("write attempt failed", "attempt", writeAttempt, "path", secretPath, "attemptDuration", attemptDuration, "totalElapsed", totalElapsed, "error", writeErr)
+			} else {
+				hclog.L().Info("secret write successful", "attempt", writeAttempt, "path", secretPath, "attemptDuration", attemptDuration, "totalElapsed", totalElapsed)
+			}
+		}()
+
+		// Run KvPutSecret in a goroutine with enforced timeout using select pattern
+		// This is the standard Go idiom for adding timeouts to operations that don't support context
+		// The buffered channel (size 1) prevents goroutine leak if we timeout before completion
+		type writeResult struct {
+			secret *vault.KVSecret
+			err    error
+		}
+		resultCh := make(chan writeResult, 1)
+
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					hclog.L().Error("panic in write goroutine", "panic", r, "path", secretPath)
+					resultCh <- writeResult{secret: nil, err: fmt.Errorf("panic in write operation: %v", r)}
+				}
+			}()
+
+			var secret *vault.KVSecret
+			var err error
+			if kv_version == "v1" {
+				err = client.KVv1(kv_engine).Put(context.Background(), secretPath, secretMap)
+				secret = nil
+			} else if kv_version == "v2" {
+				secret, err = client.KVv2(kv_engine).Put(context.Background(), secretPath, secretMap)
+			} else {
+				err = fmt.Errorf("kv_version must be v1 or v2")
+			}
+			resultCh <- writeResult{secret: secret, err: err}
+		}()
+
+		// Wait for result or timeout (whichever comes first)
+		// This guarantees we won't hang forever even if gRPC connection breaks during HA failover
+		select {
+		case res := <-resultCh:
+			writeErr = res.err
+			if writeErr != nil {
+				hclog.L().Debug("KvPutSecret returned error", "attempt", writeAttempt, "path", secretPath, "error", writeErr)
+			}
+		case <-time.After(15 * time.Second):
+			// Note: The goroutine will continue running in background but won't block us
+			// The buffered channel allows it to complete and send result even after timeout
+			hclog.L().Warn("write attempt timed out after 15s (gRPC connection likely broken)", "attempt", writeAttempt, "path", secretPath)
+			writeErr = fmt.Errorf("write operation timed out after 15s, likely due to HA leader election or gRPC connection failure")
+		}
+
+		return writeErr
+	}
+
+	// Configure exponential backoff for write retries (starting at 1 second)
+	writeBackoff := backoff.NewExponentialBackOff()
+	writeBackoff.InitialInterval = 1000 * time.Millisecond // Start at 1 second
+	writeBackoff.MaxInterval = 5 * time.Second
+	writeBackoff.MaxElapsedTime = 120 * time.Second                    // Allow up to 120s total for all retries
+	writeBackoffWithRetries := backoff.WithMaxRetries(writeBackoff, 5) // Max 6 attempts (initial + 5 retries)
+
+	hclog.L().Info("starting write retry loop", "path", secretPath, "maxRetries", 5, "initialInterval", "1s", "maxInterval", "5s", "maxElapsedTime", "120s")
+	err := backoff.Retry(writeOperation, writeBackoffWithRetries)
+
+	hclog.L().Info("write retry loop completed", "path", secretPath, "totalAttempts", writeAttempt, "totalDuration", time.Since(totalStartTime), "success", err == nil)
+
+	if err != nil {
+		hclog.L().Error("failed to put secret to KV after exponential backoff retries", "attempts", writeAttempt, "path", secretPath, "totalDuration", time.Since(totalStartTime), "error", err)
+		return nil, fmt.Errorf("failed to write key %s after %d attempts: %w", secretPath, writeAttempt, err)
+	}
+
+	// Verify the write with exponential backoff to wait for replication
+	hclog.L().Info("secret saved, verifying replication (will retry up to 5 times if needed)", "path", secretPath)
+	
+	var verifiedSecret *vault.KVSecret
+	verifyAttempt := 0
+
+	verifyOperation := func() error {
+		verifyAttempt++
+		hclog.L().Info("verifying secret availability", "attempt", verifyAttempt, "path", secretPath)
+
+		var err error
+		if kv_version == "v1" {
+			verifiedSecret, err = client.KVv1(kv_engine).Get(context.Background(), secretPath)
+		} else if kv_version == "v2" {
+			verifiedSecret, err = client.KVv2(kv_engine).Get(context.Background(), secretPath)
+		} else {
+			return fmt.Errorf("kv_version must be v1 or v2")
+		}
+
+		if err != nil {
+			hclog.L().Warn("verification failed, retrying with exponential backoff", "attempt", verifyAttempt, "path", secretPath, "error", err)
+			return err
+		}
+
+		if verifiedSecret == nil || verifiedSecret.Data == nil {
+			hclog.L().Warn("verification failed (nil data), retrying with exponential backoff", "attempt", verifyAttempt, "path", secretPath)
+			return fmt.Errorf("secret data is nil")
+		}
+
+		hclog.L().Info("secret verified successfully", "attempt", verifyAttempt, "path", secretPath)
+		return nil
+	}
+
+	// Configure exponential backoff with max 5 attempts for verification
+	verifyBackoff := backoff.NewExponentialBackOff()
+	verifyBackoff.InitialInterval = 100 * time.Millisecond
+	verifyBackoff.MaxInterval = 1 * time.Second
+	verifyBackoff.MaxElapsedTime = 10 * time.Second
+	verifyBackoffWithRetries := backoff.WithMaxRetries(verifyBackoff, 4) // Max 5 attempts (initial + 4 retries)
+
+	err = backoff.Retry(verifyOperation, verifyBackoffWithRetries)
+	if err != nil {
+		hclog.L().Error("failed to verify the secret after exponential backoff retries", "engine", kv_engine, "path", secretPath, "attempts", verifyAttempt)
+		return nil, fmt.Errorf("failed to verify key %s after %d attempts: %w", secretPath, verifyAttempt, err)
+	}
+
+	return verifiedSecret, nil
 }
 
 func KvGetSecret(client *vault.Client, kv_engine string, kv_version string, secretPath string) (*vault.KVSecret, error) {
 
-	if kv_version == "v1" {
-		secret, err := client.KVv1(kv_engine).Get(context.Background(), secretPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to obtain Vault secret: %w", err)
+	// Retry logic for reading from KV with exponential backoff
+	var kvsecret *vault.KVSecret
+	attempt := 0
+	readOperation := func() error {
+		attempt++
+		hclog.L().Info("attempting to read secret from KV", "attempt", attempt, "path", secretPath)
+
+		var err error
+		if kv_version == "v1" {
+			kvsecret, err = client.KVv1(kv_engine).Get(context.Background(), secretPath)
+		} else if kv_version == "v2" {
+			kvsecret, err = client.KVv2(kv_engine).Get(context.Background(), secretPath)
+		} else {
+			return fmt.Errorf("kv_version must be v1 or v2")
 		}
-		return secret, err
-	} else if kv_version == "v2" {
-		secret, err := client.KVv2(kv_engine).Get(context.Background(), secretPath)
+
 		if err != nil {
-			return nil, fmt.Errorf("failed to obtain Vault secret: %w", err)
+			// Check if this is a "key not found" scenario (valid for new keys)
+			if kvsecret == nil {
+				hclog.L().Info("key does not exist in KV (new key or deleted)", "path", secretPath)
+				return nil // Don't retry - this is expected for new/deleted keys
+			}
+			// Other errors (EOF, connection issues, etc.) should be retried
+			hclog.L().Warn("read failed, retrying with exponential backoff", "attempt", attempt, "path", secretPath, "error", err)
+			return err
 		}
-		return secret, err
-	} else {
-		return nil, fmt.Errorf("kv_version must be v1 or v2")
+
+		hclog.L().Info("secret read successful", "attempt", attempt, "path", secretPath)
+		return nil
 	}
+
+	// Configure exponential backoff for read retries
+	readBackoff := backoff.NewExponentialBackOff()
+	readBackoff.InitialInterval = 200 * time.Millisecond
+	readBackoff.MaxInterval = 3 * time.Second
+	readBackoff.MaxElapsedTime = 15 * time.Second
+	readBackoffWithRetries := backoff.WithMaxRetries(readBackoff, 5) // Max 6 attempts (initial + 5 retries)
+
+	err := backoff.Retry(readOperation, readBackoffWithRetries)
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to read the secrets in folder %s after %d attempts: %s", secretPath, attempt, err)
+		hclog.L().Error(errMsg)
+		return nil, fmt.Errorf("%s", errMsg)
+	}
+
+	if kvsecret != nil && err == nil {
+		return kvsecret, nil
+	}
+
+	return kvsecret, fmt.Errorf("failed to obtain Vault secret")
 }
 
 func KvDeleteSecret(client *vault.Client, kv_engine string, kv_version string, secretPath string) error {
-	if kv_version == "v1" {
-		err := client.KVv1(kv_engine).Delete(context.Background(), secretPath)
-		return err
-	} else if kv_version == "v2" {
-		err := client.KVv2(kv_engine).Delete(context.Background(), secretPath)
-		return err
-	} else {
-		return fmt.Errorf("kv_version must be v1 or v2")
+
+	// Retry logic for delete operations with exponential backoff
+	attempt := 0
+	deleteOperation := func() error {
+		attempt++
+		hclog.L().Info("attempting to delete secret from KV", "attempt", attempt, "path", secretPath)
+
+		var err error
+		if kv_version == "v1" {
+			err = client.KVv1(kv_engine).Delete(context.Background(), secretPath)
+		} else if kv_version == "v2" {
+			err = client.KVv2(kv_engine).Delete(context.Background(), secretPath)
+		} else {
+			return fmt.Errorf("kv_version must be v1 or v2")
+		}
+
+		if err != nil {
+			hclog.L().Warn("delete failed, retrying with exponential backoff", "attempt", attempt, "path", secretPath, "error", err)
+			return err
+		}
+
+		hclog.L().Info("secret deleted successfully", "attempt", attempt, "path", secretPath)
+		return nil
 	}
+
+	// Configure exponential backoff for delete retries
+	deleteBackoff := backoff.NewExponentialBackOff()
+	deleteBackoff.InitialInterval = 200 * time.Millisecond
+	deleteBackoff.MaxInterval = 3 * time.Second
+	deleteBackoff.MaxElapsedTime = 15 * time.Second
+	deleteBackoffWithRetries := backoff.WithMaxRetries(deleteBackoff, 5) // Max 6 attempts (initial + 5 retries)
+
+	err := backoff.Retry(deleteOperation, deleteBackoffWithRetries)
+	if err != nil {
+		hclog.L().Error("failed to delete secret after retries", "attempts", attempt, "path", secretPath, "error", err)
+		return fmt.Errorf("failed to delete key %s after %d attempts: %w", secretPath, attempt, err)
+	}
+
+	return nil
 }
 func KvGetSecretPaths(client *vault.Client, kv_engine string, kv_version string, rootpath string) ([]string, error) {
 
-	// define a var for the recursive function
+	// define a var for the recursive function with retry support
 	var listwalk func(kv_version string, subpath string) ([]string, error)
 	// define the recursive function
 	listwalk = func(kv_version string, subpath string) ([]string, error) {
 		pathSliceRtn := make([]string, 0, 0)
 
 		var ss *vault.Secret
-		var err error
+		var listErr error
+		attempt := 0
 
-		if kv_version == "v1" {
-			ss, err = client.Logical().ListWithContext(context.Background(), kv_engine+"/"+subpath)
-		} else if kv_version == "v2" {
-			ss, err = client.Logical().ListWithContext(context.Background(), kv_engine+"/metadata/"+subpath)
-		} else {
-			return nil, fmt.Errorf("kv_version must be v1 or v2")
+		// Retry logic for list operations with exponential backoff
+		listOperation := func() error {
+			attempt++
+			hclog.L().Debug("attempting to list secrets", "attempt", attempt, "subpath", subpath)
+
+			var err error
+			if kv_version == "v1" {
+				ss, err = client.Logical().ListWithContext(context.Background(), kv_engine+"/"+subpath)
+			} else if kv_version == "v2" {
+				ss, err = client.Logical().ListWithContext(context.Background(), kv_engine+"/metadata/"+subpath)
+			} else {
+				return fmt.Errorf("kv_version must be v1 or v2")
+			}
+
+			if err != nil {
+				// Check if path doesn't exist (empty folder)
+				if ss == nil {
+					hclog.L().Debug("path does not exist or is empty", "subpath", subpath)
+					return nil // Don't retry for non-existent paths
+				}
+				hclog.L().Warn("list failed, retrying with exponential backoff", "attempt", attempt, "subpath", subpath, "error", err)
+				return err
+			}
+
+			if ss == nil {
+				hclog.L().Debug("empty result for path", "subpath", subpath)
+				return nil
+			}
+
+			hclog.L().Debug("list successful", "attempt", attempt, "subpath", subpath)
+			return nil
 		}
 
-		// fmt.Printf("\ndata=%v", ss.Data)
-		if ss == nil || err != nil {
-			return nil, fmt.Errorf("failed to read List: %w", err)
+		// Configure exponential backoff for list retries
+		listBackoff := backoff.NewExponentialBackOff()
+		listBackoff.InitialInterval = 200 * time.Millisecond
+		listBackoff.MaxInterval = 2 * time.Second
+		listBackoff.MaxElapsedTime = 10 * time.Second
+		listBackoffWithRetries := backoff.WithMaxRetries(listBackoff, 3) // Max 4 attempts (initial + 3 retries)
+
+		listErr = backoff.Retry(listOperation, listBackoffWithRetries)
+		if listErr != nil {
+			return nil, fmt.Errorf("failed to list secrets at %s after %d attempts: %w", subpath, attempt, listErr)
+		}
+
+		if ss == nil || ss.Data == nil {
+			return pathSliceRtn, nil // Empty result
 		}
 
 		for _, pathIface := range ss.Data {
