@@ -552,15 +552,6 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for fieldName, unencryptedData := range data.Raw {
 
-		if !overwrite {
-			// don't do this if we already have a key in the config - prevents overwrite
-			_, ok := AEAD_CONFIG.Get(fieldName)
-			if ok {
-				resp[fieldName] = fieldName + " key exists"
-				continue
-			}
-		}
-
 		// create new DAEAD key
 		keysetHandle, tinkDetAead, err := aeadutils.CreateNewDeterministicAead()
 		if err != nil {
@@ -568,6 +559,17 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 			return &logical.Response{
 				Data: resp,
 			}, err
+		}
+
+		if !overwrite {
+			// don't do this if we already have a key in the config - prevents overwrite
+			// get the prefix dynamically based on the key type
+			prefix := aeadutils.GetKeyPrefix(fieldName, "", keysetHandle)
+			_, ok := AEAD_CONFIG.Get(prefix + fieldName)
+			if ok {
+				resp[fieldName] = fieldName + " key exists"
+				continue
+			}
 		}
 		// set additionalDataBytes as field name of the right type
 		additionalDataBytes := []byte(fieldName)
@@ -616,22 +618,24 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for fieldName, unencryptedData := range data.Raw {
 
-		if !overwrite {
-			// don't do this if we already have a key in the config - prevents overwrite
-			_, ok := AEAD_CONFIG.Get(fieldName)
-			if ok {
-				resp[fieldName] = fieldName + " key exists"
-				continue
-			}
-		}
-
-		// create new DAEAD key
+		// create new AEAD key
 		keysetHandle, tinkAead, err := aeadutils.CreateNewAead()
 		if err != nil {
 			hclog.L().Error("Failed to create a new key", err)
 			return &logical.Response{
 				Data: resp,
 			}, err
+		}
+
+		if !overwrite {
+			// don't do this if we already have a key in the config - prevents overwrite
+			// get the prefix dynamically based on the key type
+			prefix := aeadutils.GetKeyPrefix(fieldName, "", keysetHandle)
+			_, ok := AEAD_CONFIG.Get(prefix + fieldName)
+			if ok {
+				resp[fieldName] = fieldName + " key exists"
+				continue
+			}
 		}
 		// set additionalDataBytes as field name of the right type
 		additionalDataBytes := []byte(fieldName)

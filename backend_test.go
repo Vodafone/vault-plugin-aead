@@ -371,6 +371,45 @@ func TestBackend(t *testing.T) {
 		}
 	})
 
+	t.Run("test5b create DAEAD key twice without overwrite", func(t *testing.T) {
+		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+		saveConfig(b, storage, configMap, false, t)
+
+		data := map[string]interface{}{
+			"test5b-address": "my address",
+		}
+
+		firstResp := encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
+		firstCiphertext := fmt.Sprintf("%v", firstResp.Data["test5b-address"])
+		if firstCiphertext == "" || firstCiphertext == "test5b-address key exists" {
+			t.Fatalf("expected first createDAEADkey call to generate ciphertext, got %q", firstCiphertext)
+		}
+
+		configResp := readConfig(b, storage, t)
+		originalKey, ok := configResp.Data["siv/test5b-address"].(string)
+		if !ok {
+			t.Fatal("expected siv/test5b-address to be present in config")
+		}
+
+		secondResp := encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
+		secondResult := fmt.Sprintf("%v", secondResp.Data["test5b-address"])
+		if secondResult != "test5b-address key exists" {
+			t.Fatalf("expected duplicate createDAEADkey to be rejected, got %q", secondResult)
+		}
+
+		configResp = readConfig(b, storage, t)
+		storedKey, ok := configResp.Data["siv/test5b-address"].(string)
+		if !ok {
+			t.Fatal("expected siv/test5b-address to remain present in config")
+		}
+
+		if storedKey != originalKey {
+			t.Fatal("expected duplicate createDAEADkey to leave the original key unchanged")
+		}
+	})
+
 	t.Run("test6 non-deterministic encryption with dynamically generated AEAD key", func(t *testing.T) {
 		// t.Parallel()
 		b, storage := testBackend(t)
@@ -414,6 +453,45 @@ func TestBackend(t *testing.T) {
 			t.Error("key is not a AesGcmKey")
 		}
 
+	})
+
+	t.Run("test6b create AEAD key twice without overwrite", func(t *testing.T) {
+		b, storage := testBackend(t)
+
+		configMap := createVaultConfig()
+		saveConfig(b, storage, configMap, false, t)
+
+		data := map[string]interface{}{
+			"test6b-address": "my address",
+		}
+
+		firstResp := encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
+		firstCiphertext := fmt.Sprintf("%v", firstResp.Data["test6b-address"])
+		if firstCiphertext == "" || firstCiphertext == "test6b-address key exists" {
+			t.Fatalf("expected first createAEADkey call to generate ciphertext, got %q", firstCiphertext)
+		}
+
+		configResp := readConfig(b, storage, t)
+		originalKey, ok := configResp.Data["gcm/test6b-address"].(string)
+		if !ok {
+			t.Fatal("expected gcm/test6b-address to be present in config")
+		}
+
+		secondResp := encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
+		secondResult := fmt.Sprintf("%v", secondResp.Data["test6b-address"])
+		if secondResult != "test6b-address key exists" {
+			t.Fatalf("expected duplicate createAEADkey to be rejected, got %q", secondResult)
+		}
+
+		configResp = readConfig(b, storage, t)
+		storedKey, ok := configResp.Data["gcm/test6b-address"].(string)
+		if !ok {
+			t.Fatal("expected gcm/test6b-address to remain present in config")
+		}
+
+		if storedKey != originalKey {
+			t.Fatal("expected duplicate createAEADkey to leave the original key unchanged")
+		}
 	})
 
 	t.Run("test7 non-deterministic encryption with supplied AEAD key", func(t *testing.T) {
