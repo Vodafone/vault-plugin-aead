@@ -33,6 +33,8 @@ steps:
       - 'Dockerfile.plugin'
       - '-t'
       - '${_TARGET}:$TAG_NAME-$BUILD_ID'
+      - '-t'
+      - '${_TARGET}:$TAG_NAME-$BUILD_ID-rc'
       - .
     dir: docker
     
@@ -44,9 +46,10 @@ steps:
     - -c
     - |
       docker push ${_TARGET}:$TAG_NAME-$BUILD_ID
+      docker push ${_TARGET}:$TAG_NAME-$BUILD_ID-rc
 
-timeout: 1200s      
-images: [ '${_TARGET}:$TAG_NAME-$BUILD_ID' ]
+timeout: 3600s      
+images: [ '${_TARGET}:$TAG_NAME-$BUILD_ID', '${_TARGET}:$TAG_NAME-$BUILD_ID-rc' ]
 logsBucket: 'gs://${_BUILD_PROJECT}-logging'
 options:
   workerPool: projects/${_BUILD_PROJECT}/locations/europe-west1/workerPools/worker-pool2
