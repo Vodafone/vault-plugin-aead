@@ -60,4 +60,5 @@ options:
     - 'GOOS=linux'
     - 'GOARCH=amd64'
     - 'TAG_NAME=$TAG_NAME'
+    - 'CGO_ENABLED=0'
     - 'GOPROXY=direct'
