@@ -48,7 +48,7 @@ steps:
       docker push ${_TARGET}:$TAG_NAME-$BUILD_ID
       docker push ${_TARGET}:$TAG_NAME-$BUILD_ID-rc
 
-timeout: 1200s      
+timeout: 3600s      
 images:
   - '${_TARGET}:$TAG_NAME-$BUILD_ID'
   - '${_TARGET}:$TAG_NAME-$BUILD_ID-rc'
