@@ -1,6 +1,8 @@
 steps:
   - name: 'golang:1.24.13'
     id: 'go-test'
+    env:
+      - 'CGO_ENABLED=1'
     args:
       - '-c'
       - |
@@ -9,6 +11,8 @@ steps:
   - name: 'golang:1.24.13'
     id: 'go-build'
     waitFor: ['go-test']
+    env:
+      - 'CGO_ENABLED=0'
     args:
       - '-c'
       - |
@@ -60,5 +64,4 @@ options:
     - 'GOOS=linux'
     - 'GOARCH=amd64'
     - 'TAG_NAME=$TAG_NAME'
-    - 'CGO_ENABLED=0'
     - 'GOPROXY=direct'
