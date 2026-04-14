@@ -5,6 +5,7 @@ import (
 	"context"
 	b64 "encoding/base64"
 	"fmt"
+	"strings"
 
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/google/tink/go/insecurecleartextkeyset"
@@ -189,6 +190,31 @@ func (b *backend) readConsulConfig(ctx context.Context, s logical.Storage) (map[
 	return consulConfig, nil
 }
 
+func (b *backend) findAllKeysWithPrefix(requestedKeyName string) []string {
+	// Find all key variants matching the requested name
+	var foundKeys []string
+
+	// Try exact match first
+	if _, ok := AEAD_CONFIG.Get(requestedKeyName); ok {
+		foundKeys = append(foundKeys, requestedKeyName)
+	}
+
+	// Try with gcm/ prefix
+	gcmKeyName := "gcm/" + requestedKeyName
+	if _, ok := AEAD_CONFIG.Get(gcmKeyName); ok {
+		foundKeys = append(foundKeys, gcmKeyName)
+	}
+
+	// Try with siv/ prefix
+	sivKeyName := "siv/" + requestedKeyName
+	if _, ok := AEAD_CONFIG.Get(sivKeyName); ok {
+		foundKeys = append(foundKeys, sivKeyName)
+	}
+
+	// Return all matching keys
+	return foundKeys
+}
+
 func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
 	// retrive the config from  storage
@@ -197,50 +223,87 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 		return nil, err
 	}
 
-	for keyField, encryptionKey := range AEAD_CONFIG.Items() {
-		fieldName := fmt.Sprintf("%v", keyField)
-		keyStr := fmt.Sprintf("%v", encryptionKey)
-		_, err := aeadutils.ValidateKeySetJson(keyStr)
-		if err != nil {
-			// not a valid key
+	rotatedCount := 0
+	skippedCount := 0
+	var keysToProcess []string
+
+	// Check if specific keys were requested for rotation
+	keysParam := data.Get("keys")
+	if keysParam != nil && keysParam.(string) != "" {
+		// Parse comma-separated list of keys and directly access them
+		keysList := strings.Split(keysParam.(string), ",")
+		keysToProcess = keysList
+	} else {
+		// No specific keys requested - process all keys
+		for keyField := range AEAD_CONFIG.Items() {
+			keysToProcess = append(keysToProcess, fmt.Sprintf("%v", keyField))
+		}
+	}
+
+	// Process only the requested (or all) keys
+	for _, requestedKeyName := range keysToProcess {
+		fieldName := strings.TrimSpace(requestedKeyName)
+
+		// Find all key variants matching this name
+		actualKeyNames := b.findAllKeysWithPrefix(fieldName)
+		if len(actualKeyNames) == 0 {
+			// No keys found for this name
+			hclog.L().Warn("Key not found in config: " + fieldName)
+			skippedCount++
 			continue
-		} else {
-			encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionKey)
+		}
+
+		// Rotate all found key variants
+		for _, actualKeyName := range actualKeyNames {
+			// Get the key directly from config
+			encryptionKeyVal, ok := AEAD_CONFIG.Get(actualKeyName)
+			if !ok {
+				// Should not happen since we just found it, but check anyway
+				hclog.L().Warn("Key disappeared from config: " + actualKeyName)
+				skippedCount++
+				continue
+			}
+
+			keyStr := fmt.Sprintf("%v", encryptionKeyVal)
+			_, err := aeadutils.ValidateKeySetJson(keyStr)
+			if err != nil {
+				// not a valid key
+				hclog.L().Warn("Invalid keyset JSON for key: " + actualKeyName)
+				skippedCount++
+				continue
+			}
+
+			encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionKeyVal)
 			if deterministic {
 				kh, _, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 				if err != nil {
-					hclog.L().Error("feiled to create key handlep")
-					return &logical.Response{
-						Data: make(map[string]interface{}),
-					}, nil
+					hclog.L().Error("failed to create key handle for: " + actualKeyName)
+					skippedCount++
+					continue
 				}
 				aeadutils.RotateKeys(kh, true)
-				b.saveKeyToConfig(kh, fieldName, ctx, req, true)
+				b.saveKeyToConfig(kh, actualKeyName, ctx, req, true)
+				rotatedCount++
 			} else {
 				kh, _, err := aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
 				if err != nil {
-					hclog.L().Error("feiled to create key handlep")
-					return &logical.Response{
-						Data: make(map[string]interface{}),
-					}, nil
+					hclog.L().Error("failed to create key handle for: " + actualKeyName)
+					skippedCount++
+					continue
 				}
 				aeadutils.RotateKeys(kh, false)
-				b.saveKeyToConfig(kh, fieldName, ctx, req, true)
+				b.saveKeyToConfig(kh, actualKeyName, ctx, req, true)
+				rotatedCount++
 			}
 		}
 	}
 
-	// TODO poss not needed
-	// entry, err := logical.StorageEntryJSON("config", AEAD_CONFIG)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// if err := req.Storage.Put(ctx, entry); err != nil {
-	// 	return nil, err
-	// }
-
-	return nil, nil
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"rotated_keys": rotatedCount,
+			"skipped_keys": skippedCount,
+		},
+	}, nil
 }
 
 func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {

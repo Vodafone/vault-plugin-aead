@@ -184,8 +184,13 @@ func Backend(c *logical.BackendConfig) *backend {
 			&framework.Path{
 				Pattern:         "rotate",
 				HelpSynopsis:    "rotate the keys.",
-				HelpDescription: "Rotate the keys.",
-				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				HelpDescription: "Rotate the keys. Optional: specify keys parameter to rotate only specific keys (comma-separated). If not specified, all keys are rotated.",
+				Fields: map[string]*framework.FieldSchema{
+					"keys": {
+						Type:        framework.TypeString,
+						Description: "Comma-separated list of key names to rotate. If not specified, all keys will be rotated.",
+					},
+				},
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathKeyRotate,

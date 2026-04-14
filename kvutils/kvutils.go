@@ -397,7 +397,7 @@ func KvPutSecret(client *vault.Client, kv_engine string, kv_version string, secr
 
 	// Verify the write with exponential backoff to wait for replication
 	hclog.L().Info("secret saved, verifying replication (will retry up to 5 times if needed)", "path", secretPath)
-	
+
 	var verifiedSecret *vault.KVSecret
 	verifyAttempt := 0
 
