@@ -22,27 +22,38 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 		return nil, err
 	}
 
-	keysToSync := data.Raw
-
 	keysMap := make(map[string]interface{})
+	var keysToProcess []string
 
-	for keyField, encryptionKey := range AEAD_CONFIG.Items() {
-		fieldName := fmt.Sprintf("%v", keyField)
-		keyStr := fmt.Sprintf("%v", encryptionKey)
-		if !strings.Contains(keyStr, "primaryKeyId") {
-			continue
+	// Check if specific keys were requested for syncing
+	keysParam := data.Get("keys")
+	if keysParam != nil && keysParam.(string) != "" {
+		// Parse comma-separated list of keys and find all their variants
+		keysList := strings.Split(keysParam.(string), ",")
+		for _, requestedKeyName := range keysList {
+			fieldName := strings.TrimSpace(requestedKeyName)
+			// Find all key variants matching this name (exact, gcm/, siv/)
+			actualKeyNames := b.findAllKeysWithPrefix(fieldName)
+			keysToProcess = append(keysToProcess, actualKeyNames...)
 		}
-
-		if len(keysToSync) != 0 {
-			if _, okay := keysToSync[fieldName]; !okay {
-				continue
+	} else {
+		// No specific keys requested - process all valid keys
+		for keyField, encryptionKey := range AEAD_CONFIG.Items() {
+			fieldName := fmt.Sprintf("%v", keyField)
+			keyStr := fmt.Sprintf("%v", encryptionKey)
+			// Only include valid keysets (must contain "primaryKeyId")
+			if strings.Contains(keyStr, "primaryKeyId") {
+				keysToProcess = append(keysToProcess, fieldName)
 			}
 		}
+	}
 
-		// if kvKeysExists && !slices.Contains(paths["keys"], fieldName) {
-		// 	continue
-		// }
-		keysMap[fieldName] = encryptionKey
+	// Build the keysMap from keysToProcess
+	for _, keyName := range keysToProcess {
+		encryptionKey, ok := AEAD_CONFIG.Get(keyName)
+		if ok {
+			keysMap[keyName] = encryptionKey
+		}
 	}
 
 	projectIdInterface, ok := AEAD_CONFIG.Get("BQ_PROJECT")

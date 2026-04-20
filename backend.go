@@ -295,8 +295,13 @@ func Backend(c *logical.BackendConfig) *backend {
 			&framework.Path{
 				Pattern:         "bqsync",
 				HelpSynopsis:    "sync the keys to bq routine.",
-				HelpDescription: "sync the keys to bq routine",
-				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				HelpDescription: "Sync keys to BigQuery. Optional: specify keys parameter to sync only specific keys (comma-separated). If not specified, all keys are synced.",
+				Fields: map[string]*framework.FieldSchema{
+					"keys": {
+						Type:        framework.TypeString,
+						Description: "Comma-separated list of key names to sync. If not specified, all keys will be synced.",
+					},
+				},
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathBQKeySync,
