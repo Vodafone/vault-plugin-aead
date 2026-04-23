@@ -89,44 +89,21 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 		return nil, err
 	}
 
-	// Validate that required datasets exist before processing
-	var validKeys []string
-	var skippedKeys []string
-	for keyName := range keysMap {
-		// Check if this key will have required datasets
-		// Extract category (key name without prefix)
-		categoryName := aeadutils.RemoveKeyPrefix(keyName)
-		categoryName = strings.Replace(categoryName, "-", "_", -1)
-		
-		// Check if at least one region's decrypt dataset exists
-		hasDecryptDataset := false
-		for _, region := range []string{"eu", "europe_west1", "europe_west2", "europe_west3"} {
-			decryptDatasetId := fmt.Sprintf("vfpf1_dh_lake_xregion_pf1_%s_aead_decrypt_%s_s", categoryName, region)
-			if _, exists := datasets[decryptDatasetId]; exists {
-				hasDecryptDataset = true
-				break
-			}
-		}
-		
-		if !hasDecryptDataset {
-			hclog.L().Warn("No decrypt dataset found for key: " + keyName)
-			skippedKeys = append(skippedKeys, keyName)
-			continue
-		}
-		validKeys = append(validKeys, keyName)
-	}
-
-	// Process only valid keys
+	// Process all requested keys
 	var wg sync.WaitGroup
 	syncedCount := 0
-	for _, keyName := range validKeys {
-		encryptionKey := keysMap[keyName]
+	var failedKeys []map[string]string
+	for keyName, encryptionKey := range keysMap {
 
 		encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionKey)
 		if deterministic {
 			kh, _, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 			if err != nil {
 				hclog.L().Error("failed to create deterministic key handle for: " + keyName)
+				failedKeys = append(failedKeys, map[string]string{
+					"key":   keyName,
+					"error": "failed to create key handle: " + err.Error(),
+				})
 				continue
 			}
 			syncedCount++
@@ -139,6 +116,10 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 			kh, _, err := aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
 			if err != nil {
 				hclog.L().Error("failed to create non deterministic key handle for: " + keyName)
+				failedKeys = append(failedKeys, map[string]string{
+					"key":   keyName,
+					"error": "failed to create key handle: " + err.Error(),
+				})
 				continue
 			}
 			syncedCount++
@@ -151,11 +132,16 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 	}
 	wg.Wait()
 
+	response := map[string]interface{}{
+		"synced_keys": syncedCount,
+		"failed_keys": len(failedKeys),
+	}
+	
+	if len(failedKeys) > 0 {
+		response["failed_list"] = failedKeys
+	}
+
 	return &logical.Response{
-		Data: map[string]interface{}{
-			"synced_keys":   syncedCount,
-			"skipped_keys":  len(skippedKeys),
-			"skipped_list":  skippedKeys,
-		},
+		Data: response,
 	}, nil
 }
