@@ -3,10 +3,8 @@ package aeadplugin
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
-	"unsafe"
 
 	"cloud.google.com/go/pubsub"
 	hclog "github.com/hashicorp/go-hclog"
@@ -59,7 +57,7 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 		for rowKey, rowDataMap := range data.Raw {
 			rowDataMapAsMapStrInt, ok := rowDataMap.(map[string]interface{})
 			if !ok {
-				panic("expecting a map pathAeadEncrypt")
+				return &logical.Response{Data: map[string]interface{}{"error": "invalid data format"}}, fmt.Errorf("invalid data format")
 			}
 			req.Data = rowDataMapAsMapStrInt
 
@@ -85,10 +83,10 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 
 	} else {
 
-		// process a ringle row
+		// process a single row
 		localResp, err := b.encryptRow(ctx, req, data)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		resp = localResp
 	}
@@ -99,14 +97,15 @@ func (b *backend) pathAeadEncrypt(ctx context.Context, req *logical.Request, dat
 
 func (b *backend) encryptRowChan(ctx context.Context, req *logical.Request, data *framework.FieldData, row string, ch chan map[string]interface{}) {
 
-	// this is just a wrapper around the pathAeadEncryptRow methos so that it can be used concurrently in a channel
+	// this is just a wrapper around the encryptRow method so that it can be used concurrently in a channel
 	resp, err := b.encryptRow(ctx, req, data)
-	if err != nil {
-		panic(err)
-	}
-
 	localResp := make(map[string]interface{})
-	localResp[row] = resp.Data
+	if err != nil {
+		hclog.L().Error("failed to encrypt row", "row", row, "error", err)
+		localResp[row] = map[string]interface{}{"error": err.Error()}
+	} else {
+		localResp[row] = resp.Data
+	}
 
 	ch <- localResp
 
@@ -114,14 +113,15 @@ func (b *backend) encryptRowChan(ctx context.Context, req *logical.Request, data
 
 func (b *backend) decryptRowChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
-	// this is just a wrapper around the pathAeadDecryptRow methos so that it can be used concurrently in a channel
+	// this is just a wrapper around the pathAeadDecrypt method so that it can be used concurrently in a channel
 	resp, err := b.pathAeadDecrypt(ctx, req, data)
-	if err != nil {
-		panic(err)
-	}
-
 	localResp := make(map[string]interface{})
-	localResp[fieldName] = resp.Data
+	if err != nil {
+		hclog.L().Error("failed to decrypt row", "field", fieldName, "error", err)
+		localResp[fieldName] = map[string]interface{}{"error": err.Error()}
+	} else {
+		localResp[fieldName] = resp.Data
+	}
 
 	ch <- localResp
 
@@ -129,7 +129,7 @@ func (b *backend) decryptRowChan(ctx context.Context, req *logical.Request, data
 
 func (b *backend) encryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	// retrive the config fro  storage
+	// retrieve the config from storage
 
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
@@ -173,7 +173,7 @@ func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}
 	encryptionkey, ok := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
 	// do we have a key already in config
 	if ok {
-		// is the key we have retrived deterministic?
+		// is the key we have retrieved deterministic?
 		encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionkey)
 		// set additionalDataBytes as field name of the right type
 		additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
@@ -250,7 +250,7 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 		for rowKey, rowDataMap := range data.Raw {
 			rowDataMapAsMapStrInt, ok := rowDataMap.(map[string]interface{})
 			if !ok {
-				panic("expecting a map pathAeadEncrypt")
+				return &logical.Response{Data: map[string]interface{}{"error": "invalid data format"}}, fmt.Errorf("invalid data format")
 			}
 			req.Data = rowDataMapAsMapStrInt
 
@@ -276,7 +276,7 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 	} else {
 		localResp, err := b.decryptRow(ctx, req, data)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		resp = localResp
 	}
@@ -285,7 +285,7 @@ func (b *backend) pathAeadDecrypt(ctx context.Context, req *logical.Request, dat
 }
 
 func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
-	// retrive the config from  storage
+	// retrieve the config from storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -410,7 +410,7 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 		for fieldName, rowDataMap := range pivotedMap {
 			rowDataMapAsMapStrInt, ok := rowDataMap.(map[string]interface{})
 			if !ok {
-				panic("expecting a map pathAeadEncrypt")
+				return &logical.Response{Data: map[string]interface{}{"error": "invalid data format"}}, fmt.Errorf("invalid data format")
 			}
 			req.Data = rowDataMapAsMapStrInt
 
@@ -450,14 +450,15 @@ func (b *backend) pathAeadEncryptBulkCol(ctx context.Context, req *logical.Reque
 
 func (b *backend) encryptColChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
-	// this is just a wrapper around the pathAeadEncryptRow methos so that it can be used concurrently in a channel
+	// this is just a wrapper around the pathAeadEncryptRow methods so that it can be used concurrently in a channel
 	resp, err := b.encryptCol(ctx, req, data, fieldName)
-	if err != nil {
-		panic(err)
-	}
-
 	localResp := make(map[string]interface{})
-	localResp[fieldName] = resp.Data
+	if err != nil {
+		hclog.L().Error("failed to encrypt column", "field", fieldName, "error", err)
+		localResp[fieldName] = map[string]interface{}{"error": err.Error()}
+	} else {
+		localResp[fieldName] = resp.Data
+	}
 
 	ch <- localResp
 
@@ -465,7 +466,7 @@ func (b *backend) encryptColChan(ctx context.Context, req *logical.Request, data
 
 func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
 
-	// retrive the config fro  storage
+	// retrieve the config from storage
 
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
@@ -474,7 +475,7 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 	resp := make(map[string]interface{})
 
 	encryptionkey, keyFound := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
-	// is the key we have retrived deterministic?
+	// is the key we have retrieved deterministic?
 	encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionkey)
 
 	var tinkDetAead tink.DeterministicAEAD
@@ -626,21 +627,22 @@ func (b *backend) pathAeadDecryptBulkCol(ctx context.Context, req *logical.Reque
 
 func (b *backend) decryptColChan(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string, ch chan map[string]interface{}) {
 
-	// this is just a wrapper around the pathAeadDecryptRow methos so that it can be used concurrently in a channel
+	// this is just a wrapper around the pathAeadDecryptRow methods so that it can be used concurrently in a channel
 	resp, err := b.decryptCol(ctx, req, data, fieldName)
-	if err != nil {
-		panic(err)
-	}
-
 	localResp := make(map[string]interface{})
-	localResp[fieldName] = resp.Data
+	if err != nil {
+		hclog.L().Error("failed to decrypt column", "field", fieldName, "error", err)
+		localResp[fieldName] = map[string]interface{}{"error": err.Error()}
+	} else {
+		localResp[fieldName] = resp.Data
+	}
 
 	ch <- localResp
 
 }
 
 func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *framework.FieldData, fieldName string) (*logical.Response, error) {
-	// retrive the config from  storage
+	// retrieve the config from storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -648,7 +650,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 	resp := make(map[string]interface{})
 
 	encryptionkey, keyFound := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
-	// is the key we have retrived deterministic?
+	// is the key we have retrieved deterministic?
 	encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionkey)
 
 	var tinkDetAead tink.DeterministicAEAD
@@ -743,7 +745,7 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 
 	defer wg.Done()
 
-	// retrive the config from  storage
+	// retrieve the config from storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return
@@ -813,14 +815,18 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 
 	tn := time.Now().UTC().String()
 	newUuid := uuid.New()
-	sz := unsafe.Sizeof(data)
 
-	msg := Message{newUuid.String(), market, tn, encryptOrDecrypt, int(sz), rows, fields}
+	msg := Message{newUuid.String(), market, tn, encryptOrDecrypt, 0, rows, fields}
 	payload, err := json.Marshal(msg)
 
 	if err != nil {
-		log.Fatalf("pubsub: json.Marshal: %v", err)
+		hclog.L().Error("pubsub: json.Marshal failed", "error", err)
+		return
 	}
+
+	// Update message size with actual payload size
+	msg.ReqSize = len(payload)
+	payload, _ = json.Marshal(msg)
 
 	t := client.Topic(topicID)
 	result := t.Publish(ctx, &pubsub.Message{

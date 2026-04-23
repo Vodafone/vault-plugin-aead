@@ -93,7 +93,7 @@ func Backend(c *logical.BackendConfig) *backend {
 				Pattern:         "config",
 				HelpSynopsis:    "Configure aead secret engine.",
 				HelpDescription: "Configure aead secret engine.",
-				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic schema - no fixed fields
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.ReadOperation: &framework.PathOperation{
 						Callback: b.pathConfigRead,
@@ -110,7 +110,7 @@ func Backend(c *logical.BackendConfig) *backend {
 				Pattern:         "configOverwrite",
 				HelpSynopsis:    "Configure aead secret engine.",
 				HelpDescription: "Configure aead secret engine.",
-				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic schema - no fixed fields
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.ReadOperation: &framework.PathOperation{
 						Callback: b.pathConfigRead,
@@ -126,7 +126,7 @@ func Backend(c *logical.BackendConfig) *backend {
 				Pattern:         "configDelete",
 				HelpSynopsis:    "Configure aead secret engine.",
 				HelpDescription: "Configure aead secret engine.",
-				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic schema - no fixed fields
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.ReadOperation: &framework.PathOperation{
 						Callback: b.pathConfigRead,
@@ -352,7 +352,7 @@ func Backend(c *logical.BackendConfig) *backend {
 				Pattern:         "updateKeyStatus",
 				HelpSynopsis:    "Update Key Status.",
 				HelpDescription: "Update Key Status.",
-				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic schema - no fixed fields
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.ReadOperation: &framework.PathOperation{
 						Callback: b.pathConfigRead,
@@ -369,7 +369,7 @@ func Backend(c *logical.BackendConfig) *backend {
 				Pattern:         "updateKeyMaterial",
 				HelpSynopsis:    "Update Key Material.",
 				HelpDescription: "Update Key Material.",
-				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic schema - no fixed fields
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.ReadOperation: &framework.PathOperation{
 						Callback: b.pathConfigRead,
@@ -386,7 +386,7 @@ func Backend(c *logical.BackendConfig) *backend {
 				Pattern:         "updateKeyID",
 				HelpSynopsis:    "Update Key ID.",
 				HelpDescription: "Update Key ID.",
-				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic schema - no fixed fields
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.ReadOperation: &framework.PathOperation{
 						Callback: b.pathConfigRead,
@@ -403,7 +403,7 @@ func Backend(c *logical.BackendConfig) *backend {
 				Pattern:         "updatePrimaryKeyID",
 				HelpSynopsis:    "Update Primary Key ID.",
 				HelpDescription: "Update Primary Key ID.",
-				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic schema - no fixed fields
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.ReadOperation: &framework.PathOperation{
 						Callback: b.pathConfigRead,
@@ -420,7 +420,7 @@ func Backend(c *logical.BackendConfig) *backend {
 				Pattern:         "importKey",
 				HelpSynopsis:    "Import a key.",
 				HelpDescription: "Import a key.",
-				Fields:          map[string]*framework.FieldSchema{}, // commented out as i do not want to define a schema as it is a map and i don't know what the keys will be called
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic schema - no fixed fields
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.ReadOperation: &framework.PathOperation{
 						Callback: b.pathConfigRead,

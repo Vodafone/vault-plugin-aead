@@ -3,7 +3,6 @@ package aeadplugin
 import (
 	"bytes"
 	"context"
-	b64 "encoding/base64"
 	"fmt"
 	"strings"
 
@@ -27,10 +26,7 @@ func (b *backend) pathConfigOverwrite(ctx context.Context, req *logical.Request,
 }
 func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwriteConfig bool, overwriteKV bool) (*logical.Response, error) {
 
-	// hclog.L().Info("mountpoint - " + req.MountPoint)
-	// fmt.Printf("\nmountpoint - %s", req.MountPoint)
-
-	// retrive the config from  storage
+	// retrieve the config from storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -74,14 +70,14 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 
 func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	// retrive the config from  storage
+	// retrieve the config from storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
 	// iterate through the supplied map, deleting from the store
-	for k, _ := range data.Raw {
+	for k := range data.Raw {
 		AEAD_CONFIG.Remove(k)
 		ok, err := deleteFromKV(k)
 		if !ok || err != nil {
@@ -104,7 +100,7 @@ func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, da
 
 func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	// retrive the config from  storage
+	// retrieve the config from storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -126,14 +122,14 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 
 func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	// retrive the config from  storage
+	// retrieve the config from storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
 	m := map[string]interface{}{}
-	for k, v := range AEAD_CONFIG.Items() {
+	for k := range AEAD_CONFIG.Items() {
 		str := ""
 		_, determinstic := aeadutils.IsKeyJsonDeterministic(v)
 		if determinstic {
@@ -217,7 +213,7 @@ func (b *backend) findAllKeysWithPrefix(requestedKeyName string) []string {
 
 func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	// retrive the config from  storage
+	// retrieve the config from storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -310,7 +306,7 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 
 	// data.Raw is map[string]map[string]string
 	// map['field0':map['key':'status']]
-	// retrive the config from  storage
+	// retrieve the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -336,7 +332,7 @@ func (b *backend) pathUpdateKeyStatus(ctx context.Context, req *logical.Request,
 		for keyId, status := range vMap {
 			statusStr := fmt.Sprintf("%s", status)
 
-			// update the status, get a new heyhandle
+			// update the status, get a new key handle
 			newKh, err := aeadutils.UpdateKeyStatus(kh, keyId, statusStr)
 			if err != nil || newKh == nil {
 				hclog.L().Error("failed to update the status")
@@ -375,7 +371,7 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 
 	// data.Raw is map[string]map[string]string
 	// map['field0':map['key':'material']]
-	// retrive the config from  storage
+	// retrieve the config from storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -401,7 +397,7 @@ func (b *backend) pathUpdateKeyMaterial(ctx context.Context, req *logical.Reques
 		for keyId, material := range vMap {
 			materialStr := fmt.Sprintf("%s", material)
 
-			// update the status, get a new heyhandle
+			// update the status, get a new key handle
 			newKh, err := aeadutils.UpdateKeyMaterial(kh, keyId, materialStr)
 			if err != nil {
 				hclog.L().Error("failed to update the material")
@@ -440,7 +436,7 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 
 	// data.Raw is map[string]string
 	// map['field0':'primaryKey']]
-	// retrive the config from  storage
+	// retrieve the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -464,7 +460,7 @@ func (b *backend) pathUpdatePrimaryKeyID(ctx context.Context, req *logical.Reque
 		//assert
 		newPrimaryKeyStr := fmt.Sprintf("%s", v)
 
-		// update the status, get a new heyhandle
+		// update the status, get a new key handle
 		newKh, err := aeadutils.UpdatePrimaryKeyID(kh, newPrimaryKeyStr)
 		if err != nil {
 			hclog.L().Error("failed to update the keyID")
@@ -503,7 +499,7 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 
 	// data.Raw is map[string]map[string]string
 	// map['field0':map['key':'newkey']]
-	// retrive the config from  storage
+	// retrieve the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -529,7 +525,7 @@ func (b *backend) pathUpdateKeyID(ctx context.Context, req *logical.Request, dat
 		for keyId, newKey := range vMap {
 			newKeyStr := fmt.Sprintf("%s", newKey)
 
-			// update the status, get a new heyhandle
+			// update the status, get a new key handle
 			newKh, err := aeadutils.UpdateKeyID(kh, keyId, newKeyStr)
 			if err != nil {
 				hclog.L().Error("failed to update the keyid")
@@ -604,7 +600,7 @@ func (b *backend) pathAeadCreateDeterministicKeysOverwrite(ctx context.Context, 
 
 func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
 
-	// retrive the config from  storage
+	// retrieve the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -670,7 +666,7 @@ func (b *backend) pathAeadCreateNonDeterministicKeysOverwrite(ctx context.Contex
 
 func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, req *logical.Request, data *framework.FieldData, overwrite bool) (*logical.Response, error) {
 
-	// retrive the config from  storage
+	// retrieve the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
@@ -732,7 +728,7 @@ func (b *backend) saveKeyToConfig(keysetHandle *keyset.Handle, fieldName string,
 	prefix := aeadutils.GetKeyPrefix(fieldName, "", keysetHandle)
 	fieldName = prefix + fieldName
 
-	// retrive the config from  storage
+	// retrieve the config from  storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return

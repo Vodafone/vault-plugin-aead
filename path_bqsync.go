@@ -17,7 +17,7 @@ import (
 
 func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
-	// retrive the config from  storage
+	// retrieve the config from storage
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
