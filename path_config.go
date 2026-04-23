@@ -3,6 +3,7 @@ package aeadplugin
 import (
 	"bytes"
 	"context"
+	b64 "encoding/base64"
 	"fmt"
 	"strings"
 
@@ -129,7 +130,7 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 	}
 
 	m := map[string]interface{}{}
-	for k := range AEAD_CONFIG.Items() {
+	for k, v := range AEAD_CONFIG.Items() {
 		str := ""
 		_, determinstic := aeadutils.IsKeyJsonDeterministic(v)
 		if determinstic {
@@ -159,7 +160,7 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 	}
 
 	// remove config from the cache anything that is not in consul
-	for k, _ := range AEAD_CONFIG.Items() {
+	for k := range AEAD_CONFIG.Items() {
 		if _, ok := consulConfig[k]; !ok {
 			AEAD_CONFIG.Remove(k)
 		}

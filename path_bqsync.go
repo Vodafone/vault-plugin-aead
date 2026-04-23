@@ -10,6 +10,7 @@ import (
 
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/Vodafone/vault-plugin-aead/bqutils"
+	"github.com/google/tink/go/keyset"
 	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
@@ -130,10 +131,10 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 			}
 			syncedCount++
 			wg.Add(1)
-			go func() {
+			go func(name string, keyHandle *keyset.Handle) {
 				defer wg.Done()
-				bqutils.DoBQSync(ctx, kh, keyName, true, AEAD_CONFIG, datasets)
-			}()
+				bqutils.DoBQSync(ctx, keyHandle, name, true, AEAD_CONFIG, datasets)
+			}(keyName, kh)
 		} else {
 			kh, _, err := aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
 			if err != nil {
@@ -142,10 +143,10 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 			}
 			syncedCount++
 			wg.Add(1)
-			go func() {
+			go func(name string, keyHandle *keyset.Handle) {
 				defer wg.Done()
-				bqutils.DoBQSync(ctx, kh, keyName, false, AEAD_CONFIG, datasets)
-			}()
+				bqutils.DoBQSync(ctx, keyHandle, name, false, AEAD_CONFIG, datasets)
+			}(keyName, kh)
 		}
 	}
 	wg.Wait()

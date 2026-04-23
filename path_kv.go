@@ -64,7 +64,7 @@ func (b *backend) pathSyncKV(ctx context.Context, req *logical.Request, data *fr
 			gcmcount := 0
 			sivcount := 0
 			aadcount := 0
-			for k, _ := range kvMap {
+		for k := range kvMap {
 				if strings.HasPrefix(k, "ADDITIONAL") {
 					aadcount++
 				} else if strings.HasPrefix(k, "gcm/") {
