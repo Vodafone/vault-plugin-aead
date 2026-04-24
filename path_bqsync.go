@@ -102,6 +102,7 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 	// Process all requested keys
 	var wg sync.WaitGroup
 	syncedCount := 0
+	var syncedKeys []string
 	var failedKeys []map[string]string
 	for keyName, encryptionKey := range keysMap {
 
@@ -117,6 +118,7 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 				continue
 			}
 			syncedCount++
+			syncedKeys = append(syncedKeys, keyName)
 			wg.Add(1)
 			go func(name string, keyHandle *keyset.Handle) {
 				defer wg.Done()
@@ -133,6 +135,7 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 				continue
 			}
 			syncedCount++
+			syncedKeys = append(syncedKeys, keyName)
 			wg.Add(1)
 			go func(name string, keyHandle *keyset.Handle) {
 				defer wg.Done()
@@ -145,6 +148,10 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 	response := map[string]interface{}{
 		"synced_keys": syncedCount,
 		"failed_keys": len(failedKeys),
+	}
+
+	if len(syncedKeys) > 0 {
+		response["synced_list"] = syncedKeys
 	}
 	
 	if len(failedKeys) > 0 {

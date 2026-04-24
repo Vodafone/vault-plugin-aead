@@ -221,7 +221,9 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 	}
 
 	rotatedCount := 0
-	skippedCount := 0
+	var rotatedKeys []string
+	var notFoundKeys []string
+	var failedKeys []map[string]string
 	var keysToProcess []string
 
 	// Check if specific keys were requested for rotation
@@ -246,7 +248,7 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 		if len(actualKeyNames) == 0 {
 			// No keys found for this name
 			hclog.L().Warn("Key not found in config: " + fieldName)
-			skippedCount++
+			notFoundKeys = append(notFoundKeys, fieldName)
 			continue
 		}
 
@@ -257,7 +259,10 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 			if !ok {
 				// Should not happen since we just found it, but check anyway
 				hclog.L().Warn("Key disappeared from config: " + actualKeyName)
-				skippedCount++
+				failedKeys = append(failedKeys, map[string]string{
+					"key":   actualKeyName,
+					"error": "key disappeared from config",
+				})
 				continue
 			}
 
@@ -266,7 +271,10 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 			if err != nil {
 				// not a valid key
 				hclog.L().Warn("Invalid keyset JSON for key: " + actualKeyName)
-				skippedCount++
+				failedKeys = append(failedKeys, map[string]string{
+					"key":   actualKeyName,
+					"error": "invalid keyset JSON: " + err.Error(),
+				})
 				continue
 			}
 
@@ -275,31 +283,54 @@ func (b *backend) pathKeyRotate(ctx context.Context, req *logical.Request, data 
 				kh, _, err := aeadutils.CreateInsecureHandleAndDeterministicAead(encryptionKeyStr)
 				if err != nil {
 					hclog.L().Error("failed to create key handle for: " + actualKeyName)
-					skippedCount++
+					failedKeys = append(failedKeys, map[string]string{
+						"key":   actualKeyName,
+						"error": "failed to create key handle: " + err.Error(),
+					})
 					continue
 				}
 				aeadutils.RotateKeys(kh, true)
 				b.saveKeyToConfig(kh, actualKeyName, ctx, req, true)
 				rotatedCount++
+				rotatedKeys = append(rotatedKeys, actualKeyName)
 			} else {
 				kh, _, err := aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
 				if err != nil {
 					hclog.L().Error("failed to create key handle for: " + actualKeyName)
-					skippedCount++
+					failedKeys = append(failedKeys, map[string]string{
+						"key":   actualKeyName,
+						"error": "failed to create key handle: " + err.Error(),
+					})
 					continue
 				}
 				aeadutils.RotateKeys(kh, false)
 				b.saveKeyToConfig(kh, actualKeyName, ctx, req, true)
 				rotatedCount++
+				rotatedKeys = append(rotatedKeys, actualKeyName)
 			}
 		}
 	}
 
+	response := map[string]interface{}{
+		"rotated_keys": rotatedCount,
+		"failed_keys":  len(failedKeys),
+	}
+
+	if len(rotatedKeys) > 0 {
+		response["rotated_list"] = rotatedKeys
+	}
+
+	if len(failedKeys) > 0 {
+		response["failed_list"] = failedKeys
+	}
+
+	if len(notFoundKeys) > 0 {
+		response["not_found_keys"] = len(notFoundKeys)
+		response["not_found_list"] = notFoundKeys
+	}
+
 	return &logical.Response{
-		Data: map[string]interface{}{
-			"rotated_keys": rotatedCount,
-			"skipped_keys": skippedCount,
-		},
+		Data: response,
 	}, nil
 }
 
@@ -608,6 +639,9 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 	}
 
 	resp := make(map[string]interface{})
+	var createdKeys []string
+	var skippedKeys []string
+	var failedKeys []map[string]string
 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for fieldName, unencryptedData := range data.Raw {
@@ -616,9 +650,11 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 		keysetHandle, tinkDetAead, err := aeadutils.CreateNewDeterministicAead()
 		if err != nil {
 			hclog.L().Error("Failed to create a new key", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
+			failedKeys = append(failedKeys, map[string]string{
+				"key":   fieldName,
+				"error": "failed to create key: " + err.Error(),
+			})
+			continue
 		}
 
 		if !overwrite {
@@ -627,7 +663,7 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 			prefix := aeadutils.GetKeyPrefix(fieldName, "", keysetHandle)
 			_, ok := AEAD_CONFIG.Get(prefix + fieldName)
 			if ok {
-				resp[fieldName] = fieldName + " key exists"
+				skippedKeys = append(skippedKeys, fieldName)
 				continue
 			}
 		}
@@ -641,9 +677,11 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 		cypherText, err := tinkDetAead.EncryptDeterministically(unencryptedDataBytes, additionalDataBytes)
 		if err != nil {
 			hclog.L().Error("Failed to encrypt with a new key", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
+			failedKeys = append(failedKeys, map[string]string{
+				"key":   fieldName,
+				"error": "failed to encrypt: " + err.Error(),
+			})
+			continue
 		}
 
 		// set the response as the base64 encrypted data
@@ -651,6 +689,23 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 
 		// extract the key that could be stored, do not overwrite
 		b.saveKeyToConfig(keysetHandle, fieldName, ctx, req, true)
+		createdKeys = append(createdKeys, fieldName)
+	}
+
+	// Add summary statistics
+	resp["_summary"] = map[string]interface{}{
+		"created_keys": len(createdKeys),
+		"skipped_keys": len(skippedKeys),
+		"failed_keys":  len(failedKeys),
+	}
+	if len(createdKeys) > 0 {
+		resp["_created_list"] = createdKeys
+	}
+	if len(skippedKeys) > 0 {
+		resp["_skipped_list"] = skippedKeys
+	}
+	if len(failedKeys) > 0 {
+		resp["_failed_list"] = failedKeys
 	}
 
 	return &logical.Response{
@@ -674,6 +729,9 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 	}
 
 	resp := make(map[string]interface{})
+	var createdKeys []string
+	var skippedKeys []string
+	var failedKeys []map[string]string
 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for fieldName, unencryptedData := range data.Raw {
@@ -682,9 +740,11 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 		keysetHandle, tinkAead, err := aeadutils.CreateNewAead()
 		if err != nil {
 			hclog.L().Error("Failed to create a new key", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
+			failedKeys = append(failedKeys, map[string]string{
+				"key":   fieldName,
+				"error": "failed to create key: " + err.Error(),
+			})
+			continue
 		}
 
 		if !overwrite {
@@ -693,7 +753,7 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 			prefix := aeadutils.GetKeyPrefix(fieldName, "", keysetHandle)
 			_, ok := AEAD_CONFIG.Get(prefix + fieldName)
 			if ok {
-				resp[fieldName] = fieldName + " key exists"
+				skippedKeys = append(skippedKeys, fieldName)
 				continue
 			}
 		}
@@ -707,9 +767,11 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 		cypherText, err := tinkAead.Encrypt(unencryptedDataBytes, additionalDataBytes)
 		if err != nil {
 			hclog.L().Error("Failed to encrypt with a new key", err)
-			return &logical.Response{
-				Data: resp,
-			}, err
+			failedKeys = append(failedKeys, map[string]string{
+				"key":   fieldName,
+				"error": "failed to encrypt: " + err.Error(),
+			})
+			continue
 		}
 
 		// set the response as the base64 encrypted data
@@ -717,6 +779,23 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 
 		// extract the key that could be stored, do not overwrite
 		b.saveKeyToConfig(keysetHandle, fieldName, ctx, req, true)
+		createdKeys = append(createdKeys, fieldName)
+	}
+
+	// Add summary statistics
+	resp["_summary"] = map[string]interface{}{
+		"created_keys": len(createdKeys),
+		"skipped_keys": len(skippedKeys),
+		"failed_keys":  len(failedKeys),
+	}
+	if len(createdKeys) > 0 {
+		resp["_created_list"] = createdKeys
+	}
+	if len(skippedKeys) > 0 {
+		resp["_skipped_list"] = skippedKeys
+	}
+	if len(failedKeys) > 0 {
+		resp["_failed_list"] = failedKeys
 	}
 
 	return &logical.Response{

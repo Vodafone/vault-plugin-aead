@@ -349,9 +349,22 @@ returns the plugin version number as json.
 curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD_ENGINE}/info
 ```
 ### /config (read)
-returns the config as json - mostly keys. This is intended to be a restricted endpoint as it is in clear text. See  section on "LIMITATIONS AND TODO's"
+Returns the config as json - mostly keys. This is intended to be a restricted endpoint as it is in clear text. Response now includes summary with total key count.
+
 ```
 curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD_ENGINE}/config
+```
+
+**Response includes all keys plus summary:**
+```json
+{
+  "gcm/field1": "{...keyset json...}",
+  "siv/field2": "{...keyset json...}",
+  "_summary": {
+    "total_keys": 2
+  },
+  "MountPoint": "aead-secrets/"
+}
 ```
 
 ### /config (write)
@@ -372,46 +385,150 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v
 ```
 
 ### /createAEADkey
-creates a non deterministic keyset with 1 key of type github.com/google/tink/go/aead.AES256GCMKeyTemplate() for field "fieldname-nondet" and saves it to config. Note this DOES NOT overwrite an existing keyset
+Creates non-deterministic keyset(s) with AES256GCM keys and saves to config. **Does NOT overwrite existing keys**. Supports creating single or multiple keys in one request.
+
+**Single key (original behavior):**
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkey -H "Content-Type: application/json" -d '{"fieldname-nondet":"junktext"}'
 ```
+
+**Multiple keys (new feature):**
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkey -H "Content-Type: application/json" -d '{"field1":"plaintext","field2":"plaintext","field3":"plaintext"}'
+```
+
+**Response includes encrypted values plus summary:**
+```json
+{
+  "field1": "AXgd5oC2hRgUTL1wApiU7WQ9UfVFOpRe...",
+  "field2": "AVo9v6OMQktkfU98vU6jacQLFavDDTEz...",
+  "field3": "AafzS5i+/pdLYNvDB5rrAJH/nZcy36iPP...",
+  "_summary": {
+    "created_keys": 3,
+    "skipped_keys": 0,
+    "failed_keys": 0
+  },
+  "_created_list": ["field1", "field2", "field3"]
+}
+```
+
 ### /createAEADkeyOverwrite
-creates a non deterministic keyset with 1 key of type github.com/google/tink/go/aead.AES256GCMKeyTemplate() for field "fieldname-nondet" and saves it to config. Note this DOES NOT overwrite an existing keyset
+Creates non-deterministic keyset(s) with AES256GCM keys. **WILL overwrite existing keys**. Same format as createAEADkey.
+
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkeyOverwrite -H "Content-Type: application/json" -d '{"fieldname-nondet":"junktext"}'
 ```
+
 ### /createDAEADkey
-creates a deterministic keyset with 1 key of type github.com/google/tink/go/daead.AESSIVKeyTemplate() for field "fieldname-det" and saves it to config. Note this WILL NOT overwrite an existing keyset
+Creates deterministic keyset(s) with AES-SIV keys and saves to config. **Does NOT overwrite existing keys**. Supports creating single or multiple keys in one request.
+
+**Single key (original behavior):**
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkey -H "Content-Type: application/json" -d '{"fieldname-det":"junktext"}' 
 ```
+
+**Multiple keys (new feature):**
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkey -H "Content-Type: application/json" -d '{"field1":"plaintext","field2":"plaintext"}' 
+```
+
+**Response includes encrypted values plus summary:**
+```json
+{
+  "field1": "AfM7qawtjvuEMCudKjVl4lOA0ouLIM...",
+  "field2": "AeRVe0SnFMGnPSbHgUOwnMD/eACeAcA7...",
+  "_summary": {
+    "created_keys": 2,
+    "skipped_keys": 0,
+    "failed_keys": 0
+  },
+  "_created_list": ["field1", "field2"]
+}
+```
+
 ### /createDAEADkeyOverwrite
-creates a deterministic keyset with 1 key of type github.com/google/tink/go/daead.AESSIVKeyTemplate() for field "fieldname-det" and saves it to config. Note this WILL overwrite an existing keyset
+Creates deterministic keyset(s) with AES-SIV keys. **WILL overwrite existing keys**. Same format as createDAEADkey.
+
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkeyOverwrite -H "Content-Type: application/json" -d '{"fieldname-det":"junktext"}' 
 ```
 
 ### /rotate
-Spin through all the keys and rotate them. The config endpoint should show rotated keys
+Rotates encryption keys. Can rotate all keys or specific keys by name. Returns detailed status including successful rotations, failures with error details, and non-existent keys.
+
+**Rotate all keys:**
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/rotate
 ```
 
+**Rotate specific keys:**
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/rotate -d '{"keys":"field1,field2"}'
+```
+
+**Response example:**
+```json
+{
+  "rotated_keys": 3,
+  "rotated_list": ["field1-gcm", "field1-siv", "field2"],
+  "failed_keys": 1,
+  "failed_list": [
+    {"key": "old-key-gcm", "error": "invalid keyset JSON: unexpected EOF"}
+  ],
+  "not_found_keys": 1,
+  "not_found_list": ["nonexistent-key"]
+}
+```
+
 ### /keytypes
-Spin through all the keys and return DETERMINISTIC or NON_DETERMINISTIC
+Returns key types for all keys. Response now includes summary statistics showing counts of deterministic vs non-deterministic keys.
 
 ```
 curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD_ENGINE}/keytypes
 ```
 
+**Response includes all key types plus summary:**
+```json
+{
+  "gcm/field1": "NON DETERMINISTIC",
+  "siv/field2": "DETERMINISTIC",
+  "_summary": {
+    "total_keys": 2,
+    "deterministic_keys": 1,
+    "non_deterministic_keys": 1
+  }
+}
+```
+
 ### /bqsync
-Sync Tink keysets, encrypted with KMS, as a routine in a defined BQ dataset so the same key can be used directly in BQ.
-Because the user of BQ is granted the decryptor by delegation role on the KMS key, the user can invoke the routine to use the encrypted keyset to decrypty data, but cannot decrypt the keyset itself.
+Sync Tink keysets, encrypted with KMS, as routines in BigQuery datasets. Supports wildcards and selective key sync. Returns detailed status including successful syncs, failures with error details, and non-existent keys.
 
+Because the user of BQ is granted the decryptor by delegation role on the KMS key, the user can invoke the routine to use the encrypted keyset to decrypt data, but cannot decrypt the keyset itself.
 
+**Sync all keys:**
 ```
 curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/bqsync
+```
+
+**Sync specific keys:**
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/bqsync -d '{"keys":"field1,field2,fieldname"}'
+```
+
+**Sync with wildcards:**
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/bqsync -d '{"keys":"test-*"}'
+```
+
+**Response example:**
+```json
+{
+  "synced_keys": 3,
+  "synced_list": ["field1-gcm", "field2-gcm", "fieldname-siv"],
+  "failed_keys": 0,
+  "not_found_keys": 1,
+  "not_found_list": ["missing-key"]
+}
 ```
 
 
