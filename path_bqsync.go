@@ -30,6 +30,7 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 
 	keysMap := make(map[string]interface{})
 	var keysToProcess []string
+	var notFoundKeys []string
 
 	// Check if specific keys were requested for syncing
 	keysParam := data.Get("keys")
@@ -43,16 +44,25 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 			if strings.Contains(fieldName, "*") {
 				// Wildcard matching: find all keys matching the pattern
 				pattern := strings.Replace(fieldName, "*", "", -1) // Remove * to get prefix
+				matchFound := false
 				for configKey := range AEAD_CONFIG.Items() {
 					// Match keys that start with the pattern
 					if strings.HasPrefix(configKey, pattern) || strings.HasPrefix(configKey, "gcm/"+pattern) || strings.HasPrefix(configKey, "siv/"+pattern) {
 						keysToProcess = append(keysToProcess, configKey)
+						matchFound = true
 					}
+				}
+				if !matchFound {
+					notFoundKeys = append(notFoundKeys, fieldName)
 				}
 			} else {
 				// Regular key - find all variants (exact, gcm/, siv/)
 				actualKeyNames := b.findAllKeysWithPrefix(fieldName)
-				keysToProcess = append(keysToProcess, actualKeyNames...)
+				if len(actualKeyNames) == 0 {
+					notFoundKeys = append(notFoundKeys, fieldName)
+				} else {
+					keysToProcess = append(keysToProcess, actualKeyNames...)
+				}
 			}
 		}
 	} else {
@@ -139,6 +149,11 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 	
 	if len(failedKeys) > 0 {
 		response["failed_list"] = failedKeys
+	}
+	
+	if len(notFoundKeys) > 0 {
+		response["not_found_keys"] = len(notFoundKeys)
+		response["not_found_list"] = notFoundKeys
 	}
 
 	return &logical.Response{
