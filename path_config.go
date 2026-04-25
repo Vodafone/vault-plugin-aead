@@ -115,7 +115,11 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 		}
 		result[k] = v
 	}
+	
+	// Add total keys count
+	result["total_keys"] = len(AEAD_CONFIG.Items())
 	result["MountPoint"] = req.MountPoint
+	
 	return &logical.Response{
 		Data: result,
 	}, nil
@@ -130,16 +134,28 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 	}
 
 	m := map[string]interface{}{}
+	detCount := 0
+	nonDetCount := 0
 	for k, v := range AEAD_CONFIG.Items() {
 		str := ""
 		_, determinstic := aeadutils.IsKeyJsonDeterministic(v)
 		if determinstic {
 			str = "DETERMINISTIC"
+			detCount++
 		} else {
 			str = "NON DETERMINISTIC"
+			nonDetCount++
 		}
 		m[k] = str
 	}
+	
+	// Add summary statistics
+	m["summary"] = map[string]interface{}{
+		"total_keys":             len(AEAD_CONFIG.Items()),
+		"deterministic_keys":     detCount,
+		"non_deterministic_keys": nonDetCount,
+	}
+	
 	return &logical.Response{
 		Data: m,
 	}, nil
@@ -693,19 +709,19 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 	}
 
 	// Add summary statistics
-	resp["_summary"] = map[string]interface{}{
+	resp["summary"] = map[string]interface{}{
 		"created_keys": len(createdKeys),
 		"skipped_keys": len(skippedKeys),
 		"failed_keys":  len(failedKeys),
 	}
 	if len(createdKeys) > 0 {
-		resp["_created_list"] = createdKeys
+		resp["created_list"] = createdKeys
 	}
 	if len(skippedKeys) > 0 {
-		resp["_skipped_list"] = skippedKeys
+		resp["skipped_list"] = skippedKeys
 	}
 	if len(failedKeys) > 0 {
-		resp["_failed_list"] = failedKeys
+		resp["failed_list"] = failedKeys
 	}
 
 	return &logical.Response{
@@ -783,19 +799,19 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 	}
 
 	// Add summary statistics
-	resp["_summary"] = map[string]interface{}{
+	resp["summary"] = map[string]interface{}{
 		"created_keys": len(createdKeys),
 		"skipped_keys": len(skippedKeys),
 		"failed_keys":  len(failedKeys),
 	}
 	if len(createdKeys) > 0 {
-		resp["_created_list"] = createdKeys
+		resp["created_list"] = createdKeys
 	}
 	if len(skippedKeys) > 0 {
-		resp["_skipped_list"] = skippedKeys
+		resp["skipped_list"] = skippedKeys
 	}
 	if len(failedKeys) > 0 {
-		resp["_failed_list"] = failedKeys
+		resp["failed_list"] = failedKeys
 	}
 
 	return &logical.Response{
