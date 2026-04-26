@@ -319,9 +319,9 @@ func TestBackend(t *testing.T) {
 		resp := encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
 
 		// Check that key was skipped (already exists)
-		skippedList, ok := resp.Data["_skipped_list"].([]string)
+		skippedList, ok := resp.Data["skipped_list"].([]string)
 		if !ok || len(skippedList) == 0 {
-			t.Errorf("expected _skipped_list to contain skipped keys")
+			t.Errorf("expected skipped_list to contain skipped keys")
 		} else if skippedList[0] != "test5-address2" {
 			t.Errorf("expected test5-address2 to be in skipped list, got %v", skippedList)
 		}
@@ -398,7 +398,7 @@ func TestBackend(t *testing.T) {
 
 		secondResp := encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
 		// Check that key was skipped (already exists)
-		skippedList, ok := secondResp.Data["_skipped_list"].([]string)
+		skippedList, ok := secondResp.Data["skipped_list"].([]string)
 		if !ok || len(skippedList) == 0 {
 			t.Fatalf("expected duplicate createDAEADkey to be skipped")
 		}
@@ -486,7 +486,7 @@ func TestBackend(t *testing.T) {
 
 		secondResp := encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
 		// Check that key was skipped (already exists)
-		skippedList, ok := secondResp.Data["_skipped_list"].([]string)
+		skippedList, ok := secondResp.Data["skipped_list"].([]string)
 		if !ok || len(skippedList) == 0 {
 			t.Fatalf("expected duplicate createAEADkey to be skipped")
 		}
