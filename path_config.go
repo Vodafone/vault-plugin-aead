@@ -176,9 +176,12 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 	}
 
 	// remove config from the cache anything that is not in consul
-	for k := range AEAD_CONFIG.Items() {
-		if _, ok := consulConfig[k]; !ok {
-			AEAD_CONFIG.Remove(k)
+	// only sync if consulConfig is not nil (config entry exists in storage)
+	if consulConfig != nil {
+		for k := range AEAD_CONFIG.Items() {
+			if _, ok := consulConfig[k]; !ok {
+				AEAD_CONFIG.Remove(k)
+			}
 		}
 	}
 
