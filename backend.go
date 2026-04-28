@@ -203,14 +203,8 @@ func Backend(c *logical.BackendConfig) *backend {
 			&framework.Path{
 				Pattern:         "createAEADkey",
 				HelpSynopsis:    "Create AEAD keys",
-				HelpDescription: "Create a AEAD key held in config.",
-				Fields: map[string]*framework.FieldSchema{
-					"aeadData": &framework.FieldSchema{
-						Type:        framework.TypeString,
-						Description: "Data to be Encrypted",
-						Default:     "",
-					},
-				},
+				HelpDescription: "Create non-deterministic AEAD keys. Accepts any field names as key names. Example: {\"field1\":\"plaintext\",\"field2\":\"plaintext\"}",
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic field names - accepts any key names in request body
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathAeadCreateNonDeterministicKeys,
@@ -222,15 +216,9 @@ func Backend(c *logical.BackendConfig) *backend {
 			// aead/createAEADkeyOverwrite
 			&framework.Path{
 				Pattern:         "createAEADkeyOverwrite",
-				HelpSynopsis:    "Create AEAD keys",
-				HelpDescription: "Create a AEAD key held in config.",
-				Fields: map[string]*framework.FieldSchema{
-					"aeadData": &framework.FieldSchema{
-						Type:        framework.TypeString,
-						Description: "Data to be Encrypted",
-						Default:     "",
-					},
-				},
+				HelpSynopsis:    "Create AEAD keys (with overwrite)",
+				HelpDescription: "Create non-deterministic AEAD keys. WILL overwrite existing keys. Accepts any field names as key names. Example: {\"field1\":\"plaintext\",\"field2\":\"plaintext\"}",
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic field names - accepts any key names in request body
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathAeadCreateNonDeterministicKeysOverwrite,
@@ -243,14 +231,8 @@ func Backend(c *logical.BackendConfig) *backend {
 			&framework.Path{
 				Pattern:         "createDAEADkey",
 				HelpSynopsis:    "Create DAEAD keys",
-				HelpDescription: "Create a DAEAD key held in config.",
-				Fields: map[string]*framework.FieldSchema{
-					"aeadData": &framework.FieldSchema{
-						Type:        framework.TypeString,
-						Description: "Data to be Encrypted",
-						Default:     "",
-					},
-				},
+				HelpDescription: "Create deterministic AEAD (DAEAD) keys with AES-SIV. Accepts any field names as key names. Example: {\"field1\":\"plaintext\",\"field2\":\"plaintext\"}",
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic field names - accepts any key names in request body
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathAeadCreateDeterministicKeys,
@@ -262,15 +244,9 @@ func Backend(c *logical.BackendConfig) *backend {
 			// aead/createDAEADkey
 			&framework.Path{
 				Pattern:         "createDAEADkeyOverwrite",
-				HelpSynopsis:    "Create DAEAD keys",
-				HelpDescription: "Create a DAEAD key held in config.",
-				Fields: map[string]*framework.FieldSchema{
-					"aeadData": &framework.FieldSchema{
-						Type:        framework.TypeString,
-						Description: "Data to be Encrypted",
-						Default:     "",
-					},
-				},
+				HelpSynopsis:    "Create DAEAD keys (with overwrite)",
+				HelpDescription: "Create deterministic AEAD (DAEAD) keys with AES-SIV. WILL overwrite existing keys. Accepts any field names as key names. Example: {\"field1\":\"plaintext\",\"field2\":\"plaintext\"}",
+				Fields:          map[string]*framework.FieldSchema{}, // dynamic field names - accepts any key names in request body
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathAeadCreateDeterministicKeysOverwrite,

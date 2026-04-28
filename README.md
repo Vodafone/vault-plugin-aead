@@ -360,7 +360,7 @@ curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD
 {
   "gcm/field1": "{...keyset json...}",
   "siv/field2": "{...keyset json...}",
-  "_summary": {
+  "summary": {
     "total_keys": 2
   },
   "MountPoint": "aead-secrets/"
@@ -403,12 +403,12 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v
   "field1": "AXgd5oC2hRgUTL1wApiU7WQ9UfVFOpRe...",
   "field2": "AVo9v6OMQktkfU98vU6jacQLFavDDTEz...",
   "field3": "AafzS5i+/pdLYNvDB5rrAJH/nZcy36iPP...",
-  "_summary": {
+  "summary": {
     "created_keys": 3,
     "skipped_keys": 0,
     "failed_keys": 0
   },
-  "_created_list": ["field1", "field2", "field3"]
+  "created_list": ["field1", "field2", "field3"]
 }
 ```
 
@@ -437,12 +437,12 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v
 {
   "field1": "AfM7qawtjvuEMCudKjVl4lOA0ouLIM...",
   "field2": "AeRVe0SnFMGnPSbHgUOwnMD/eACeAcA7...",
-  "_summary": {
+  "summary": {
     "created_keys": 2,
     "skipped_keys": 0,
     "failed_keys": 0
   },
-  "_created_list": ["field1", "field2"]
+  "created_list": ["field1", "field2"]
 }
 ```
 
@@ -492,7 +492,7 @@ curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD
 {
   "gcm/field1": "NON DETERMINISTIC",
   "siv/field2": "DETERMINISTIC",
-  "_summary": {
+  "summary": {
     "total_keys": 2,
     "deterministic_keys": 1,
     "non_deterministic_keys": 1
