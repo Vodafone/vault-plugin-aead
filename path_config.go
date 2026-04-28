@@ -662,8 +662,25 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 	var skippedKeys []string
 	var failedKeys []map[string]string
 
+	// Support two modes:
+	// 1. New way: {"data": {"field1": "value", "field2": "value"}} - NO warnings
+	// 2. Old way: {"field1": "value", "field2": "value"} - shows warnings (backward compat)
+	var fieldsToProcess map[string]interface{}
+
+	if dataParam := data.Get("data"); dataParam != nil {
+		// New way: data is wrapped in "data" field
+		if dataMap, ok := dataParam.(map[string]interface{}); ok {
+			fieldsToProcess = dataMap
+		} else {
+			return nil, fmt.Errorf("'data' field must be a map of key-value pairs")
+		}
+	} else {
+		// Old way: backward compatibility - use data.Raw directly
+		fieldsToProcess = data.Raw
+	}
+
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
-	for fieldName, unencryptedData := range data.Raw {
+	for fieldName, unencryptedData := range fieldsToProcess {
 
 		// create new DAEAD key
 		keysetHandle, tinkDetAead, err := aeadutils.CreateNewDeterministicAead()
@@ -752,8 +769,25 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 	var skippedKeys []string
 	var failedKeys []map[string]string
 
+	// Support two modes:
+	// 1. New way: {"data": {"field1": "value", "field2": "value"}} - NO warnings
+	// 2. Old way: {"field1": "value", "field2": "value"} - shows warnings (backward compat)
+	var fieldsToProcess map[string]interface{}
+
+	if dataParam := data.Get("data"); dataParam != nil {
+		// New way: data is wrapped in "data" field
+		if dataMap, ok := dataParam.(map[string]interface{}); ok {
+			fieldsToProcess = dataMap
+		} else {
+			return nil, fmt.Errorf("'data' field must be a map of key-value pairs")
+		}
+	} else {
+		// Old way: backward compatibility - use data.Raw directly
+		fieldsToProcess = data.Raw
+	}
+
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
-	for fieldName, unencryptedData := range data.Raw {
+	for fieldName, unencryptedData := range fieldsToProcess {
 
 		// create new AEAD key
 		keysetHandle, tinkAead, err := aeadutils.CreateNewAead()

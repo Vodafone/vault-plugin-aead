@@ -385,73 +385,134 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v
 ```
 
 ### /createAEADkey
-Creates non-deterministic keyset(s) with AES256GCM keys and saves to config. **Does NOT overwrite existing keys**. Supports creating single or multiple keys in one request.
+Creates non-deterministic keyset(s) with AES256GCM keys and saves to config. **Does NOT overwrite existing keys**. Supports two API formats:
 
-**Single key (original behavior):**
-```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkey -H "Content-Type: application/json" -d '{"fieldname-nondet":"junktext"}'
-```
-
-**Multiple keys (new feature):**
-```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkey -H "Content-Type: application/json" -d '{"field1":"plaintext","field2":"plaintext","field3":"plaintext"}'
+**New Format (Recommended - No Warnings):**
+Wrap key-value pairs in a `"data"` field:
+```bash
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkey -H "Content-Type: application/json" -d '{"data":{"field1":"plaintext","field2":"plaintext"}}'
 ```
 
-**Response includes encrypted values plus summary:**
+**Response (no warnings):**
 ```json
 {
-  "field1": "AXgd5oC2hRgUTL1wApiU7WQ9UfVFOpRe...",
-  "field2": "AVo9v6OMQktkfU98vU6jacQLFavDDTEz...",
-  "field3": "AafzS5i+/pdLYNvDB5rrAJH/nZcy36iPP...",
-  "summary": {
-    "created_keys": 3,
-    "skipped_keys": 0,
-    "failed_keys": 0
+  "data": {
+    "field1": "AXgd5oC2hRgUTL1wApiU7WQ9UfVFOpRe...",
+    "field2": "AVo9v6OMQktkfU98vU6jacQLFavDDTEz...",
+    "summary": {
+      "created_keys": 2,
+      "skipped_keys": 0,
+      "failed_keys": 0
+    },
+    "created_list": ["field1", "field2"]
   },
-  "created_list": ["field1", "field2", "field3"]
+  "warnings": null
 }
 ```
+
+**Old Format (Backward Compatible - Shows Warnings):**
+Send key-value pairs directly (without `"data"` wrapper):
+```bash
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkey -H "Content-Type: application/json" -d '{"field1":"plaintext","field2":"plaintext"}'
+```
+
+**Response (with warnings):**
+```json
+{
+  "data": {
+    "field1": "AXgd5oC2hRgUTL1wApiU7WQ9UfVFOpRe...",
+    "field2": "AVo9v6OMQktkfU98vU6jacQLFavDDTEz...",
+    "summary": {
+      "created_keys": 2,
+      "skipped_keys": 0,
+      "failed_keys": 0
+    },
+    "created_list": ["field1", "field2"]
+  },
+  "warnings": ["Endpoint ignored these unrecognized parameters: [field1 field2]"]
+}
+```
+**Note:** The warnings in the old format are harmless and do not affect functionality. Both formats work identically.
 
 ### /createAEADkeyOverwrite
-Creates non-deterministic keyset(s) with AES256GCM keys. **WILL overwrite existing keys**. Same format as createAEADkey.
+Creates non-deterministic keyset(s) with AES256GCM keys. **WILL overwrite existing keys**. Supports the same two formats as createAEADkey.
 
+**New format (recommended):**
+```bash
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkeyOverwrite -H "Content-Type: application/json" -d '{"data":{"field1":"plaintext"}}'
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkeyOverwrite -H "Content-Type: application/json" -d '{"fieldname-nondet":"junktext"}'
+
+**Old format (backward compatible):**
+```bash
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkeyOverwrite -H "Content-Type: application/json" -d '{"field1":"plaintext"}'
 ```
+
+See `/createAEADkey` for detailed format documentation and response examples.
 
 ### /createDAEADkey
-Creates deterministic keyset(s) with AES-SIV keys and saves to config. **Does NOT overwrite existing keys**. Supports creating single or multiple keys in one request.
+Creates deterministic keyset(s) with AES-SIV keys and saves to config. **Does NOT overwrite existing keys**. Supports two API formats:
 
-**Single key (original behavior):**
-```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkey -H "Content-Type: application/json" -d '{"fieldname-det":"junktext"}' 
-```
-
-**Multiple keys (new feature):**
-```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkey -H "Content-Type: application/json" -d '{"field1":"plaintext","field2":"plaintext"}' 
+**New Format (Recommended - No Warnings):**
+Wrap key-value pairs in a `"data"` field:
+```bash
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkey -H "Content-Type: application/json" -d '{"data":{"field1":"plaintext","field2":"plaintext"}}'
 ```
 
-**Response includes encrypted values plus summary:**
+**Response (no warnings):**
 ```json
 {
-  "field1": "AfM7qawtjvuEMCudKjVl4lOA0ouLIM...",
-  "field2": "AeRVe0SnFMGnPSbHgUOwnMD/eACeAcA7...",
-  "summary": {
-    "created_keys": 2,
-    "skipped_keys": 0,
-    "failed_keys": 0
+  "data": {
+    "field1": "AfM7qawtjvuEMCudKjVl4lOA0ouLIM...",
+    "field2": "AeRVe0SnFMGnPSbHgUOwnMD/eACeAcA7...",
+    "summary": {
+      "created_keys": 2,
+      "skipped_keys": 0,
+      "failed_keys": 0
+    },
+    "created_list": ["field1", "field2"]
   },
-  "created_list": ["field1", "field2"]
+  "warnings": null
 }
 ```
 
-### /createDAEADkeyOverwrite
-Creates deterministic keyset(s) with AES-SIV keys. **WILL overwrite existing keys**. Same format as createDAEADkey.
+**Old Format (Backward Compatible - Shows Warnings):**
+Send key-value pairs directly (without `"data"` wrapper):
+```bash
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkey -H "Content-Type: application/json" -d '{"field1":"plaintext","field2":"plaintext"}'
+```
 
+**Response (with warnings):**
+```json
+{
+  "data": {
+    "field1": "AfM7qawtjvuEMCudKjVl4lOA0ouLIM...",
+    "field2": "AeRVe0SnFMGnPSbHgUOwnMD/eACeAcA7...",
+    "summary": {
+      "created_keys": 2,
+      "skipped_keys": 0,
+      "failed_keys": 0
+    },
+    "created_list": ["field1", "field2"]
+  },
+  "warnings": ["Endpoint ignored these unrecognized parameters: [field1 field2]"]
+}
 ```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkeyOverwrite -H "Content-Type: application/json" -d '{"fieldname-det":"junktext"}' 
+**Note:** The warnings in the old format are harmless and do not affect functionality. Both formats work identically.
+
+### /createDAEADkeyOverwrite
+Creates deterministic keyset(s) with AES-SIV keys. **WILL overwrite existing keys**. Supports the same two formats as createDAEADkey.
+
+**New format (recommended):**
+```bash
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkeyOverwrite -H "Content-Type: application/json" -d '{"data":{"field1":"plaintext"}}'
 ```
+
+**Old format (backward compatible):**
+```bash
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkeyOverwrite -H "Content-Type: application/json" -d '{"field1":"plaintext"}'
+```
+
+See `/createDAEADkey` for detailed format documentation and response examples.
 
 ### /rotate
 Rotates encryption keys. Can rotate all keys or specific keys by name. Returns detailed status including successful rotations, failures with error details, and non-existent keys.

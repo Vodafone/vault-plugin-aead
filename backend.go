@@ -203,8 +203,13 @@ func Backend(c *logical.BackendConfig) *backend {
 			&framework.Path{
 				Pattern:         "createAEADkey",
 				HelpSynopsis:    "Create AEAD keys",
-				HelpDescription: "Create non-deterministic AEAD keys. Accepts any field names as key names. Example: {\"field1\":\"plaintext\",\"field2\":\"plaintext\"}",
-				Fields:          map[string]*framework.FieldSchema{}, // dynamic field names - accepts any key names in request body
+				HelpDescription: "Create non-deterministic AEAD keys. Send key-value pairs in 'data' field. Example: {\"data\":{\"field1\":\"plaintext\",\"field2\":\"plaintext\"}}. For backward compatibility, also accepts direct field names (shows warnings).",
+				Fields: map[string]*framework.FieldSchema{
+					"data": {
+						Type:        framework.TypeMap,
+						Description: "Map of key names to plaintext values. Each key will be created with the provided data.",
+					},
+				},
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathAeadCreateNonDeterministicKeys,
@@ -217,8 +222,13 @@ func Backend(c *logical.BackendConfig) *backend {
 			&framework.Path{
 				Pattern:         "createAEADkeyOverwrite",
 				HelpSynopsis:    "Create AEAD keys (with overwrite)",
-				HelpDescription: "Create non-deterministic AEAD keys. WILL overwrite existing keys. Accepts any field names as key names. Example: {\"field1\":\"plaintext\",\"field2\":\"plaintext\"}",
-				Fields:          map[string]*framework.FieldSchema{}, // dynamic field names - accepts any key names in request body
+				HelpDescription: "Create non-deterministic AEAD keys. WILL overwrite existing keys. Send key-value pairs in 'data' field. Example: {\"data\":{\"field1\":\"plaintext\"}}. For backward compatibility, also accepts direct field names (shows warnings).",
+				Fields: map[string]*framework.FieldSchema{
+					"data": {
+						Type:        framework.TypeMap,
+						Description: "Map of key names to plaintext values. Each key will be created with the provided data.",
+					},
+				},
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathAeadCreateNonDeterministicKeysOverwrite,
@@ -231,8 +241,13 @@ func Backend(c *logical.BackendConfig) *backend {
 			&framework.Path{
 				Pattern:         "createDAEADkey",
 				HelpSynopsis:    "Create DAEAD keys",
-				HelpDescription: "Create deterministic AEAD (DAEAD) keys with AES-SIV. Accepts any field names as key names. Example: {\"field1\":\"plaintext\",\"field2\":\"plaintext\"}",
-				Fields:          map[string]*framework.FieldSchema{}, // dynamic field names - accepts any key names in request body
+				HelpDescription: "Create deterministic AEAD (DAEAD) keys with AES-SIV. Send key-value pairs in 'data' field. Example: {\"data\":{\"field1\":\"plaintext\"}}. For backward compatibility, also accepts direct field names (shows warnings).",
+				Fields: map[string]*framework.FieldSchema{
+					"data": {
+						Type:        framework.TypeMap,
+						Description: "Map of key names to plaintext values. Each key will be created with the provided data.",
+					},
+				},
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathAeadCreateDeterministicKeys,
@@ -245,8 +260,13 @@ func Backend(c *logical.BackendConfig) *backend {
 			&framework.Path{
 				Pattern:         "createDAEADkeyOverwrite",
 				HelpSynopsis:    "Create DAEAD keys (with overwrite)",
-				HelpDescription: "Create deterministic AEAD (DAEAD) keys with AES-SIV. WILL overwrite existing keys. Accepts any field names as key names. Example: {\"field1\":\"plaintext\",\"field2\":\"plaintext\"}",
-				Fields:          map[string]*framework.FieldSchema{}, // dynamic field names - accepts any key names in request body
+				HelpDescription: "Create deterministic AEAD (DAEAD) keys with AES-SIV. WILL overwrite existing keys. Send key-value pairs in 'data' field. Example: {\"data\":{\"field1\":\"plaintext\"}}. For backward compatibility, also accepts direct field names (shows warnings).",
+				Fields: map[string]*framework.FieldSchema{
+					"data": {
+						Type:        framework.TypeMap,
+						Description: "Map of key names to plaintext values. Each key will be created with the provided data.",
+					},
+				},
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathAeadCreateDeterministicKeysOverwrite,
