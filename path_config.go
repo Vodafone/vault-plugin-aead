@@ -676,7 +676,13 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 		}
 	} else {
 		// Old way: backward compatibility - use data.Raw directly
-		fieldsToProcess = data.Raw
+		// Filter out the "data" field itself to avoid processing it as a key name
+		fieldsToProcess = make(map[string]interface{})
+		for k, v := range data.Raw {
+			if k != "data" {
+				fieldsToProcess[k] = v
+			}
+		}
 	}
 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
@@ -783,7 +789,13 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 		}
 	} else {
 		// Old way: backward compatibility - use data.Raw directly
-		fieldsToProcess = data.Raw
+		// Filter out the "data" field itself to avoid processing it as a key name
+		fieldsToProcess = make(map[string]interface{})
+		for k, v := range data.Raw {
+			if k != "data" {
+				fieldsToProcess[k] = v
+			}
+		}
 	}
 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
