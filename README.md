@@ -124,6 +124,15 @@ vault secrets enable -path=aead-secrets vault-plugin-aead
 vault path-help aead-secrets
 ```
 
+**Note:** `pre_testing_script.py` and `policy.json` are provided to help set up a local vault instance for testing purposes.
+
+To use the setup script:
+1. Edit `pre_testing_script.py` to set your vault URL and token
+2. Run:
+```bash
+./pre_testing_script.py
+```
+
 # API endpoints 
 (note there are vault client CLI commands available too - vault read/write aead-secrets/<endpoint>)
 
