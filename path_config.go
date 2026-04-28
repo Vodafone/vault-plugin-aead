@@ -668,13 +668,19 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 	var fieldsToProcess map[string]interface{}
 
 	if dataParam := data.Get("data"); dataParam != nil {
-		// New way: data is wrapped in "data" field
-		if dataMap, ok := dataParam.(map[string]interface{}); ok {
+		if dataMap, ok := dataParam.(map[string]interface{}); ok && len(dataMap) > 0 {
+			// New way: data is wrapped in "data" field and not empty
 			fieldsToProcess = dataMap
+		} else if ok && len(dataMap) == 0 {
+			// Empty map - fall through to old way below
+			fieldsToProcess = nil
 		} else {
 			return nil, fmt.Errorf("'data' field must be a map of key-value pairs")
 		}
-	} else {
+	}
+
+	// If not set via new way, use old way
+	if fieldsToProcess == nil {
 		// Old way: backward compatibility - use data.Raw directly
 		// Filter out the "data" field itself to avoid processing it as a key name
 		fieldsToProcess = make(map[string]interface{})
@@ -781,13 +787,19 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 	var fieldsToProcess map[string]interface{}
 
 	if dataParam := data.Get("data"); dataParam != nil {
-		// New way: data is wrapped in "data" field
-		if dataMap, ok := dataParam.(map[string]interface{}); ok {
+		if dataMap, ok := dataParam.(map[string]interface{}); ok && len(dataMap) > 0 {
+			// New way: data is wrapped in "data" field and not empty
 			fieldsToProcess = dataMap
+		} else if ok && len(dataMap) == 0 {
+			// Empty map - fall through to old way below
+			fieldsToProcess = nil
 		} else {
 			return nil, fmt.Errorf("'data' field must be a map of key-value pairs")
 		}
-	} else {
+	}
+
+	// If not set via new way, use old way
+	if fieldsToProcess == nil {
 		// Old way: backward compatibility - use data.Raw directly
 		// Filter out the "data" field itself to avoid processing it as a key name
 		fieldsToProcess = make(map[string]interface{})
