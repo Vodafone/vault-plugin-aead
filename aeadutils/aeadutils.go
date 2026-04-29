@@ -585,19 +585,19 @@ func IsSecretAnAEADKeyset(secret interface{}, fName string) (string, *keyset.Han
 	fieldName := RemoveKeyPrefix(fName)
 	var jMap map[string]KeySetStruct
 	if err := json.Unmarshal([]byte(secretStr), &jMap); err != nil {
-		fmt.Printf("\nfailed to unmarshall the secret " + fName)
+		fmt.Printf("\nfailed to unmarshall the secret %s", fName)
 		return "", nil, err
 	}
 
 	keysetAsMap := jMap[fieldName]
 	keysetAsByteArray, err := json.Marshal(keysetAsMap)
 	if err != nil {
-		fmt.Printf("failed to marshall " + fName)
+		fmt.Printf("failed to marshall %s", fName)
 	}
 	jsonToValidate := string(keysetAsByteArray)
 	kh, err := ValidateKeySetJson(jsonToValidate)
 	if err != nil {
-		fmt.Printf("failed to recreate a key handle from the json " + fName)
+		fmt.Printf("failed to recreate a key handle from the json %s", fName)
 		return "", nil, err
 	}
 	return jsonToValidate, kh, nil
