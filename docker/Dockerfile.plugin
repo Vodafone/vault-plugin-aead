@@ -1,5 +1,6 @@
 # Use a minimal base image
 FROM alpine:latest
+RUN apk update && apk upgrade --no-cache && rm -rf /var/cache/apk/*
 RUN mkdir /vault_binaries
 ARG P_VERSION="default"
 ENV VERSION_PLUGIN=${P_VERSION}
