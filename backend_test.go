@@ -318,14 +318,17 @@ func TestBackend(t *testing.T) {
 
 		resp := encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
 
-		// retreive the encrypted data for field address
-		actualEncryptedValue := fmt.Sprintf("%v", resp.Data["test5-address2"]) // convert the cyphertext (=interface{}) received to a string
-		keyAlreadyExistsMsg := "test5-address2 key exists"
-		if keyAlreadyExistsMsg != actualEncryptedValue {
-			t.Errorf("expected %q to be %q", actualEncryptedValue, keyAlreadyExistsMsg)
+		// Check that key was skipped (already exists)
+		skippedList, ok := resp.Data["skipped_list"].([]string)
+		if !ok || len(skippedList) == 0 {
+			t.Errorf("expected skipped_list to contain skipped keys")
+		} else if skippedList[0] != "test5-address2" {
+			t.Errorf("expected test5-address2 to be in skipped list, got %v", skippedList)
 		}
+		
+		// Now encrypt using existing key
 		resp = encryptData(b, storage, data, t)
-		actualEncryptedValue = fmt.Sprintf("%v", resp.Data["test5-address2"])
+		actualEncryptedValue := fmt.Sprintf("%v", resp.Data["test5-address2"])
 
 		// now read the config
 		configResp := readConfig(b, storage, t)
@@ -394,9 +397,13 @@ func TestBackend(t *testing.T) {
 		}
 
 		secondResp := encryptDataDetermisticallyAndCreateKey(b, storage, data, false, t)
-		secondResult := fmt.Sprintf("%v", secondResp.Data["test5b-address"])
-		if secondResult != "test5b-address key exists" {
-			t.Fatalf("expected duplicate createDAEADkey to be rejected, got %q", secondResult)
+		// Check that key was skipped (already exists)
+		skippedList, ok := secondResp.Data["skipped_list"].([]string)
+		if !ok || len(skippedList) == 0 {
+			t.Fatalf("expected duplicate createDAEADkey to be skipped")
+		}
+		if skippedList[0] != "test5b-address" {
+			t.Fatalf("expected test5b-address to be skipped, got %v", skippedList)
 		}
 
 		configResp = readConfig(b, storage, t)
@@ -478,9 +485,13 @@ func TestBackend(t *testing.T) {
 		}
 
 		secondResp := encryptDataNonDetermisticallyAndCreateKey(b, storage, data, false, t)
-		secondResult := fmt.Sprintf("%v", secondResp.Data["test6b-address"])
-		if secondResult != "test6b-address key exists" {
-			t.Fatalf("expected duplicate createAEADkey to be rejected, got %q", secondResult)
+		// Check that key was skipped (already exists)
+		skippedList, ok := secondResp.Data["skipped_list"].([]string)
+		if !ok || len(skippedList) == 0 {
+			t.Fatalf("expected duplicate createAEADkey to be skipped")
+		}
+		if skippedList[0] != "test6b-address" {
+			t.Fatalf("expected test6b-address to be skipped, got %v", skippedList)
 		}
 
 		configResp = readConfig(b, storage, t)

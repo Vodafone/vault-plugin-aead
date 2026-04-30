@@ -106,10 +106,9 @@ func readKV(vaultconf conf, bqconfig cmap.ConcurrentMap) {
 			fmt.Println("Failed to list Datasets")
 			return
 		}
-		fmt.Print("datasets=%v", datasets)
-
+		fmt.Printf("datasets=%v\n", datasets)
 	}
-
+	
 	var wg sync.WaitGroup
 	var keyIdSlice []int
 	var keyValueSlice []string

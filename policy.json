@@ -1,0 +1,15 @@
+path "auth/approle/*" {
+  capabilities = ["create", "read", "update", "list"]
+}
+
+path "secret/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+path "transit/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+path "aead-secrets/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
