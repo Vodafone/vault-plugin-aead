@@ -2513,3 +2513,251 @@ func createVaultConfig() map[string]interface{} {
 	return configMap
 
 }
+
+func TestCacheInvalidation(t *testing.T) {
+
+	t.Run("cache becomes valid after write", func(t *testing.T) {
+		b, storage := testBackend(t)
+		// Clear global cache for test isolation
+		for k := range AEAD_CONFIG.Items() {
+			AEAD_CONFIG.Remove(k)
+		}
+
+		// cacheValid starts as false (zero value of atomic.Bool)
+		if b.cacheValid.Load() {
+			t.Fatal("cacheValid should be false on fresh backend")
+		}
+
+		data := map[string]interface{}{
+			"test-cache-key1": "value1",
+			"test-cache-key2": "value2",
+		}
+		saveConfig(b, storage, data, false, t)
+
+		// After a write, cache should be valid
+		if !b.cacheValid.Load() {
+			t.Fatal("cacheValid should be true after config write")
+		}
+	})
+
+	t.Run("invalidate flips cache to false", func(t *testing.T) {
+		b, storage := testBackend(t)
+		for k := range AEAD_CONFIG.Items() {
+			AEAD_CONFIG.Remove(k)
+		}
+
+		// Write config to make cache valid
+		data := map[string]interface{}{
+			"test-inv-key": "test-inv-value",
+		}
+		saveConfig(b, storage, data, false, t)
+
+		if !b.cacheValid.Load() {
+			t.Fatal("cacheValid should be true after write")
+		}
+
+		// Simulate what Vault does on followers when Raft replicates
+		b.invalidate(context.Background(), "config")
+
+		if b.cacheValid.Load() {
+			t.Fatal("cacheValid should be false after invalidate(config)")
+		}
+	})
+
+	t.Run("invalidate only triggers for config key", func(t *testing.T) {
+		b, storage := testBackend(t)
+		for k := range AEAD_CONFIG.Items() {
+			AEAD_CONFIG.Remove(k)
+		}
+
+		data := map[string]interface{}{
+			"test-other-key": "test-other-value",
+		}
+		saveConfig(b, storage, data, false, t)
+
+		// Invalidate with an unrelated key should NOT affect cache
+		b.invalidate(context.Background(), "some-other-storage-key")
+
+		if !b.cacheValid.Load() {
+			t.Fatal("cacheValid should remain true for non-config key invalidation")
+		}
+	})
+
+	t.Run("read after invalidate reloads from storage", func(t *testing.T) {
+		b, storage := testBackend(t)
+		for k := range AEAD_CONFIG.Items() {
+			AEAD_CONFIG.Remove(k)
+		}
+
+		// Write initial config
+		data := map[string]interface{}{
+			"test-reload-key": "original-value",
+		}
+		saveConfig(b, storage, data, false, t)
+
+		// Verify data is readable
+		resp := readConfig(b, storage, t)
+		if resp.Data["test-reload-key"] != "original-value" {
+			t.Fatalf("expected 'original-value', got %v", resp.Data["test-reload-key"])
+		}
+
+		// Simulate follower invalidation
+		b.invalidate(context.Background(), "config")
+
+		// Next read should reload from storage and return correct data
+		resp = readConfig(b, storage, t)
+		if resp.Data["test-reload-key"] != "original-value" {
+			t.Fatalf("after invalidate, expected 'original-value', got %v", resp.Data["test-reload-key"])
+		}
+
+		// Cache should be valid again after reload
+		if !b.cacheValid.Load() {
+			t.Fatal("cacheValid should be true after reload from storage")
+		}
+	})
+
+	t.Run("hot path reads skip storage when cache valid", func(t *testing.T) {
+		b, storage := testBackend(t)
+		for k := range AEAD_CONFIG.Items() {
+			AEAD_CONFIG.Remove(k)
+		}
+
+		data := map[string]interface{}{
+			"gcm/hot-path-key": NonDeterministicKeyset,
+		}
+		saveConfig(b, storage, data, false, t)
+
+		// Cache is warm. Multiple reads should all succeed.
+		for i := 0; i < 50; i++ {
+			resp := readConfig(b, storage, t)
+			if resp == nil {
+				t.Fatalf("read %d returned nil", i)
+			}
+			if _, ok := resp.Data["gcm/hot-path-key"]; !ok {
+				t.Fatalf("read %d missing gcm/hot-path-key", i)
+			}
+		}
+
+		// Cache should have stayed valid the entire time
+		if !b.cacheValid.Load() {
+			t.Fatal("cacheValid should remain true during hot-path reads")
+		}
+	})
+
+	t.Run("write then invalidate then read sees latest data", func(t *testing.T) {
+		b, storage := testBackend(t)
+		for k := range AEAD_CONFIG.Items() {
+			AEAD_CONFIG.Remove(k)
+		}
+
+		// Write initial config
+		data1 := map[string]interface{}{
+			"test-write-inv-key": "first-value",
+		}
+		saveConfig(b, storage, data1, false, t)
+
+		resp := readConfig(b, storage, t)
+		if resp.Data["test-write-inv-key"] != "first-value" {
+			t.Fatalf("expected 'first-value', got %v", resp.Data["test-write-inv-key"])
+		}
+
+		// Overwrite with new value (simulates leader writing new data)
+		data2 := map[string]interface{}{
+			"test-write-inv-key": "second-value",
+		}
+		saveConfig(b, storage, data2, true, t)
+
+		// Simulate follower receiving invalidation
+		b.invalidate(context.Background(), "config")
+
+		// Read should now see the updated value
+		resp = readConfig(b, storage, t)
+		if resp.Data["test-write-inv-key"] != "second-value" {
+			t.Fatalf("after invalidate, expected 'second-value', got %v", resp.Data["test-write-inv-key"])
+		}
+	})
+
+	t.Run("delete invalidates and next read reflects deletion", func(t *testing.T) {
+		b, storage := testBackend(t)
+		for k := range AEAD_CONFIG.Items() {
+			AEAD_CONFIG.Remove(k)
+		}
+
+		// Write two keys
+		data := map[string]interface{}{
+			"keep-key":   "keep-value",
+			"delete-key": "delete-value",
+		}
+		saveConfig(b, storage, data, false, t)
+
+		// Verify both exist
+		resp := readConfig(b, storage, t)
+		if resp.Data["delete-key"] != "delete-value" {
+			t.Fatal("delete-key should exist before deletion")
+		}
+
+		// Delete one key
+		deleteData := map[string]interface{}{
+			"delete-key": "",
+		}
+		deleteConfig(b, storage, deleteData, t)
+
+		// Cache should still be valid (leader just wrote)
+		if !b.cacheValid.Load() {
+			t.Fatal("cacheValid should be true after delete write")
+		}
+
+		// Simulate follower invalidation
+		b.invalidate(context.Background(), "config")
+
+		// Read should show key is gone
+		resp = readConfig(b, storage, t)
+		if _, exists := resp.Data["delete-key"]; exists {
+			t.Fatal("delete-key should not exist after deletion + invalidation")
+		}
+		if resp.Data["keep-key"] != "keep-value" {
+			t.Fatal("keep-key should still exist")
+		}
+	})
+
+	t.Run("encrypt works from cached config", func(t *testing.T) {
+		b, storage := testBackend(t)
+		for k := range AEAD_CONFIG.Items() {
+			AEAD_CONFIG.Remove(k)
+		}
+
+		// Store an encryption key
+		data := map[string]interface{}{
+			"gcm/encrypt-cache-test": NonDeterministicKeyset,
+		}
+		saveConfig(b, storage, data, false, t)
+
+		// Cache is warm. Encrypt should work from cache without hitting storage.
+		encData := map[string]interface{}{
+			"gcm/encrypt-cache-test": "my-secret-data",
+		}
+		respEnc := encryptData(b, storage, encData, t)
+		if respEnc == nil {
+			t.Fatal("encrypt returned nil response")
+		}
+		ciphertext, ok := respEnc.Data["gcm/encrypt-cache-test"].(string)
+		if !ok || ciphertext == "" {
+			t.Fatal("encrypt did not return ciphertext")
+		}
+
+		// Decrypt should also work from cache
+		respDec := decryptData(b, storage, respEnc, t)
+		if respDec == nil {
+			t.Fatal("decrypt returned nil response")
+		}
+		plaintext, ok := respDec.Data["gcm/encrypt-cache-test"].(string)
+		if !ok || plaintext != "my-secret-data" {
+			t.Fatalf("decrypt expected 'my-secret-data', got '%v'", plaintext)
+		}
+
+		// Verify cache stayed valid throughout
+		if !b.cacheValid.Load() {
+			t.Fatal("cacheValid should remain true during encrypt/decrypt operations")
+		}
+	})
+}

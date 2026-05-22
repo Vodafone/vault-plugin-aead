@@ -66,6 +66,10 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 		return nil, err
 	}
 
+	// Cache is in sync with what we just wrote — mark valid so the leader
+	// doesn't re-read its own write on the next request.
+	b.cacheValid.Store(true)
+
 	return nil, nil
 }
 
@@ -95,6 +99,9 @@ func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, da
 	if err := req.Storage.Put(ctx, entry); err != nil {
 		return nil, err
 	}
+
+	// Cache is in sync with what we just wrote
+	b.cacheValid.Store(true)
 
 	return nil, nil
 }
@@ -163,6 +170,12 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 
 func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error {
 
+	// Fast path: if cache is valid, skip the storage read entirely.
+	// This is the hot path for encrypt/decrypt — zero disk I/O.
+	if b.cacheValid.Load() && AEAD_CONFIG.Count() > 0 {
+		return nil
+	}
+
 	consulConfig, err := b.readConsulConfig(ctx, req.Storage)
 
 	if err != nil {
@@ -184,6 +197,9 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 			}
 		}
 	}
+
+	// Mark cache as valid — subsequent reads skip storage until invalidated
+	b.cacheValid.Store(true)
 
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
@@ -25,6 +26,11 @@ type backend struct {
 	*framework.Backend
 
 	clientMutex sync.RWMutex
+
+	// cacheValid indicates whether the in-memory AEAD_CONFIG is up-to-date with Raft storage.
+	// Set to false by Vault's InvalidateKey callback when a follower detects a storage mutation.
+	// Set to true after a successful reload from storage.
+	cacheValid atomic.Bool
 }
 
 // Backend creates a new backend.
@@ -479,7 +485,21 @@ func Backend(c *logical.BackendConfig) *backend {
 			},
 		},
 	}
+
+	// Register the invalidation callback. Vault calls this on follower pods
+	// when the "config" storage key is replicated via Raft, signalling that
+	// the in-memory cache is stale and must be reloaded on the next request.
+	b.Backend.Invalidate = b.invalidate
+
 	return &b
+}
+
+// invalidate is called by Vault's framework when a storage key changes on this node
+// due to Raft replication. It marks the cache as stale so the next request reloads.
+func (b *backend) invalidate(ctx context.Context, key string) {
+	if key == "config" {
+		b.cacheValid.Store(false)
+	}
 }
 
 const backendHelp = "The aead secrets engine generates aead tokens."
