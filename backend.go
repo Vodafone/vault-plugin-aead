@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 	"github.com/pkg/errors"
@@ -498,6 +499,7 @@ func Backend(c *logical.BackendConfig) *backend {
 // due to Raft replication. It marks the cache as stale so the next request reloads.
 func (b *backend) invalidate(ctx context.Context, key string) {
 	if key == "config" {
+		hclog.L().Warn("🔴 CACHE INVALIDATED - InvalidateKey callback fired", "key", key)
 		b.cacheValid.Store(false)
 	}
 }
