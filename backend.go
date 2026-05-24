@@ -7,9 +7,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
+	cmap "github.com/orcaman/concurrent-map"
 	"github.com/pkg/errors"
 )
 
@@ -28,7 +28,12 @@ type backend struct {
 
 	clientMutex sync.RWMutex
 
-	// cacheValid indicates whether the in-memory AEAD_CONFIG is up-to-date with Raft storage.
+	// aeadConfig is the per-mount instance cache of encryption keys and configuration.
+	// Each mount point (aead-greece, aead-monitoring, etc.) has its own isolated cache.
+	// This ensures tenant isolation and prevents cross-mount data leakage.
+	aeadConfig cmap.ConcurrentMap
+
+	// cacheValid indicates whether the in-memory aeadConfig is up-to-date with Raft storage.
 	// Set to false by Vault's InvalidateKey callback when a follower detects a storage mutation.
 	// Set to true after a successful reload from storage.
 	cacheValid atomic.Bool
@@ -492,6 +497,10 @@ func Backend(c *logical.BackendConfig) *backend {
 	// the in-memory cache is stale and must be reloaded on the next request.
 	b.Backend.Invalidate = b.invalidate
 
+	// Initialize the per-mount cache. Each backend instance gets its own isolated cache.
+	// This ensures aead-greece, aead-monitoring, etc. don't share or overwrite each other's keys.
+	b.aeadConfig = cmap.New()
+
 	return &b
 }
 
@@ -499,7 +508,7 @@ func Backend(c *logical.BackendConfig) *backend {
 // due to Raft replication. It marks the cache as stale so the next request reloads.
 func (b *backend) invalidate(ctx context.Context, key string) {
 	if key == "config" {
-		hclog.L().Warn("🔴 CACHE INVALIDATED - InvalidateKey callback fired", "key", key)
+		b.Logger().Warn("🔴 CACHE INVALIDATED - InvalidateKey callback fired", "key", key)
 		b.cacheValid.Store(false)
 	}
 }

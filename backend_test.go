@@ -23,6 +23,7 @@ import (
 	"github.com/google/tink/go/keyset"
 	vault "github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/logical"
+	cmap "github.com/orcaman/concurrent-map"
 )
 
 /*
@@ -1987,7 +1988,9 @@ func checkBQRoutine(projectId string, t *testing.T, datasetName string, routineN
 func unwrapKeyset(transiturl string, keyStr string) (*keyset.Handle, error) {
 
 	var kvOptions kvutils.KVOptions
-	err := resolveKvOptions(&kvOptions)
+	// Create empty test config map for test purposes
+	testConfig := cmap.New()
+	err := resolveKvOptions(&kvOptions, testConfig)
 	if err != nil {
 		fmt.Printf("\nfailed to read vault config")
 	}
@@ -2519,8 +2522,8 @@ func TestCacheInvalidation(t *testing.T) {
 	t.Run("cache becomes valid after write", func(t *testing.T) {
 		b, storage := testBackend(t)
 		// Clear global cache for test isolation
-		for k := range AEAD_CONFIG.Items() {
-			AEAD_CONFIG.Remove(k)
+		for k := range b.aeadConfig.Items() {
+			b.aeadConfig.Remove(k)
 		}
 
 		// cacheValid starts as false (zero value of atomic.Bool)
@@ -2542,8 +2545,8 @@ func TestCacheInvalidation(t *testing.T) {
 
 	t.Run("invalidate flips cache to false", func(t *testing.T) {
 		b, storage := testBackend(t)
-		for k := range AEAD_CONFIG.Items() {
-			AEAD_CONFIG.Remove(k)
+		for k := range b.aeadConfig.Items() {
+			b.aeadConfig.Remove(k)
 		}
 
 		// Write config to make cache valid
@@ -2566,8 +2569,8 @@ func TestCacheInvalidation(t *testing.T) {
 
 	t.Run("invalidate only triggers for config key", func(t *testing.T) {
 		b, storage := testBackend(t)
-		for k := range AEAD_CONFIG.Items() {
-			AEAD_CONFIG.Remove(k)
+		for k := range b.aeadConfig.Items() {
+			b.aeadConfig.Remove(k)
 		}
 
 		data := map[string]interface{}{
@@ -2585,8 +2588,8 @@ func TestCacheInvalidation(t *testing.T) {
 
 	t.Run("read after invalidate reloads from storage", func(t *testing.T) {
 		b, storage := testBackend(t)
-		for k := range AEAD_CONFIG.Items() {
-			AEAD_CONFIG.Remove(k)
+		for k := range b.aeadConfig.Items() {
+			b.aeadConfig.Remove(k)
 		}
 
 		// Write initial config
@@ -2618,8 +2621,8 @@ func TestCacheInvalidation(t *testing.T) {
 
 	t.Run("hot path reads skip storage when cache valid", func(t *testing.T) {
 		b, storage := testBackend(t)
-		for k := range AEAD_CONFIG.Items() {
-			AEAD_CONFIG.Remove(k)
+		for k := range b.aeadConfig.Items() {
+			b.aeadConfig.Remove(k)
 		}
 
 		data := map[string]interface{}{
@@ -2646,8 +2649,8 @@ func TestCacheInvalidation(t *testing.T) {
 
 	t.Run("write then invalidate then read sees latest data", func(t *testing.T) {
 		b, storage := testBackend(t)
-		for k := range AEAD_CONFIG.Items() {
-			AEAD_CONFIG.Remove(k)
+		for k := range b.aeadConfig.Items() {
+			b.aeadConfig.Remove(k)
 		}
 
 		// Write initial config
@@ -2679,8 +2682,8 @@ func TestCacheInvalidation(t *testing.T) {
 
 	t.Run("delete invalidates and next read reflects deletion", func(t *testing.T) {
 		b, storage := testBackend(t)
-		for k := range AEAD_CONFIG.Items() {
-			AEAD_CONFIG.Remove(k)
+		for k := range b.aeadConfig.Items() {
+			b.aeadConfig.Remove(k)
 		}
 
 		// Write two keys
@@ -2722,8 +2725,8 @@ func TestCacheInvalidation(t *testing.T) {
 
 	t.Run("encrypt works from cached config", func(t *testing.T) {
 		b, storage := testBackend(t)
-		for k := range AEAD_CONFIG.Items() {
-			AEAD_CONFIG.Remove(k)
+		for k := range b.aeadConfig.Items() {
+			b.aeadConfig.Remove(k)
 		}
 
 		// Store an encryption key
