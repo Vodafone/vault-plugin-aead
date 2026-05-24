@@ -1,30 +1,27 @@
 steps:
-  # Step 1: Combined Test and Build Environment (Zero redundant downloading)
-  - name: 'golang:1.25-alpine'
+  # Step 1: Combined Test and Build using the robust standard Golang image
+  - name: 'golang:1.25'
     id: 'go-build-and-test'
     args:
       - '-c'
       - |
         set -e
         
-        # 1. Quickly add the light build tools & C compiler required for -race
-        apk add git make gcc g++ musl-dev --no-cache
-        
-        # 2. Network Routing definitions matching your corporate proxy behavior
+        # 1. Network Routing definitions matching your corporate proxy behavior
         export GOPRIVATE="github.com/pierrec,google.golang.org,golang.org"
         export GOPROXY="direct"
         export GOSUMDB="off"
         export CGO_ENABLED=1
         
-        # 3. Suppress heavy test stdout logs to maximize loop efficiency
+        # 2. Suppress heavy test stdout logs to maximize loop efficiency
         export LOG_LEVEL=error
         export APP_ENV=testing
         
         echo "Fetching all required Go modules precisely once..."
         go mod download
         
-        echo "Running your complete test suite with multi-core parallelism..."
-        go test -v -race -parallel 4 ./...
+        echo "Running your complete test suite with fast native compilation..."
+        go test -v -race ./...
         
         echo "Instantly compiling AEAD plugin binary from cached dependencies..."
         make build VERSION=$TAG_NAME-$BUILD_ID
