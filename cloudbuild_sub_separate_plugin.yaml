@@ -1,28 +1,41 @@
 steps:
+  # Step 1: Combined Test and Build using the robust standard Golang image
   - name: 'golang:1.25'
-    id: 'go-test'
+    id: 'go-build-and-test'
     args:
       - '-c'
       - |
-        go test -v -race
-    entrypoint: /bin/sh
-  - name: 'golang:1.25'
-    id: 'go-build'
-    waitFor: ['go-test']
-    args:
-      - '-c'
-      - |
+        set -e
+        
+        # 1. Network Routing definitions matching your corporate proxy behavior
+        export GOPRIVATE="github.com/pierrec,google.golang.org,golang.org"
+        export GOPROXY="direct"
+        export GOSUMDB="off"
+        export CGO_ENABLED=1
+        
+        # 2. Suppress heavy test stdout logs to maximize loop efficiency
+        export LOG_LEVEL=error
+        export APP_ENV=testing
+        
+        echo "Fetching all required Go modules precisely once..."
+        go mod download
+        
+        echo "Running your complete test suite with fast native compilation..."
+        go test -v -race ./...
+        
+        echo "Instantly compiling AEAD plugin binary from cached dependencies..."
         make build VERSION=$TAG_NAME-$BUILD_ID
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
     entrypoint: /bin/sh
 
+  # Step 2: Build the Container Image
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
     env:
       - 'P_VERSION=$TAG_NAME-$BUILD_ID'
       - 'P_NAME=${_PLUGIN_NAME}'
       - 'FQ_BASE_IMAGE=${_FQ_BASE_IMAGE}'
-    waitFor: ['go-build']
+    waitFor: ['go-build-and-test']
     args:
       - build
       - '--build-arg'
@@ -38,6 +51,7 @@ steps:
       - .
     dir: docker
     
+  # Step 3: Push Artifacts to Registry
   - name: gcr.io/cloud-builders/docker
     id: 'container-push'
     waitFor: ['container-build']
@@ -54,8 +68,7 @@ logsBucket: 'gs://${_BUILD_PROJECT}-logging'
 options:
   workerPool: projects/${_BUILD_PROJECT}/locations/europe-west1/workerPools/worker-pool2
   env:
-    - 'GOPRIVATE=github.com/pierrec,google.golang.org'
+    - 'GOPRIVATE=github.com/pierrec,google.golang.org,golang.org'
     - 'GOOS=linux'
     - 'GOARCH=amd64'
     - 'TAG_NAME=$TAG_NAME'
-    - 'GOPROXY=direct'

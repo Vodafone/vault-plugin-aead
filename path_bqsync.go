@@ -45,7 +45,7 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 				// Wildcard matching: find all keys matching the pattern
 				pattern := strings.Replace(fieldName, "*", "", -1) // Remove * to get prefix
 				matchFound := false
-				for configKey := range AEAD_CONFIG.Items() {
+				for configKey := range b.aeadConfig.Items() {
 					// Match keys that start with the pattern
 					if strings.HasPrefix(configKey, pattern) || strings.HasPrefix(configKey, "gcm/"+pattern) || strings.HasPrefix(configKey, "siv/"+pattern) {
 						keysToProcess = append(keysToProcess, configKey)
@@ -67,7 +67,7 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 		}
 	} else {
 		// No specific keys requested - process all valid keys
-		for keyField, encryptionKey := range AEAD_CONFIG.Items() {
+		for keyField, encryptionKey := range b.aeadConfig.Items() {
 			fieldName := fmt.Sprintf("%v", keyField)
 			keyStr := fmt.Sprintf("%v", encryptionKey)
 			// Only include valid keysets (must contain "primaryKeyId")
@@ -79,13 +79,13 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 
 	// Build the keysMap from keysToProcess
 	for _, keyName := range keysToProcess {
-		encryptionKey, ok := AEAD_CONFIG.Get(keyName)
+		encryptionKey, ok := b.aeadConfig.Get(keyName)
 		if ok {
 			keysMap[keyName] = encryptionKey
 		}
 	}
 
-	projectIdInterface, ok := AEAD_CONFIG.Get("BQ_PROJECT")
+	projectIdInterface, ok := b.aeadConfig.Get("BQ_PROJECT")
 	projectId := fmt.Sprintf("%s", projectIdInterface)
 	if !ok {
 		return nil, &logical.KeyNotFoundError{
@@ -122,7 +122,7 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 			wg.Add(1)
 			go func(name string, keyHandle *keyset.Handle) {
 				defer wg.Done()
-				bqutils.DoBQSync(ctx, keyHandle, name, true, AEAD_CONFIG, datasets)
+				bqutils.DoBQSync(ctx, keyHandle, name, true, b.aeadConfig, datasets)
 			}(keyName, kh)
 		} else {
 			kh, _, err := aeadutils.CreateInsecureHandleAndAead(encryptionKeyStr)
@@ -139,7 +139,7 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 			wg.Add(1)
 			go func(name string, keyHandle *keyset.Handle) {
 				defer wg.Done()
-				bqutils.DoBQSync(ctx, keyHandle, name, false, AEAD_CONFIG, datasets)
+				bqutils.DoBQSync(ctx, keyHandle, name, false, b.aeadConfig, datasets)
 			}(keyName, kh)
 		}
 	}

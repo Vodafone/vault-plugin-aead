@@ -15,6 +15,7 @@ import (
 	vault "github.com/hashicorp/vault/api"
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
+	cmap "github.com/orcaman/concurrent-map"
 )
 
 func (b *backend) pathSyncToExternalKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
@@ -38,7 +39,7 @@ func (b *backend) pathSyncKV(ctx context.Context, req *logical.Request, data *fr
 	var res *logical.Response
 
 	var kvOptions kvutils.KVOptions
-	err := resolveKvOptions(&kvOptions)
+	err := resolveKvOptions(&kvOptions, b.aeadConfig)
 	if err != nil {
 		hclog.L().Error("\nfailed to read vault config")
 		return nil, err
@@ -96,7 +97,7 @@ func (b *backend) pathReadKV(ctx context.Context, req *logical.Request, data *fr
 	m := map[string]interface{}{}
 
 	var kvOptions kvutils.KVOptions
-	err := resolveKvOptions(&kvOptions)
+	err := resolveKvOptions(&kvOptions, b.aeadConfig)
 	if err != nil {
 		hclog.L().Error("\nfailed to read vault config")
 		return nil, err
@@ -270,37 +271,37 @@ func (b *backend) readKV(
 
 	return consulKV, nil
 }
-func resolveKvOptions(kvOptions *kvutils.KVOptions) error {
+func resolveKvOptions(kvOptions *kvutils.KVOptions, aeadConfig cmap.ConcurrentMap) error {
 
 	kvOptions.Vault_kv_active = "false" // default
-	kv_active, ok := AEAD_CONFIG.Get("VAULT_KV_ACTIVE")
+	kv_active, ok := aeadConfig.Get("VAULT_KV_ACTIVE")
 	if ok {
 		kvOptions.Vault_kv_active = fmt.Sprintf("%v", kv_active)
 	}
 
-	Vault_url, ok := AEAD_CONFIG.Get("VAULT_KV_URL")
+	Vault_url, ok := aeadConfig.Get("VAULT_KV_URL")
 	if ok {
 		kvOptions.Vault_kv_url = fmt.Sprintf("%v", Vault_url)
 	}
 
-	Vault_approleid, ok := AEAD_CONFIG.Get("VAULT_KV_APPROLE_ID")
+	Vault_approleid, ok := aeadConfig.Get("VAULT_KV_APPROLE_ID")
 	if ok {
 		kvOptions.Vault_kv_approle_id = fmt.Sprintf("%v", Vault_approleid)
 	}
 
-	Vault_secretid, ok := AEAD_CONFIG.Get("VAULT_KV_SECRET_ID")
+	Vault_secretid, ok := aeadConfig.Get("VAULT_KV_SECRET_ID")
 	if ok {
 		kvOptions.Vault_kv_secret_id = fmt.Sprintf("%v", Vault_secretid)
 	}
 
-	kv_engine, ok := AEAD_CONFIG.Get("VAULT_KV_ENGINE")
+	kv_engine, ok := aeadConfig.Get("VAULT_KV_ENGINE")
 	if ok {
 		kvOptions.Vault_kv_engine = fmt.Sprintf("%v", kv_engine)
 	} else {
 		kvOptions.Vault_kv_engine = "secret" // default
 	}
 
-	kv_version, ok := AEAD_CONFIG.Get("VAULT_KV_VERSION")
+	kv_version, ok := aeadConfig.Get("VAULT_KV_VERSION")
 	if ok {
 		kvOptions.Vault_kv_version = fmt.Sprintf("%v", kv_version)
 	} else {
@@ -309,69 +310,69 @@ func resolveKvOptions(kvOptions *kvutils.KVOptions) error {
 	}
 
 	kvOptions.Vault_transit_active = "false" // default
-	Vault_transit_active, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_ACTIVE")
+	Vault_transit_active, ok := aeadConfig.Get("VAULT_TRANSIT_ACTIVE")
 	if ok {
 		kvOptions.Vault_transit_active = fmt.Sprintf("%v", Vault_transit_active)
 	}
-	Vault_transit_url, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_URL")
+	Vault_transit_url, ok := aeadConfig.Get("VAULT_TRANSIT_URL")
 	if ok {
 		kvOptions.Vault_transit_url = fmt.Sprintf("%v", Vault_transit_url)
 	}
-	Vault_transit_approle_id, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_APPROLE_ID")
+	Vault_transit_approle_id, ok := aeadConfig.Get("VAULT_TRANSIT_APPROLE_ID")
 	if ok {
 		kvOptions.Vault_transit_approle_id = fmt.Sprintf("%v", Vault_transit_approle_id)
 	}
-	Vault_transit_secret_id, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_SECRET_ID")
+	Vault_transit_secret_id, ok := aeadConfig.Get("VAULT_TRANSIT_SECRET_ID")
 	if ok {
 		kvOptions.Vault_transit_secret_id = fmt.Sprintf("%v", Vault_transit_secret_id)
 	}
-	Vault_transit_kv_engine, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_ENGINE")
+	Vault_transit_kv_engine, ok := aeadConfig.Get("VAULT_TRANSIT_KV_ENGINE")
 	if ok {
 		kvOptions.Vault_transit_kv_engine = fmt.Sprintf("%v", Vault_transit_kv_engine)
 	}
-	Vault_transit_kv_pull_path, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_PULL_PATH")
+	Vault_transit_kv_pull_path, ok := aeadConfig.Get("VAULT_TRANSIT_KV_PULL_PATH")
 	if ok {
 		kvOptions.Vault_transit_kv_pull_path = fmt.Sprintf("%v", Vault_transit_kv_pull_path)
 	}
-	Vault_transit_kv_push_path, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_PUSH_PATH")
+	Vault_transit_kv_push_path, ok := aeadConfig.Get("VAULT_TRANSIT_KV_PUSH_PATH")
 	if ok {
 		kvOptions.Vault_transit_kv_push_path = fmt.Sprintf("%v", Vault_transit_kv_push_path)
 	}
-	Vault_transit_engine, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_ENGINE")
+	Vault_transit_engine, ok := aeadConfig.Get("VAULT_TRANSIT_ENGINE")
 	if ok {
 		kvOptions.Vault_transit_engine = fmt.Sprintf("%v", Vault_transit_engine)
 	}
-	Vault_transit_kv_version, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KV_VERSION")
+	Vault_transit_kv_version, ok := aeadConfig.Get("VAULT_TRANSIT_KV_VERSION")
 	if ok {
 		kvOptions.Vault_transit_kv_version = fmt.Sprintf("%v", Vault_transit_kv_version)
 	}
-	Vault_transit_namespace, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_NAMESPACE")
+	Vault_transit_namespace, ok := aeadConfig.Get("VAULT_TRANSIT_NAMESPACE")
 	if ok {
 		kvOptions.Vault_transit_namespace = fmt.Sprintf("%v", Vault_transit_namespace)
 	}
-	Vault_transit_kek, ok := AEAD_CONFIG.Get("VAULT_TRANSIT_KEK")
+	Vault_transit_kek, ok := aeadConfig.Get("VAULT_TRANSIT_KEK")
 	if ok {
 		kvOptions.Vault_transit_kek = fmt.Sprintf("%v", Vault_transit_kek)
 	}
 
-	Vault_kv_writer_role, ok := AEAD_CONFIG.Get("VAULT_KV_WRITER_ROLE")
+	Vault_kv_writer_role, ok := aeadConfig.Get("VAULT_KV_WRITER_ROLE")
 	if ok {
 		kvOptions.Vault_kv_writer_role = fmt.Sprintf("%v", Vault_kv_writer_role)
 	}
 
-	Vault_secretgenerator_iam_role, ok := AEAD_CONFIG.Get("VAULT_KV_SECRETGENERATOR_IAM_ROLE")
+	Vault_secretgenerator_iam_role, ok := aeadConfig.Get("VAULT_KV_SECRETGENERATOR_IAM_ROLE")
 	if ok {
 		kvOptions.Vault_secretgenerator_iam_role = fmt.Sprintf("%v", Vault_secretgenerator_iam_role)
 	}
 
 	return nil
 }
-func saveToKV(keyNameIn string, keyJsonIn interface{}, env ...KVEnvitonment) (bool, error) {
+func saveToKV(keyNameIn string, keyJsonIn interface{}, aeadConfig cmap.ConcurrentMap, env ...KVEnvitonment) (bool, error) {
 
 	var err error
 	var kvOptions kvutils.KVOptions
 	if env == nil || env[0].Options == (kvutils.KVOptions{}) {
-		err := resolveKvOptions(&kvOptions)
+		err := resolveKvOptions(&kvOptions, aeadConfig)
 		if err != nil {
 			hclog.L().Error("\nfailed to read vault config")
 			return false, err
@@ -461,7 +462,7 @@ func saveToKV(keyNameIn string, keyJsonIn interface{}, env ...KVEnvitonment) (bo
 	if env != nil {
 		env[0].Connection = (kvutils.KVConnection{})
 	}
-	_, err = saveToExternalKV(keyNameIn, fmt.Sprintf("%s", keyJsonIn), env...)
+	_, err = saveToExternalKV(keyNameIn, fmt.Sprintf("%s", keyJsonIn), aeadConfig, env...)
 	if err != nil {
 		return false, err
 	}
@@ -511,7 +512,7 @@ type KVEnvitonment struct {
 	Synclist   map[string]interface{}
 }
 
-func saveToExternalKV(keyNameIn string, keyjson string, env ...KVEnvitonment) (bool, error) {
+func saveToExternalKV(keyNameIn string, keyjson string, aeadConfig cmap.ConcurrentMap, env ...KVEnvitonment) (bool, error) {
 	/*
 	   // get the wrapped key
 	   ```
@@ -544,7 +545,7 @@ func saveToExternalKV(keyNameIn string, keyjson string, env ...KVEnvitonment) (b
 	var err error
 	var kvOptions kvutils.KVOptions
 	if env == nil || env[0].Options == (kvutils.KVOptions{}) {
-		err := resolveKvOptions(&kvOptions)
+		err := resolveKvOptions(&kvOptions, aeadConfig)
 		if err != nil {
 			hclog.L().Error("\nfailed to read vault config")
 			return false, err
@@ -747,7 +748,7 @@ func SyncToExternalKV(b *backend, ctx context.Context, req *logical.Request, dat
 	rtnMap := make(map[string]interface{})
 
 	var kvOptions kvutils.KVOptions
-	err := resolveKvOptions(&kvOptions)
+	err := resolveKvOptions(&kvOptions, b.aeadConfig)
 	if err != nil {
 		hclog.L().Error("\nfailed to read vault config: " + err.Error())
 		rtnMap["Error"] = "failed to read vault config: " + err.Error()
@@ -805,7 +806,7 @@ func SyncToExternalKV(b *backend, ctx context.Context, req *logical.Request, dat
 		// ok we have the key in KV, lets extract the json as a string and send it to transitkv
 		keyJson := fmt.Sprint(jsonIntf)
 
-		_, err := saveToExternalKV(keyName, keyJson, env)
+		_, err := saveToExternalKV(keyName, keyJson, b.aeadConfig, env)
 		if err != nil {
 			rtnMap[keyName] = "Error saving to transit: " + err.Error()
 		} else {
@@ -820,7 +821,7 @@ func SyncFromExternalKV(b *backend, ctx context.Context, req *logical.Request, d
 	rtnMap := make(map[string]interface{})
 
 	var kvOptions kvutils.KVOptions
-	err := resolveKvOptions(&kvOptions)
+	err := resolveKvOptions(&kvOptions, b.aeadConfig)
 	if err != nil {
 		hclog.L().Error("\nfailed to read vault config: " + err.Error())
 		rtnMap["Error"] = "failed to read vault config: " + err.Error()
@@ -896,7 +897,7 @@ func SyncFromExternalKV(b *backend, ctx context.Context, req *logical.Request, d
 			rtnMap[keyName] = "failed to derive keyname: " + err.Error()
 			continue
 		}
-		_, err = saveToKV(newKeyName, keyJson, env)
+		_, err = saveToKV(newKeyName, keyJson, b.aeadConfig, env)
 		if err != nil {
 			rtnMap[keyName] = "Error saving to transit: " + err.Error()
 			continue
