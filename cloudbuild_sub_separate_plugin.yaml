@@ -1,25 +1,37 @@
 steps:
+  # Step 1: Optimized Go Environment (Replaces old 'go-test' and 'go-build')
   - name: 'golang:1.25-alpine'
     id: 'go-build-and-test'
     args:
       - '-c'
       - |
-        set -e  # Exit immediately if any command fails
+        set -e  # Exit immediately if any command inside here fails
+        
+        # 1. Install build requirements quickly without caching apk indices locally
         apk add git make --no-cache
-        # Configure go to use proxy for faster module downloads
-        export GOPRIVATE="github.com/pierrec,google.golang.org"
+        
+        # 2. OVERRIDE options block constraints to completely avoid direct Git routing
+        export GOPRIVATE=""
+        export GONOPROXY=""
+        export GONOSUMDB=""
         export GOPROXY="https://proxy.golang.org"
         export GOSUMDB="sum.golang.org"
-        # Download dependencies once (cached for both test and build)
+        
+        # 3. Pull down dependencies safely and rapidly through Google's proxy mirror
         echo "Downloading Go modules via proxy..."
         go mod download
-        # Run tests with race detection
+        
+        # 4. Run tests with race detection
+        echo "Running test suite..."
         go test -v -race
-        # Build plugin (only runs if tests pass due to set -e)
+        
+        # 5. Build the plug-in binary (only executes if tests pass successfully)
+        echo "Compiling AEAD plugin binary..."
         make build VERSION=$TAG_NAME-$BUILD_ID
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
     entrypoint: /bin/sh
 
+  # Step 2: Build the Container Image
   - name: gcr.io/cloud-builders/docker
     id: 'container-build'
     env:
@@ -42,6 +54,7 @@ steps:
       - .
     dir: docker
     
+  # Step 3: Push to Artifact Registry / GCR
   - name: gcr.io/cloud-builders/docker
     id: 'container-push'
     waitFor: ['container-build']
@@ -58,9 +71,8 @@ logsBucket: 'gs://${_BUILD_PROJECT}-logging'
 options:
   workerPool: projects/${_BUILD_PROJECT}/locations/europe-west1/workerPools/worker-pool2
   env:
+    # Retained for downstream build tools, but cleanly bypassed in Step 1
     - 'GOPRIVATE=github.com/pierrec,google.golang.org'
     - 'GOOS=linux'
     - 'GOARCH=amd64'
     - 'TAG_NAME=$TAG_NAME'
-    # GOPROXY removed - will use default proxy.golang.org for faster module downloads
-    # Private repos still bypass proxy via GOPRIVATE setting above
