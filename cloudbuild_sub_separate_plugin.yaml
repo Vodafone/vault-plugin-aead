@@ -1,5 +1,5 @@
 steps:
-  # Step 1: Combined Build and Test using Direct Git Fallback
+  # Step 1: Combined Build and Test using Direct Git Fallback + CGO enabled
   - name: 'golang:1.25-alpine'
     id: 'go-build-and-test'
     args:
@@ -7,15 +7,18 @@ steps:
       - |
         set -e  # Exit if any command fails
         
-        # 1. Install build tools needed for compilation
-        apk add git make --no-cache
+        # 1. Install build tools and C compiler required for cgo/race detection
+        apk add git make gcc g++ musl-dev --no-cache
         
         # 2. Revert to direct routing because proxy.golang.org is hard-blocked by Squid
         export GOPRIVATE="github.com/pierrec,google.golang.org,golang.org"
         export GOPROXY="direct"
         export GOSUMDB="off"
         
-        # 3. Explicitly define cache directories to keep speeds up inside this step
+        # 3. Enable CGO so the -race detector can compile
+        export CGO_ENABLED=1
+        
+        # 4. Explicitly define cache directories to keep speeds up inside this step
         export GOCACHE="/workspace/.cache/go-build"
         export GOMODCACHE="/workspace/.cache/mod"
         
