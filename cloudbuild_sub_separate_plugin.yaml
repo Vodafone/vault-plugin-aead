@@ -1,31 +1,30 @@
 steps:
-  # Step 1: Optimized Go Environment (Replaces old 'go-test' and 'go-build')
+  # Step 1: Combined Build and Test using Direct Git Fallback
   - name: 'golang:1.25-alpine'
     id: 'go-build-and-test'
     args:
       - '-c'
       - |
-        set -e  # Exit immediately if any command inside here fails
+        set -e  # Exit if any command fails
         
-        # 1. Install build requirements quickly without caching apk indices locally
+        # 1. Install build tools needed for compilation
         apk add git make --no-cache
         
-        # 2. OVERRIDE options block constraints to completely avoid direct Git routing
-        export GOPRIVATE=""
-        export GONOPROXY=""
-        export GONOSUMDB=""
-        export GOPROXY="https://proxy.golang.org"
-        export GOSUMDB="sum.golang.org"
+        # 2. Revert to direct routing because proxy.golang.org is hard-blocked by Squid
+        export GOPRIVATE="github.com/pierrec,google.golang.org,golang.org"
+        export GOPROXY="direct"
+        export GOSUMDB="off"
         
-        # 3. Pull down dependencies safely and rapidly through Google's proxy mirror
-        echo "Downloading Go modules via proxy..."
+        # 3. Explicitly define cache directories to keep speeds up inside this step
+        export GOCACHE="/workspace/.cache/go-build"
+        export GOMODCACHE="/workspace/.cache/mod"
+        
+        echo "Downloading Go modules directly from source code hosts..."
         go mod download
         
-        # 4. Run tests with race detection
         echo "Running test suite..."
         go test -v -race
         
-        # 5. Build the plug-in binary (only executes if tests pass successfully)
         echo "Compiling AEAD plugin binary..."
         make build VERSION=$TAG_NAME-$BUILD_ID
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
@@ -54,7 +53,7 @@ steps:
       - .
     dir: docker
     
-  # Step 3: Push to Artifact Registry / GCR
+  # Step 3: Push to Artifact Registry
   - name: gcr.io/cloud-builders/docker
     id: 'container-push'
     waitFor: ['container-build']
@@ -71,8 +70,7 @@ logsBucket: 'gs://${_BUILD_PROJECT}-logging'
 options:
   workerPool: projects/${_BUILD_PROJECT}/locations/europe-west1/workerPools/worker-pool2
   env:
-    # Retained for downstream build tools, but cleanly bypassed in Step 1
-    - 'GOPRIVATE=github.com/pierrec,google.golang.org'
+    - 'GOPRIVATE=github.com/pierrec,google.golang.org,golang.org'
     - 'GOOS=linux'
     - 'GOARCH=amd64'
     - 'TAG_NAME=$TAG_NAME'
