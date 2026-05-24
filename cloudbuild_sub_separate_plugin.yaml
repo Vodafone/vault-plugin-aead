@@ -1,34 +1,32 @@
 steps:
-  # Step 1: Combined Build and Test using Direct Git Fallback + CGO enabled
+  # Step 1: Combined Test and Build Environment (Zero redundant downloading)
   - name: 'golang:1.25-alpine'
     id: 'go-build-and-test'
     args:
       - '-c'
       - |
-        set -e  # Exit if any command fails
+        set -e
         
-        # 1. Install build tools and C compiler required for cgo/race detection
+        # 1. Quickly add the light build tools & C compiler required for -race
         apk add git make gcc g++ musl-dev --no-cache
         
-        # 2. Revert to direct routing because proxy.golang.org is hard-blocked by Squid
+        # 2. Network Routing definitions matching your corporate proxy behavior
         export GOPRIVATE="github.com/pierrec,google.golang.org,golang.org"
         export GOPROXY="direct"
         export GOSUMDB="off"
-        
-        # 3. Enable CGO so the -race detector can compile
         export CGO_ENABLED=1
         
-        # 4. Explicitly define cache directories to keep speeds up inside this step
-        export GOCACHE="/workspace/.cache/go-build"
-        export GOMODCACHE="/workspace/.cache/mod"
+        # 3. Suppress heavy test stdout logs to maximize loop efficiency
+        export LOG_LEVEL=error
+        export APP_ENV=testing
         
-        echo "Downloading Go modules directly from source code hosts..."
+        echo "Fetching all required Go modules precisely once..."
         go mod download
         
-        echo "Running test suite..."
-        go test -v -race
+        echo "Running your complete test suite with multi-core parallelism..."
+        go test -v -race -parallel 4 ./...
         
-        echo "Compiling AEAD plugin binary..."
+        echo "Instantly compiling AEAD plugin binary from cached dependencies..."
         make build VERSION=$TAG_NAME-$BUILD_ID
         cp vault/plugins/vault-plugin-aead docker/vault-plugin-aead
     entrypoint: /bin/sh
@@ -56,7 +54,7 @@ steps:
       - .
     dir: docker
     
-  # Step 3: Push to Artifact Registry
+  # Step 3: Push Artifacts to Registry
   - name: gcr.io/cloud-builders/docker
     id: 'container-push'
     waitFor: ['container-build']
