@@ -39,7 +39,7 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 		keysList := strings.Split(keysParam.(string), ",")
 		for _, requestedKeyName := range keysList {
 			fieldName := strings.TrimSpace(requestedKeyName)
-			
+
 			// Check if this is a wildcard pattern (contains *)
 			if strings.Contains(fieldName, "*") {
 				// Wildcard matching: find all keys matching the pattern
@@ -153,11 +153,11 @@ func (b *backend) pathBQKeySync(ctx context.Context, req *logical.Request, data 
 	if len(syncedKeys) > 0 {
 		response["synced_list"] = syncedKeys
 	}
-	
+
 	if len(failedKeys) > 0 {
 		response["failed_list"] = failedKeys
 	}
-	
+
 	if len(notFoundKeys) > 0 {
 		response["not_found_keys"] = len(notFoundKeys)
 		response["not_found_list"] = notFoundKeys

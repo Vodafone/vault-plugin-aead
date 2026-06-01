@@ -326,7 +326,7 @@ func TestBackend(t *testing.T) {
 		} else if skippedList[0] != "test5-address2" {
 			t.Errorf("expected test5-address2 to be in skipped list, got %v", skippedList)
 		}
-		
+
 		// Now encrypt using existing key
 		resp = encryptData(b, storage, data, t)
 		actualEncryptedValue := fmt.Sprintf("%v", resp.Data["test5-address2"])

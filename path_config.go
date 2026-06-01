@@ -115,19 +115,21 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 		return nil, err
 	}
 	result := make(map[string]interface{}, len(b.aeadConfig.Items()))
+	keyCount := 0
 	for k, v := range b.aeadConfig.Items() {
 		_, err := aeadutils.ValidateKeySetJson(v.(string))
 		if err == nil {
-			// key is valid
+			// key is valid - mask it and count it
 			v = aeadutils.MuteKeyMaterial(v.(string))
+			keyCount++
 		}
 		result[k] = v
 	}
-	
-	// Add total keys count
-	result["total_keys"] = len(b.aeadConfig.Items())
+
+	// Add total keys count (only real encryption keys, not config params)
+	result["total_keys"] = keyCount
 	result["MountPoint"] = req.MountPoint
-	
+
 	return &logical.Response{
 		Data: result,
 	}, nil
@@ -145,6 +147,12 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 	detCount := 0
 	nonDetCount := 0
 	for k, v := range b.aeadConfig.Items() {
+		// Skip non-key config parameters (only process valid encryption keys)
+		_, err := aeadutils.ValidateKeySetJson(v.(string))
+		if err != nil {
+			continue // Skip config params like VAULT_KV_URL, etc.
+		}
+
 		str := ""
 		_, determinstic := aeadutils.IsKeyJsonDeterministic(v)
 		if determinstic {
@@ -156,16 +164,60 @@ func (b *backend) pathReadKeyTypes(ctx context.Context, req *logical.Request, da
 		}
 		m[k] = str
 	}
-	
+
 	// Add summary statistics
 	m["summary"] = map[string]interface{}{
 		"total_keys":             len(b.aeadConfig.Items()),
 		"deterministic_keys":     detCount,
 		"non_deterministic_keys": nonDetCount,
 	}
-	
+
 	return &logical.Response{
 		Data: m,
+	}, nil
+}
+
+func (b *backend) pathReadSingleKey(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+
+	// retrieve the config from storage (with cache check)
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the key name from the URL path parameter
+	keyName := data.Get("keyName").(string)
+
+	// Look up the key in the cache
+	keyValue, exists := b.aeadConfig.Get(keyName)
+	if !exists {
+		return logical.ErrorResponse("key not found: %s", keyName), nil
+	}
+
+	// Validate and mask the key material
+	keyStr := keyValue.(string)
+	_, err = aeadutils.ValidateKeySetJson(keyStr)
+	if err != nil {
+		return logical.ErrorResponse("invalid key format: %s", err.Error()), nil
+	}
+
+	maskedKey := aeadutils.MuteKeyMaterial(keyStr)
+
+	// Determine key type (DETERMINISTIC or NON DETERMINISTIC)
+	_, isDeterministic := aeadutils.IsKeyJsonDeterministic(keyValue)
+	keyType := "NON DETERMINISTIC"
+	if isDeterministic {
+		keyType = "DETERMINISTIC"
+	}
+
+	// Return the single key with its type
+	result := map[string]interface{}{
+		keyName: maskedKey,
+		"type":  keyType,
+	}
+
+	return &logical.Response{
+		Data: result,
 	}, nil
 }
 

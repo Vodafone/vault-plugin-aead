@@ -299,6 +299,24 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
+			// aead/keys/{keyName} - Read a single key
+			&framework.Path{
+				Pattern:         "keys/(?P<keyName>.+)",
+				HelpSynopsis:    "Read a single encryption key",
+				HelpDescription: "Read a single encryption key by name. Returns the masked key material and type (DETERMINISTIC or NON DETERMINISTIC).",
+				Fields: map[string]*framework.FieldSchema{
+					"keyName": {
+						Type:        framework.TypeString,
+						Description: "Name of the key to read (e.g., gcm/field1 or siv/field2)",
+						Required:    true,
+					},
+				},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathReadSingleKey,
+					},
+				},
+			},
 			// aead/bqsync
 			&framework.Path{
 				Pattern:         "bqsync",
