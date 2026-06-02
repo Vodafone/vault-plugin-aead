@@ -19,11 +19,10 @@ VAULT AEAD SECRETS PLUGIN
     - [/configOverwrite](#configoverwrite)
     - [/configDelete](#configdelete)
     - [/createAEADkey](#createaeadkey)
-    - [/createAEADkeyOverwrite](#createaeadkeyoverwrite)
     - [/createDAEADkey](#createdaeadkey)
-    - [/createDAEADkeyOverwrite](#createdaeadkeyoverwrite)
     - [/rotate](#rotate)
     - [/keytypes](#keytypes)
+    - [/keys/{keyName}](#keyskeyname)
     - [/bqsync](#bqsync)
     - [/updateKeyStatus](#updatekeystatus)
     - [/updateKeyMaterial](#updatekeymaterial)
@@ -443,21 +442,6 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v
 ```
 **Note:** The warnings in the old format are harmless and do not affect functionality. Both formats work identically.
 
-### /createAEADkeyOverwrite
-Creates non-deterministic keyset(s) with AES256GCM keys. **WILL overwrite existing keys**. Supports the same two formats as createAEADkey.
-
-**New format (recommended):**
-```bash
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkeyOverwrite -H "Content-Type: application/json" -d '{"data":{"field1":"plaintext"}}'
-```
-
-**Old format (backward compatible):**
-```bash
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createAEADkeyOverwrite -H "Content-Type: application/json" -d '{"field1":"plaintext"}'
-```
-
-See `/createAEADkey` for detailed format documentation and response examples.
-
 ### /createDAEADkey
 Creates deterministic keyset(s) with AES-SIV keys and saves to config. **Does NOT overwrite existing keys**. Supports two API formats:
 
@@ -508,21 +492,6 @@ curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v
 ```
 **Note:** The warnings in the old format are harmless and do not affect functionality. Both formats work identically.
 
-### /createDAEADkeyOverwrite
-Creates deterministic keyset(s) with AES-SIV keys. **WILL overwrite existing keys**. Supports the same two formats as createDAEADkey.
-
-**New format (recommended):**
-```bash
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkeyOverwrite -H "Content-Type: application/json" -d '{"data":{"field1":"plaintext"}}'
-```
-
-**Old format (backward compatible):**
-```bash
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/createDAEADkeyOverwrite -H "Content-Type: application/json" -d '{"field1":"plaintext"}'
-```
-
-See `/createDAEADkey` for detailed format documentation and response examples.
-
 ### /rotate
 Rotates encryption keys. Can rotate all keys or specific keys by name. Returns detailed status including successful rotations, failures with error details, and non-existent keys.
 
@@ -569,6 +538,20 @@ curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD
   }
 }
 ```
+
+### /keys/{keyName}
+Read a single encryption key by name. More efficient than reading all keys via `/config` when you only need one key. Returns the masked key material and its type (DETERMINISTIC or NON DETERMINISTIC).
+
+**Read a non-deterministic key:**
+```
+curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD_ENGINE}/keys/gcm/field1
+```
+
+**Read a deterministic key:**
+```
+curl -sk -X GET --header "X-Vault-Token: "${VAULT_TOKEN} ${VAULT_ADDR}/v1/${AEAD_ENGINE}/keys/siv/field2
+```
+
 
 ### /bqsync
 Sync Tink keysets, encrypted with KMS, as routines in BigQuery datasets. Supports wildcards and selective key sync. Returns detailed status including successful syncs, failures with error details, and non-existent keys.

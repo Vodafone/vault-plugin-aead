@@ -230,25 +230,6 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
-			// aead/createAEADkeyOverwrite
-			&framework.Path{
-				Pattern:         "createAEADkeyOverwrite",
-				HelpSynopsis:    "Create AEAD keys (with overwrite)",
-				HelpDescription: "Create non-deterministic AEAD keys. WILL overwrite existing keys. Send key-value pairs in 'data' field. Example: {\"data\":{\"field1\":\"plaintext\"}}. For backward compatibility, also accepts direct field names (shows warnings).",
-				Fields: map[string]*framework.FieldSchema{
-					"data": {
-						Type:        framework.TypeMap,
-						Description: "Map of key names to plaintext values. Each key will be created with the provided data.",
-					},
-				},
-				Operations: map[logical.Operation]framework.OperationHandler{
-					logical.UpdateOperation: &framework.PathOperation{
-						Callback:                    b.pathAeadCreateNonDeterministicKeysOverwrite,
-						ForwardPerformanceStandby:   true,
-						ForwardPerformanceSecondary: true,
-					},
-				},
-			},
 			// aead/createDAEADkey
 			&framework.Path{
 				Pattern:         "createDAEADkey",
@@ -263,25 +244,6 @@ func Backend(c *logical.BackendConfig) *backend {
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback:                    b.pathAeadCreateDeterministicKeys,
-						ForwardPerformanceStandby:   true,
-						ForwardPerformanceSecondary: true,
-					},
-				},
-			},
-			// aead/createDAEADkey
-			&framework.Path{
-				Pattern:         "createDAEADkeyOverwrite",
-				HelpSynopsis:    "Create DAEAD keys (with overwrite)",
-				HelpDescription: "Create deterministic AEAD (DAEAD) keys with AES-SIV. WILL overwrite existing keys. Send key-value pairs in 'data' field. Example: {\"data\":{\"field1\":\"plaintext\"}}. For backward compatibility, also accepts direct field names (shows warnings).",
-				Fields: map[string]*framework.FieldSchema{
-					"data": {
-						Type:        framework.TypeMap,
-						Description: "Map of key names to plaintext values. Each key will be created with the provided data.",
-					},
-				},
-				Operations: map[logical.Operation]framework.OperationHandler{
-					logical.UpdateOperation: &framework.PathOperation{
-						Callback:                    b.pathAeadCreateDeterministicKeysOverwrite,
 						ForwardPerformanceStandby:   true,
 						ForwardPerformanceSecondary: true,
 					},

@@ -1094,9 +1094,9 @@ func TestBackend(t *testing.T) {
 			t.Fatal("read back config values and they are different", err)
 		}
 
-		// try to make new data - should not override
-		encryptDataNonDetermisticallyAndCreateKey(b, storage, aeadRequest, true, t)
-		encryptDataDetermisticallyAndCreateKey(b, storage, daeadRequest, true, t)
+		// try to make new data - should not override (overwrite endpoints removed for safety)
+		encryptDataNonDetermisticallyAndCreateKey(b, storage, aeadRequest, false, t)
+		encryptDataDetermisticallyAndCreateKey(b, storage, daeadRequest, false, t)
 		configRequest3 := map[string]interface{}{
 			"test19-config": "someconfig3",
 		}
@@ -1121,10 +1121,15 @@ func TestBackend(t *testing.T) {
 			t.Fatal("read back baselineConfigValue", err)
 		}
 
-		if fmt.Sprintf("%s", baselineAeadValue) == fmt.Sprintf("%s", newAeadValue) ||
-			fmt.Sprintf("%s", baselineDaeadValue) == fmt.Sprintf("%s", newDaeadValue) ||
-			fmt.Sprintf("%s", baselineConfigValue) == fmt.Sprintf("%s", newConfigValue) {
-			t.Fatal("read back config values and they are NOT different", err)
+		// Keys should remain the SAME (overwrite=false), but config should be DIFFERENT (overwrite=true)
+		if fmt.Sprintf("%s", baselineAeadValue) != fmt.Sprintf("%s", newAeadValue) {
+			t.Fatal("AEAD key changed (should be same - overwrite endpoints removed)", err)
+		}
+		if fmt.Sprintf("%s", baselineDaeadValue) != fmt.Sprintf("%s", newDaeadValue) {
+			t.Fatal("DAEAD key changed (should be same - overwrite endpoints removed)", err)
+		}
+		if fmt.Sprintf("%s", baselineConfigValue) == fmt.Sprintf("%s", newConfigValue) {
+			t.Fatal("config value did not change (should be different - configOverwrite used)", err)
 		}
 	})
 	t.Run("test20 test config delete", func(t *testing.T) {
