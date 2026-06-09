@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
+	cmap "github.com/orcaman/concurrent-map"
 	"github.com/pkg/errors"
 )
 
@@ -25,6 +27,16 @@ type backend struct {
 	*framework.Backend
 
 	clientMutex sync.RWMutex
+
+	// aeadConfig is the per-mount instance cache of encryption keys and configuration.
+	// Each mount point (aead-greece, aead-monitoring, etc.) has its own isolated cache.
+	// This ensures tenant isolation and prevents cross-mount data leakage.
+	aeadConfig cmap.ConcurrentMap
+
+	// cacheValid indicates whether the in-memory aeadConfig is up-to-date with Raft storage.
+	// Set to false by Vault's InvalidateKey callback when a follower detects a storage mutation.
+	// Set to true after a successful reload from storage.
+	cacheValid atomic.Bool
 }
 
 // Backend creates a new backend.
@@ -218,25 +230,6 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
-			// aead/createAEADkeyOverwrite
-			&framework.Path{
-				Pattern:         "createAEADkeyOverwrite",
-				HelpSynopsis:    "Create AEAD keys (with overwrite)",
-				HelpDescription: "Create non-deterministic AEAD keys. WILL overwrite existing keys. Send key-value pairs in 'data' field. Example: {\"data\":{\"field1\":\"plaintext\"}}. For backward compatibility, also accepts direct field names (shows warnings).",
-				Fields: map[string]*framework.FieldSchema{
-					"data": {
-						Type:        framework.TypeMap,
-						Description: "Map of key names to plaintext values. Each key will be created with the provided data.",
-					},
-				},
-				Operations: map[logical.Operation]framework.OperationHandler{
-					logical.UpdateOperation: &framework.PathOperation{
-						Callback:                    b.pathAeadCreateNonDeterministicKeysOverwrite,
-						ForwardPerformanceStandby:   true,
-						ForwardPerformanceSecondary: true,
-					},
-				},
-			},
 			// aead/createDAEADkey
 			&framework.Path{
 				Pattern:         "createDAEADkey",
@@ -256,25 +249,6 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
-			// aead/createDAEADkey
-			&framework.Path{
-				Pattern:         "createDAEADkeyOverwrite",
-				HelpSynopsis:    "Create DAEAD keys (with overwrite)",
-				HelpDescription: "Create deterministic AEAD (DAEAD) keys with AES-SIV. WILL overwrite existing keys. Send key-value pairs in 'data' field. Example: {\"data\":{\"field1\":\"plaintext\"}}. For backward compatibility, also accepts direct field names (shows warnings).",
-				Fields: map[string]*framework.FieldSchema{
-					"data": {
-						Type:        framework.TypeMap,
-						Description: "Map of key names to plaintext values. Each key will be created with the provided data.",
-					},
-				},
-				Operations: map[logical.Operation]framework.OperationHandler{
-					logical.UpdateOperation: &framework.PathOperation{
-						Callback:                    b.pathAeadCreateDeterministicKeysOverwrite,
-						ForwardPerformanceStandby:   true,
-						ForwardPerformanceSecondary: true,
-					},
-				},
-			},
 			// aead/keytypes
 			&framework.Path{
 				Pattern:         "keytypes",
@@ -284,6 +258,24 @@ func Backend(c *logical.BackendConfig) *backend {
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.ReadOperation: &framework.PathOperation{
 						Callback: b.pathReadKeyTypes,
+					},
+				},
+			},
+			// aead/keys/{keyName} - Read a single key
+			&framework.Path{
+				Pattern:         "keys/(?P<keyName>.+)",
+				HelpSynopsis:    "Read a single encryption key",
+				HelpDescription: "Read a single encryption key by name. Returns the masked key material and type (DETERMINISTIC or NON DETERMINISTIC).",
+				Fields: map[string]*framework.FieldSchema{
+					"keyName": {
+						Type:        framework.TypeString,
+						Description: "Name of the key to read (e.g., gcm/field1 or siv/field2)",
+						Required:    true,
+					},
+				},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathReadSingleKey,
 					},
 				},
 			},
@@ -479,7 +471,26 @@ func Backend(c *logical.BackendConfig) *backend {
 			},
 		},
 	}
+
+	// Register the invalidation callback. Vault calls this on follower pods
+	// when the "config" storage key is replicated via Raft, signalling that
+	// the in-memory cache is stale and must be reloaded on the next request.
+	b.Backend.Invalidate = b.invalidate
+
+	// Initialize the per-mount cache. Each backend instance gets its own isolated cache.
+	// This ensures aead-greece, aead-monitoring, etc. don't share or overwrite each other's keys.
+	b.aeadConfig = cmap.New()
+
 	return &b
+}
+
+// invalidate is called by Vault's framework when a storage key changes on this node
+// due to Raft replication. It marks the cache as stale so the next request reloads.
+func (b *backend) invalidate(ctx context.Context, key string) {
+	if key == "config" {
+		b.Logger().Warn("🔴 CACHE INVALIDATED - InvalidateKey callback fired", "key", key)
+		b.cacheValid.Store(false)
+	}
 }
 
 const backendHelp = "The aead secrets engine generates aead tokens."

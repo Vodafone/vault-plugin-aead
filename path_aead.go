@@ -170,13 +170,13 @@ func (b *backend) encryptRow(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) doEncryptionChan(fieldName string, unencryptedData interface{}, data *framework.FieldData, ctx context.Context, req *logical.Request, ch chan map[string]interface{}) {
 	resp := make(map[string]interface{})
-	encryptionkey, ok := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
+	encryptionkey, ok := aeadutils.GetEncryptionKey(fieldName, b.aeadConfig)
 	// do we have a key already in config
 	if ok {
 		// is the key we have retrieved deterministic?
 		encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionkey)
 		// set additionalDataBytes as field name of the right type
-		additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
+		additionalDataBytes := b.getAdditionalData(fieldName, b.aeadConfig)
 
 		if deterministic {
 			// SUPPORT FOR DETERMINISTIC AEAD
@@ -315,14 +315,14 @@ func (b *backend) decryptRow(ctx context.Context, req *logical.Request, data *fr
 
 func (b *backend) doDecryptionChan(fieldName string, encryptedDataBase64 interface{}, ch chan map[string]interface{}) {
 	resp := make(map[string]interface{})
-	encryptionkey, ok := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
+	encryptionkey, ok := aeadutils.GetEncryptionKey(fieldName, b.aeadConfig)
 	// do we have a key already in config
 	if ok {
 		// is the key deterministig or non deterministic
 		encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionkey)
 
 		// set additionalDataBytes as field name of the right type
-		additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
+		additionalDataBytes := b.getAdditionalData(fieldName, b.aeadConfig)
 
 		if deterministic {
 			// SUPPORT FOR DETERMINISTIC AEAD
@@ -474,7 +474,7 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 	}
 	resp := make(map[string]interface{})
 
-	encryptionkey, keyFound := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
+	encryptionkey, keyFound := aeadutils.GetEncryptionKey(fieldName, b.aeadConfig)
 	// is the key we have retrieved deterministic?
 	encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionkey)
 
@@ -502,7 +502,7 @@ func (b *backend) encryptCol(ctx context.Context, req *logical.Request, data *fr
 		}
 	}
 	// set additionalDataBytes as field name of the right type
-	additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
+	additionalDataBytes := b.getAdditionalData(fieldName, b.aeadConfig)
 
 	// iterate through the key=value supplied (ie field1=myaddress field2=myphonenumber)
 	for rowNum, unencryptedData := range data.Raw {
@@ -649,7 +649,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 	}
 	resp := make(map[string]interface{})
 
-	encryptionkey, keyFound := aeadutils.GetEncryptionKey(fieldName, AEAD_CONFIG)
+	encryptionkey, keyFound := aeadutils.GetEncryptionKey(fieldName, b.aeadConfig)
 	// is the key we have retrieved deterministic?
 	encryptionKeyStr, deterministic := aeadutils.IsKeyJsonDeterministic(encryptionkey)
 
@@ -677,7 +677,7 @@ func (b *backend) decryptCol(ctx context.Context, req *logical.Request, data *fr
 		}
 	}
 	// set additionalDataBytes as field name of the right type
-	additionalDataBytes := b.getAdditionalData(fieldName, AEAD_CONFIG)
+	additionalDataBytes := b.getAdditionalData(fieldName, b.aeadConfig)
 
 	// iterate through the key=value supplied (ie field1=sdfvbbvwrbwr field2=advwefvwfvbwrfvb)
 	for rowNumber, encryptedDataBase64 := range data.Raw {
@@ -752,7 +752,7 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 	}
 
 	var market string
-	telemetryLMIntf, ok := AEAD_CONFIG.Get("TELEMETRY_LM")
+	telemetryLMIntf, ok := b.aeadConfig.Get("TELEMETRY_LM")
 	if !ok {
 		return
 		//market = "test"
@@ -778,7 +778,7 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 
 	// Sets your Google Cloud Platform project ID.
 	var projectID string
-	telemetryProjectIDIntf, ok := AEAD_CONFIG.Get("TELEMETRY_PROJECTID")
+	telemetryProjectIDIntf, ok := b.aeadConfig.Get("TELEMETRY_PROJECTID")
 	if !ok {
 		projectID = "your-pubsub-project"
 	} else {
@@ -787,7 +787,7 @@ func (b *backend) publishTelemetry(wg *sync.WaitGroup, ctx context.Context, req 
 
 	// Sets the id for the new topic.
 	var topicID string
-	telemetryTopicIDIntf, ok := AEAD_CONFIG.Get("TELEMETRY_TOPICID")
+	telemetryTopicIDIntf, ok := b.aeadConfig.Get("TELEMETRY_TOPICID")
 	if !ok {
 		topicID = "eaas-telemetry"
 	} else {
