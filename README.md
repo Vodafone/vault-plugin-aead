@@ -32,6 +32,7 @@ VAULT AEAD SECRETS PLUGIN
     - [/readkv](#readkv)
     - [/synckv](#synckv)
     - [/synctransitkv](#synctransitkv)
+    - [/backupConfigToKV](#backupconfigtokv)
   - [KEYSET EXAMPLE](#keyset-example)
   - [BULK DATA EXAMPLE](#bulk-data-example)
 - [DESIGNS](#designs)
@@ -689,6 +690,86 @@ Note the following config must be set:
 "VAULT_TRANSIT_TOKENNAME"
 "VAULT_TRANSIT_KEK"
 ```
+
+### /backupConfigToKV
+Backs up the entire engine configuration (all keys + all parameters) to the KV engine as a single snapshot at path `_aead_config_backup`. This is useful for disaster recovery and for manually triggering backups on existing engines.
+
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/backupConfigToKV
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "status": "success",
+    "message": "Config backed up to KV at path _aead_config_backup",
+    "timestamp": "2026-06-18T14:56:42Z",
+    "mount": "my-aead-engine/aead/",
+    "keys_count": 91
+  }
+}
+```
+
+Note the following config must be set:
+```
+"VAULT_KV_ACTIVE": "true"
+"VAULT_KV_URL"
+"VAULT_KV_ENGINE"
+"VAULT_KV_VERSION"
+"VAULT_KV_APPROLE_ID"
+"VAULT_KV_SECRET_ID" // optional if this can be derived from the below
+"VAULT_KV_WRITER_ROLE"
+"VAULT_KV_SECRETGENERATOR_IAM_ROLE"
+```
+
+**Automatic Backups:** Config is automatically backed up to KV every time a key is created (via `/createAEADkey` or `/createDAEADkey`), provided KV is properly configured. This keeps the KV backup in sync with the engine's Raft storage for disaster recovery.
+
+**When Auto-Backup is Triggered:**
+- ✅ Automatic: When creating any encryption key (existing engines + new engines)
+- ✅ Manual: Via the `/backupConfigToKV` endpoint at any time
+
+**Backup Contents:** The backup includes:
+- All encryption keys (gcm/* and siv/* prefixed keys) with full key material
+- All configuration parameters (VAULT_KV_*, VAULT_TRANSIT_*, BQ_*, etc.)
+- Backup metadata: `_backup_timestamp` and `_mount_point`
+
+**KV Versioning:** Since KV v2 maintains automatic versioning, each backup creates a new version. Old backups are preserved as historical versions and can be retrieved if needed.
+
+## KV Connection Validation
+
+When `VAULT_KV_ACTIVE` is set to `"true"`, the plugin validates the KV connection before allowing key creation. This validation:
+
+1. ✅ Tests AppRole authentication to the KV vault
+2. ✅ Verifies read access to the KV engine path
+3. ✅ Verifies write access by writing a test marker
+
+**Validation Flow for Key Creation:**
+```
+POST /v1/${AEAD_ENGINE}/createAEADkey
+    ↓
+Check if VAULT_KV_ACTIVE == "true"
+    ↓
+If yes: Validate KV connection
+  - Can AppRole authenticate?
+  - Can we read from KV engine?
+  - Can we write to KV engine?
+    ↓
+If validation passes: Create key → Auto-backup to KV
+If validation fails: Return error, key NOT created
+```
+
+**Validation Errors:**
+If validation fails, the key creation is rejected with a descriptive error:
+- `AppRole authentication to KV vault failed` → Check VAULT_KV_APPROLE_ID and secret
+- `KV engine access validation failed` → Check VAULT_KV_ENGINE and VAULT_KV_URL
+- `KV read permission test failed` → AppRole lacks read permissions
+- `KV write permission test failed` → AppRole lacks write permissions
+
+**Applies to Both Old and New Engines:** The validation function is called on every key creation, regardless of engine age. This ensures:
+- Old engines with KV configured maintain backup consistency
+- New engines are validated before their first key creation
+- Any misconfiguration is caught early, not during disaster recovery
 
 
 ## KEYSET EXAMPLE

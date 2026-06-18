@@ -1007,12 +1007,36 @@ func (b *backend) validateKVConnection(ctx context.Context, req *logical.Request
 		kvOptions.Vault_secretgenerator_iam_role,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to authenticate to KV vault: %w", err)
+		return fmt.Errorf("AppRole authentication to KV vault failed - verify VAULT_KV_APPROLE_ID and secret are correct: %w", err)
 	}
 
 	_, err = kvutils.KvGetSecretPaths(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, "")
 	if err != nil {
-		return fmt.Errorf("KV connection validation failed - cannot access KV engine: %w", err)
+		return fmt.Errorf("KV engine access validation failed - cannot list paths in %s (verify VAULT_KV_ENGINE and VAULT_KV_URL): %w", kvOptions.Vault_kv_engine, err)
+	}
+
+	backupPath := "_aead_config_backup"
+
+	_, err = kvutils.KvGetSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, backupPath)
+	if err != nil {
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "secret not found") && !strings.Contains(errMsg, "not exist") {
+			return fmt.Errorf("KV read permission test failed on %s - verify AppRole has read access: %w", backupPath, err)
+		}
+
+		testMarker := map[string]interface{}{
+			"_test_timestamp": time.Now().UTC().Format(time.RFC3339),
+			"_test":           "connection_validation",
+		}
+		_, err = kvutils.KvPutSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, "_connection_test", testMarker)
+		if err != nil {
+			return fmt.Errorf("KV write permission test failed - verify AppRole has write access to %s: %w", kvOptions.Vault_kv_engine, err)
+		}
+
+		_, err = kvutils.KvGetSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, "_connection_test")
+		if err != nil {
+			return fmt.Errorf("KV write verification failed - test secret created but cannot be read back: %w", err)
+		}
 	}
 
 	return nil
