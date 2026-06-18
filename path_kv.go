@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/Vodafone/vault-plugin-aead/kvutils"
@@ -906,4 +907,121 @@ func SyncFromExternalKV(b *backend, ctx context.Context, req *logical.Request, d
 
 	}
 	return rtnMap, nil
+}
+
+func (b *backend) pathBackupConfigToKV(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	result, err := b.backupConfigToKV(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &logical.Response{Data: result}, nil
+}
+
+func (b *backend) backupConfigToKV(ctx context.Context, req *logical.Request) (map[string]interface{}, error) {
+
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var kvOptions kvutils.KVOptions
+	err = resolveKvOptions(&kvOptions, b.aeadConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve KV options: %w", err)
+	}
+
+	if kvOptions.Vault_kv_active != "true" {
+		return map[string]interface{}{
+			"status":  "skipped",
+			"message": "VAULT_KV_ACTIVE is not set to true",
+		}, nil
+	}
+
+	client, err := kvutils.KvGetClientWithApprole(
+		kvOptions.Vault_kv_url,
+		"",
+		kvOptions.Vault_kv_approle_id,
+		kvOptions.Vault_kv_secret_id,
+		kvOptions.Vault_kv_writer_role,
+		kvOptions.Vault_secretgenerator_iam_role,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to authenticate to KV vault: %w", err)
+	}
+
+	backupMap := make(map[string]interface{})
+	for k, v := range b.aeadConfig.Items() {
+		backupMap[k] = v
+	}
+
+	backupMap["_backup_timestamp"] = time.Now().UTC().Format(time.RFC3339)
+	backupMap["_mount_point"] = req.MountPoint
+
+	_, err = kvutils.KvPutSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, "_aead_config_backup", backupMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write config backup to KV: %w", err)
+	}
+
+	b.configBackedUpToKV.Store(true)
+
+	return map[string]interface{}{
+		"status":     "success",
+		"message":    "Config backed up to KV at path _aead_config_backup",
+		"timestamp":  backupMap["_backup_timestamp"],
+		"mount":      req.MountPoint,
+		"keys_count": len(b.aeadConfig.Items()),
+	}, nil
+}
+
+func (b *backend) validateKVConnection(ctx context.Context, req *logical.Request) error {
+
+	var kvOptions kvutils.KVOptions
+	err := resolveKvOptions(&kvOptions, b.aeadConfig)
+	if err != nil {
+		return fmt.Errorf("failed to resolve KV options: %w", err)
+	}
+
+	if kvOptions.Vault_kv_active != "true" {
+		return nil
+	}
+
+	if kvOptions.Vault_kv_url == "" {
+		return fmt.Errorf("VAULT_KV_URL is not configured")
+	}
+	if kvOptions.Vault_kv_engine == "" {
+		return fmt.Errorf("VAULT_KV_ENGINE is not configured")
+	}
+	if kvOptions.Vault_kv_version == "" {
+		return fmt.Errorf("VAULT_KV_VERSION is not configured")
+	}
+	if kvOptions.Vault_kv_approle_id == "" {
+		return fmt.Errorf("VAULT_KV_APPROLE_ID is not configured")
+	}
+
+	client, err := kvutils.KvGetClientWithApprole(
+		kvOptions.Vault_kv_url,
+		"",
+		kvOptions.Vault_kv_approle_id,
+		kvOptions.Vault_kv_secret_id,
+		kvOptions.Vault_kv_writer_role,
+		kvOptions.Vault_secretgenerator_iam_role,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to authenticate to KV vault: %w", err)
+	}
+
+	_, err = kvutils.KvGetSecretPaths(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, "")
+	if err != nil {
+		return fmt.Errorf("KV connection validation failed - cannot access KV engine: %w", err)
+	}
+
+	return nil
+}
+
+func (b *backend) triggerConfigBackup(ctx context.Context, req *logical.Request) {
+	go func() {
+		if _, err := b.backupConfigToKV(ctx, req); err != nil {
+			b.Logger().Error("auto-backup config to KV failed", "error", err, "mount", req.MountPoint)
+		}
+	}()
 }

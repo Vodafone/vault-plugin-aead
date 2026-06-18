@@ -37,6 +37,10 @@ type backend struct {
 	// Set to false by Vault's InvalidateKey callback when a follower detects a storage mutation.
 	// Set to true after a successful reload from storage.
 	cacheValid atomic.Bool
+
+	// configBackedUpToKV tracks whether config parameters have been backed up to KV for this mount.
+	// Set to true after the first successful backup. Prevents redundant backups on subsequent key creates.
+	configBackedUpToKV atomic.Bool
 }
 
 // Backend creates a new backend.
@@ -466,6 +470,23 @@ func Backend(c *logical.BackendConfig) *backend {
 				Operations: map[logical.Operation]framework.OperationHandler{
 					logical.UpdateOperation: &framework.PathOperation{
 						Callback: b.pathSyncFromExternalKV,
+					},
+				},
+			},
+			// aead/backupConfigToKV
+			&framework.Path{
+				Pattern:         "backupConfigToKV",
+				HelpSynopsis:    "Backup full config to KV engine",
+				HelpDescription: "Backs up the entire config (keys + parameters) to the KV engine at _aead_config_backup path.",
+				Fields:          map[string]*framework.FieldSchema{},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathBackupConfigToKV,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathBackupConfigToKV,
 					},
 				},
 			},

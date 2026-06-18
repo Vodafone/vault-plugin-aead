@@ -730,6 +730,10 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 		return nil, err
 	}
 
+	if err := b.validateKVConnection(ctx, req); err != nil {
+		return nil, fmt.Errorf("KV connection validation failed, cannot create key: %w", err)
+	}
+
 	resp := make(map[string]interface{})
 	var createdKeys []string
 	var skippedKeys []string
@@ -829,6 +833,10 @@ func (b *backend) createDeterministicKeysOverwriteCheck(ctx context.Context, req
 		resp["failed_list"] = failedKeys
 	}
 
+	if len(createdKeys) > 0 {
+		b.triggerConfigBackup(ctx, req)
+	}
+
 	return &logical.Response{
 		Data: resp,
 	}, nil
@@ -847,6 +855,10 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 	err := b.getAeadConfig(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := b.validateKVConnection(ctx, req); err != nil {
+		return nil, fmt.Errorf("KV connection validation failed, cannot create key: %w", err)
 	}
 
 	resp := make(map[string]interface{})
@@ -946,6 +958,10 @@ func (b *backend) createNonDeterministicKeysOverwriteCheck(ctx context.Context, 
 	}
 	if len(failedKeys) > 0 {
 		resp["failed_list"] = failedKeys
+	}
+
+	if len(createdKeys) > 0 {
+		b.triggerConfigBackup(ctx, req)
 	}
 
 	return &logical.Response{
