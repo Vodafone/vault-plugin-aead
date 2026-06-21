@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
@@ -1049,3 +1050,112 @@ func (b *backend) triggerConfigBackup(ctx context.Context, req *logical.Request)
 		}
 	}()
 }
+
+func (b *backend) pathBackupAllEngines(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	result, err := b.backupAllEngines(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &logical.Response{Data: result}, nil
+}
+
+func (b *backend) backupAllEngines(ctx context.Context, req *logical.Request) (map[string]interface{}, error) {
+	mounts, err := req.Storage.List(ctx, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover AEAD engines: %w", err)
+	}
+
+	var aeadEngines []string
+	for _, mount := range mounts {
+		if strings.HasSuffix(mount, "/aead/") {
+			aeadEngines = append(aeadEngines, mount)
+		}
+	}
+
+	if len(aeadEngines) == 0 {
+		return map[string]interface{}{
+			"status":             "no_engines_found",
+			"message":            "No AEAD engines discovered in cluster",
+			"engines_discovered": 0,
+		}, nil
+	}
+
+	type backupResult struct {
+		engine  string
+		success bool
+		err     string
+		keys    int
+		ts      string
+	}
+
+	resultChan := make(chan backupResult, len(aeadEngines))
+	var wg sync.WaitGroup
+
+	const maxConcurrency = 10
+	sem := make(chan struct{}, maxConcurrency)
+
+	for _, enginePath := range aeadEngines {
+		wg.Add(1)
+		go func(engine string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			mountPoint := strings.TrimSuffix(engine, "/")
+			backupReq := &logical.Request{
+				Operation:   logical.UpdateOperation,
+				Path:        "backupConfigToKV",
+				MountPoint:  mountPoint,
+				Storage:     req.Storage,
+				ClientToken: req.ClientToken,
+			}
+
+			res, err := b.backupConfigToKV(ctx, backupReq)
+			result := backupResult{engine: engine}
+
+			if err != nil {
+				result.success = false
+				result.err = err.Error()
+			} else {
+				result.success = true
+				if status, ok := res["status"].(string); ok && status == "success" {
+					if kc, ok := res["keys_count"].(int); ok {
+						result.keys = kc
+					}
+					if ts, ok := res["timestamp"].(string); ok {
+						result.ts = ts
+					}
+				}
+			}
+
+			resultChan <- result
+		}(enginePath)
+	}
+
+	wg.Wait()
+	close(resultChan)
+
+	successCount := 0
+	failedEngines := []map[string]interface{}{}
+
+	for res := range resultChan {
+		if res.success {
+			successCount++
+		} else {
+			failedEngines = append(failedEngines, map[string]interface{}{
+				"engine": res.engine,
+				"error":  res.err,
+			})
+		}
+	}
+
+	return map[string]interface{}{
+		"status":             "completed",
+		"engines_discovered": len(aeadEngines),
+		"successful_backups": successCount,
+		"failed_backups":     len(failedEngines),
+		"failed_engines":     failedEngines,
+		"message":            fmt.Sprintf("Backed up %d of %d engines successfully", successCount, len(aeadEngines)),
+	}, nil
+}
+

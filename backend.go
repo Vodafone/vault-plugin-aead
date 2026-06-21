@@ -490,6 +490,23 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
+			// aead/backupAllEngines
+			&framework.Path{
+				Pattern:         "backupAllEngines",
+				HelpSynopsis:    "Backup all AEAD engines to their KV stores",
+				HelpDescription: "Discovers all AEAD engines in the cluster and backs up each one's config to its respective KV engine. Returns summary of successful/failed backups.",
+				Fields:          map[string]*framework.FieldSchema{},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathBackupAllEngines,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+					logical.ReadOperation: &framework.PathOperation{
+						Callback: b.pathBackupAllEngines,
+					},
+				},
+			},
 		},
 	}
 
