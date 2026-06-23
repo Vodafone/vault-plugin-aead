@@ -33,7 +33,6 @@ VAULT AEAD SECRETS PLUGIN
     - [/synckv](#synckv)
     - [/synctransitkv](#synctransitkv)
     - [/backupConfigToKV](#backupconfigtokv)
-    - [/backupAllEngines](#backupallengines)
   - [KEYSET EXAMPLE](#keyset-example)
   - [BULK DATA EXAMPLE](#bulk-data-example)
 - [DESIGNS](#designs)
@@ -772,65 +771,30 @@ If validation fails, the key creation is rejected with a descriptive error:
 - New engines are validated before their first key creation
 - Any misconfiguration is caught early, not during disaster recovery
 
-### /backupAllEngines
-Discovers all AEAD engines in the Vault cluster and backs up each one's configuration to its respective KV engine. This is useful for bulk disaster recovery preparation and admin verification that all engines are properly backed up.
+### Bulk Backup: All Engines
 
-```
-curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/backupAllEngines
-```
+To backup all AEAD engines at once, use the external discovery script:
 
-**Response:**
-```json
-{
-  "data": {
-    "status": "completed",
-    "engines_discovered": 10,
-    "successful_backups": 10,
-    "failed_backups": 0,
-    "failed_engines": [],
-    "message": "Backed up 10 of 10 engines successfully"
-  }
-}
+```bash
+chmod +x scripts/backup_all_aead_engines.sh
+./scripts/backup_all_aead_engines.sh
 ```
 
-**Failed Example:**
-```json
-{
-  "data": {
-    "status": "completed",
-    "engines_discovered": 10,
-    "successful_backups": 8,
-    "failed_backups": 2,
-    "failed_engines": [
-      {
-        "engine": "aead-monitoring/aead/",
-        "error": "KV write permission test failed - verify AppRole has write access"
-      },
-      {
-        "engine": "aead-greece/aead/",
-        "error": "VAULT_KV_ACTIVE is not configured"
-      }
-    ],
-    "message": "Backed up 8 of 10 engines successfully"
-  }
-}
+**How it works:**
+1. Discovers all AEAD engines using `vault secrets list`
+2. Loops through each engine
+3. Calls `/backupConfigToKV` on each one individually
+4. Returns summary: success/failed counts and which engines failed
+
+
+📊 Backup Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Total engines:      10
+✅ Successful:      10
+❌ Failed:          0
+
+✨ All engines backed up successfully!
 ```
-
-**Behavior:**
-- ✅ Discovers all AEAD engines by scanning storage
-- ✅ Backs up each engine in parallel (max 10 concurrent backups)
-- ✅ Waits for all backups to complete before returning
-- ✅ Returns detailed results: success count, failed engines with error reasons
-- ✅ Safe to call multiple times (idempotent)
-- ✅ Does not require KV configuration on any specific engine (only on engines that have KV_ACTIVE=true)
-
-**Use Cases:**
-1. **Bulk verification:** Admin suspects some engines might have missing KV backups, triggers this endpoint to check all at once
-2. **Disaster recovery prep:** Run before major maintenance to ensure all engines have current KV backups
-3. **New environment setup:** After adding new AEAD engines, trigger this to create initial KV backups
-4. **Health check:** Periodic admin task to verify all engines maintain KV backup consistency
-
-**Engine Discovery:** The endpoint automatically discovers all engines matching the pattern `*/aead/` in the Vault cluster storage, so no configuration is needed—just call the endpoint.
 
 
 ## KEYSET EXAMPLE
