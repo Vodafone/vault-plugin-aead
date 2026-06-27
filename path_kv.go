@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/Vodafone/vault-plugin-aead/kvutils"
@@ -814,6 +815,55 @@ func SyncToExternalKV(b *backend, ctx context.Context, req *logical.Request, dat
 		}
 	}
 	return rtnMap, nil
+}
+
+func deriveLocalKVEngine(mountPoint string) string {
+	mp := strings.TrimSuffix(mountPoint, "/")
+	lastSlash := strings.LastIndex(mp, "/")
+	if lastSlash >= 0 {
+		return mp[:lastSlash] + "/data"
+	}
+	return mp + "/data"
+}
+
+func (b *backend) backupConfigToLocalKV(ctx context.Context, req *logical.Request) {
+	kvActive, ok := b.aeadConfig.Get("VAULT_KV_ACTIVE")
+	if !ok || fmt.Sprintf("%v", kvActive) != "true" {
+		return
+	}
+
+	var kvOptions kvutils.KVOptions
+	if err := resolveKvOptions(&kvOptions, b.aeadConfig); err != nil {
+		b.Logger().Error("backupConfigToLocalKV: failed to resolve KV options", "error", err)
+		return
+	}
+
+	localKVEngine := deriveLocalKVEngine(req.MountPoint)
+
+	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
+	if err != nil {
+		b.Logger().Error("backupConfigToLocalKV: failed to create client", "error", err)
+		return
+	}
+
+	configBackup := make(map[string]interface{})
+	for k, v := range b.aeadConfig.Items() {
+		valStr := fmt.Sprintf("%v", v)
+		_, validateErr := aeadutils.ValidateKeySetJson(valStr)
+		if validateErr != nil {
+			configBackup[k] = v
+		}
+	}
+
+	configBackup["_backup_timestamp"] = time.Now().UTC().Format(time.RFC3339)
+	configBackup["_mount_point"] = req.MountPoint
+
+	_, err = kvutils.KvPutSecret(client, localKVEngine, kvOptions.Vault_kv_version, "_aead_config_backup", configBackup)
+	if err != nil {
+		b.Logger().Error("backupConfigToLocalKV: failed to write backup", "error", err, "engine", localKVEngine)
+	} else {
+		b.Logger().Info("backupConfigToLocalKV: config backed up to local KV", "engine", localKVEngine)
+	}
 }
 
 func SyncFromExternalKV(b *backend, ctx context.Context, req *logical.Request, data *framework.FieldData) (map[string]interface{}, error) {

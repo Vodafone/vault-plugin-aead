@@ -2522,6 +2522,88 @@ func createVaultConfig() map[string]interface{} {
 
 }
 
+func TestDeriveLocalKVEngine(t *testing.T) {
+	tests := []struct {
+		mountPoint string
+		expected   string
+	}{
+		{"aead-monitoring/aead/", "aead-monitoring/data"},
+		{"aead-greece/aead/", "aead-greece/data"},
+		{"aead-blueprint/aead/", "aead-blueprint/data"},
+		{"my-engine/aead/", "my-engine/data"},
+		{"aead-secrets/", "aead-secrets/data"},
+		{"simple/", "simple/data"},
+	}
+
+	for _, tt := range tests {
+		result := deriveLocalKVEngine(tt.mountPoint)
+		if result != tt.expected {
+			t.Errorf("deriveLocalKVEngine(%q) = %q, want %q", tt.mountPoint, result, tt.expected)
+		}
+	}
+}
+
+func TestBackupConfigFiltering(t *testing.T) {
+	b, storage := testBackend(t)
+
+	configMap := createVaultConfig()
+	saveConfig(b, storage, configMap, false, t)
+
+	keyData := map[string]interface{}{
+		"gcm/test-filter-key": NonDeterministicKeyset,
+		"siv/test-filter-key": DeterministicKeyset,
+	}
+	saveConfig(b, storage, keyData, false, t)
+
+	configOnly := make(map[string]interface{})
+	for k, v := range b.aeadConfig.Items() {
+		valStr := fmt.Sprintf("%v", v)
+		_, err := aeadutils.ValidateKeySetJson(valStr)
+		if err != nil {
+			configOnly[k] = v
+		}
+	}
+
+	for k := range configOnly {
+		if strings.HasPrefix(k, "gcm/") || strings.HasPrefix(k, "siv/") {
+			t.Errorf("config backup should not contain key %q", k)
+		}
+	}
+
+	if _, ok := configOnly["VAULT_KV_ACTIVE"]; !ok {
+		t.Error("config backup should contain VAULT_KV_ACTIVE")
+	}
+	if _, ok := configOnly["VAULT_KV_URL"]; !ok {
+		t.Error("config backup should contain VAULT_KV_URL")
+	}
+}
+
+func TestBackupConfigToLocalKVNoKVActive(t *testing.T) {
+	b, storage := testBackend(t)
+
+	data := map[string]interface{}{
+		"some-config": "some-value",
+	}
+	saveConfig(b, storage, data, false, t)
+
+	b.backupConfigToLocalKV(context.Background(), &logical.Request{
+		Storage:    storage,
+		MountPoint: "aead-test/aead/",
+	})
+}
+
+func TestDeriveLocalKVEngineEdgeCases(t *testing.T) {
+	result := deriveLocalKVEngine("aead-monitoring/aead")
+	if result != "aead-monitoring/data" {
+		t.Errorf("expected 'aead-monitoring/data', got %q", result)
+	}
+
+	result = deriveLocalKVEngine("deep/nested/path/aead/")
+	if result != "deep/nested/path/data" {
+		t.Errorf("expected 'deep/nested/path/data', got %q", result)
+	}
+}
+
 func TestCacheInvalidation(t *testing.T) {
 
 	t.Run("cache becomes valid after write", func(t *testing.T) {

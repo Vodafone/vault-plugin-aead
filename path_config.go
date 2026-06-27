@@ -71,6 +71,8 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 	// doesn't re-read its own write on the next request.
 	b.cacheValid.Store(true)
 
+	b.backupConfigToLocalKV(ctx, req)
+
 	return nil, nil
 }
 

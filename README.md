@@ -965,6 +965,38 @@ The plugin implements a high-performance in-memory cache with proper isolation a
 - Enables real-time monitoring and debugging of cache behavior
 
 
+# AUTO-BACKUP TO LOCAL KV
+
+On every config write, the plugin automatically backs up config-only parameters (no encryption keys) to the sibling KV engine that shares the same mount prefix.
+
+**How it works**
+- Each AEAD engine (e.g. `aead-monitoring/aead/`) has a sibling KV engine (`aead-monitoring/data/`) created alongside it
+- After config is written to Raft storage, the plugin filters out all `gcm/` and `siv/` encryption keys
+- Only non-key config parameters (`VAULT_KV_*`, `BQ_*`, `TELEMETRY_*`, etc.) are backed up
+- The backup is written to `_aead_config_backup` in the local KV engine
+- A `_backup_timestamp` and `_mount_point` metadata fields are added automatically
+
+**Prerequisites**
+- `VAULT_KV_ACTIVE` must be set to `true` in config
+- `VAULT_KV_URL`, `VAULT_KV_APPROLE_ID`, `VAULT_KV_WRITER_ROLE`, and `VAULT_KV_SECRETGENERATOR_IAM_ROLE` must be configured
+- The approle must have write access to the local KV engine
+
+**Example backup content at `aead-mymarket/data/_aead_config_backup`:**
+```json
+{
+  "VAULT_KV_ACTIVE": "true",
+  "VAULT_KV_APPROLE_ID": "your-approle-id",
+  "VAULT_KV_ENGINE": "tink-aead-mymarket/data",
+  "VAULT_KV_URL": "https://your-vault-url.example.com",
+  "VAULT_KV_VERSION": "v1",
+  "VAULT_KV_WRITER_ROLE": "your-kv-writer-role",
+  "VAULT_KV_SECRETGENERATOR_IAM_ROLE": "your-secretgenerator-iam-role",
+  "_backup_timestamp": "2026-06-25T14:30:00Z",
+  "_mount_point": "aead-mymarket/aead/"
+}
+```
+
+
 # INFRASTRUCTURE
 For proper deployment, not local testing, we use Vault Enterprise v1.12.0 and Consul v1.10
 This is deployed on GCP's GKE
