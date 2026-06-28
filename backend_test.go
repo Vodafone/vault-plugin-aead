@@ -2586,10 +2586,7 @@ func TestBackupConfigToLocalKVNoKVActive(t *testing.T) {
 	}
 	saveConfig(b, storage, data, false, t)
 
-	b.backupConfigToLocalKV(context.Background(), &logical.Request{
-		Storage:    storage,
-		MountPoint: "aead-test/aead/",
-	})
+	b.backupConfigToLocalKV("aead-test/aead/")
 }
 
 func TestDeriveLocalKVEngineEdgeCases(t *testing.T) {

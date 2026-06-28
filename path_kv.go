@@ -826,7 +826,7 @@ func deriveLocalKVEngine(mountPoint string) string {
 	return mp + "/data"
 }
 
-func (b *backend) backupConfigToLocalKV(ctx context.Context, req *logical.Request) {
+func (b *backend) backupConfigToLocalKV(mountPoint string) {
 	kvActive, ok := b.aeadConfig.Get("VAULT_KV_ACTIVE")
 	if !ok || fmt.Sprintf("%v", kvActive) != "true" {
 		return
@@ -838,7 +838,7 @@ func (b *backend) backupConfigToLocalKV(ctx context.Context, req *logical.Reques
 		return
 	}
 
-	localKVEngine := deriveLocalKVEngine(req.MountPoint)
+	localKVEngine := deriveLocalKVEngine(mountPoint)
 
 	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
 	if err != nil {
@@ -856,7 +856,7 @@ func (b *backend) backupConfigToLocalKV(ctx context.Context, req *logical.Reques
 	}
 
 	configBackup["_backup_timestamp"] = time.Now().UTC().Format(time.RFC3339)
-	configBackup["_mount_point"] = req.MountPoint
+	configBackup["_mount_point"] = mountPoint
 
 	_, err = kvutils.KvPutSecret(client, localKVEngine, kvOptions.Vault_kv_version, "_aead_config_backup", configBackup)
 	if err != nil {

@@ -71,7 +71,7 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 	// doesn't re-read its own write on the next request.
 	b.cacheValid.Store(true)
 
-	b.backupConfigToLocalKV(ctx, req)
+	go b.backupConfigToLocalKV(req.MountPoint)
 
 	return nil, nil
 }
@@ -116,6 +116,7 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 	if err != nil {
 		return nil, err
 	}
+
 	result := make(map[string]interface{}, len(b.aeadConfig.Items()))
 	keyCount := 0
 	for k, v := range b.aeadConfig.Items() {
@@ -259,6 +260,10 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 	// Mark cache as valid — subsequent reads skip storage until invalidated
 	b.cacheValid.Store(true)
 	b.Logger().Warn("✅ CACHE LOADED - marked valid", "mount", req.MountPoint, "keys_count", b.aeadConfig.Count())
+
+	if consulConfig != nil && b.aeadConfig.Count() > 0 {
+		go b.backupConfigToLocalKV(req.MountPoint)
+	}
 
 	return nil
 }

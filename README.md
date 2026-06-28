@@ -967,14 +967,20 @@ The plugin implements a high-performance in-memory cache with proper isolation a
 
 # AUTO-BACKUP TO LOCAL KV
 
-On every config write, the plugin automatically backs up config-only parameters (no encryption keys) to the sibling KV engine that shares the same mount prefix.
+The plugin automatically backs up config-only parameters (no encryption keys) to the sibling KV engine that shares the same mount prefix. Backup is triggered automatically in two scenarios:
+
+1. **On config write** — after any `POST /config` or `POST /configOverwrite` succeeds, the plugin backs up the current config
+2. **On cache miss** — when any request triggers a Raft storage read (plugin restart, cache invalidation from Raft replication), the plugin backs up the loaded config
+
+This ensures both new engines (backed up during setup) and existing engines (backed up on first request after deploy/restart) are covered with zero manual intervention.
 
 **How it works**
-- Each AEAD engine (e.g. `aead-monitoring/aead/`) has a sibling KV engine (`aead-monitoring/data/`) created alongside it
-- After config is written to Raft storage, the plugin filters out all `gcm/` and `siv/` encryption keys
-- Only non-key config parameters (`VAULT_KV_*`, `BQ_*`, `TELEMETRY_*`, etc.) are backed up
-- The backup is written to `_aead_config_backup` in the local KV engine
+- Each AEAD engine (e.g. `your-engine/aead`) has a sibling KV engine (`your-engine/data`)
+- Only non-key config parameters (`VAULT_KV_*`, `BQ_*`, etc.) are backed up
+- The backup is written to `_aead_config_backup` in the local KV engine on EAAS Vault
 - A `_backup_timestamp` and `_mount_point` metadata fields are added automatically
+- Backup runs asynchronously and is best-effort (failures are logged, never block operations)
+- Hot path (encrypt/decrypt) is unaffected — cache hits skip backup entirely
 
 **Prerequisites**
 - `VAULT_KV_ACTIVE` must be set to `true` in config
@@ -986,13 +992,13 @@ On every config write, the plugin automatically backs up config-only parameters 
 {
   "VAULT_KV_ACTIVE": "true",
   "VAULT_KV_APPROLE_ID": "your-approle-id",
-  "VAULT_KV_ENGINE": "tink-aead-mymarket/data",
+  "VAULT_KV_ENGINE": "your-kv-engine/data",
   "VAULT_KV_URL": "https://your-vault-url.example.com",
   "VAULT_KV_VERSION": "v1",
   "VAULT_KV_WRITER_ROLE": "your-kv-writer-role",
   "VAULT_KV_SECRETGENERATOR_IAM_ROLE": "your-secretgenerator-iam-role",
   "_backup_timestamp": "2026-06-25T14:30:00Z",
-  "_mount_point": "aead-mymarket/aead/"
+  "_mount_point": "your-engine/aead/"
 }
 ```
 
