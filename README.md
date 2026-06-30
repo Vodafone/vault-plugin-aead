@@ -977,17 +977,18 @@ This ensures both new engines (backed up during setup) and existing engines (bac
 **How it works**
 - Each AEAD engine (e.g. `your-engine/aead`) has a sibling KV engine (`your-engine/data`)
 - Only non-key config parameters (`VAULT_KV_*`, `BQ_*`, etc.) are backed up
-- The backup is written to `_aead_config_backup` in the local KV engine on EAAS Vault
+- The backup is written to `config_backup` in the local KV engine on EaaS Vault
 - A `_backup_timestamp` and `_mount_point` metadata fields are added automatically
 - Backup runs asynchronously and is best-effort (failures are logged, never block operations)
 - Hot path (encrypt/decrypt) is unaffected — cache hits skip backup entirely
 
 **Prerequisites**
 - `VAULT_KV_ACTIVE` must be set to `true` in config
-- `VAULT_KV_URL`, `VAULT_KV_APPROLE_ID`, `VAULT_KV_WRITER_ROLE`, and `VAULT_KV_SECRETGENERATOR_IAM_ROLE` must be configured
-- The approle must have write access to the local KV engine
+- `VAULT_ADDR` environment variable must be set on the pod (points to local EaaS vault)
+- A GCP IAM auth role named `{tenant}-backup-iam` must exist on the local eaas vault (derived automatically from mount point)
+- The GKE service account must have a Vault policy with create/update/read on `{tenant}/data/config_backup`
 
-**Example backup content at `aead-mymarket/data/_aead_config_backup`:**
+**Example backup content at `aead-mymarket/data/config_backup`:**
 ```json
 {
   "VAULT_KV_ACTIVE": "true",

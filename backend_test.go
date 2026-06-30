@@ -7,8 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -88,6 +92,8 @@ const vault_transit_kv_version string = "v2"
 const vault_transit_namespace string = ""
 const vault_transit_engine string = "transit"
 const vault_transit_kek string = "my-key"
+
+const vault_backup_test_mount string = "aead-monitoring/aead/"
 
 const bq_active string = "false"
 
@@ -2586,6 +2592,44 @@ func TestBackupConfigToLocalKVNoKVActive(t *testing.T) {
 	}
 	saveConfig(b, storage, data, false, t)
 
+	// Should return silently without panic when VAULT_KV_ACTIVE is not set
+	b.backupConfigToLocalKV("aead-test/aead/")
+}
+
+func TestBackupConfigToLocalKVNoIAMRole(t *testing.T) {
+	// Test deriveBackupIAMRole derives the correct role name
+	tests := []struct {
+		mountPoint string
+		expected   string
+	}{
+		{"aead-monitoring/aead/", "aead-monitoring-backup-iam"},
+		{"aead-greece/aead/", "aead-greece-backup-iam"},
+		{"aead-vbit-test/aead/", "aead-vbit-test-backup-iam"},
+		{"my-engine/aead/", "my-engine-backup-iam"},
+	}
+
+	for _, tt := range tests {
+		result := deriveBackupIAMRole(tt.mountPoint)
+		if result != tt.expected {
+			t.Errorf("deriveBackupIAMRole(%q) = %q, want %q", tt.mountPoint, result, tt.expected)
+		}
+	}
+}
+
+func TestBackupConfigToLocalKVNoVaultAddr(t *testing.T) {
+	b, storage := testBackend(t)
+
+	data := map[string]interface{}{
+		"VAULT_KV_ACTIVE": "true",
+	}
+	saveConfig(b, storage, data, false, t)
+
+	// Unset VAULT_ADDR to test the env var check
+	originalAddr := os.Getenv("VAULT_ADDR")
+	os.Unsetenv("VAULT_ADDR")
+	defer os.Setenv("VAULT_ADDR", originalAddr)
+
+	// Should return silently when VAULT_ADDR is not set
 	b.backupConfigToLocalKV("aead-test/aead/")
 }
 
@@ -2599,6 +2643,102 @@ func TestDeriveLocalKVEngineEdgeCases(t *testing.T) {
 	if result != "deep/nested/path/data" {
 		t.Errorf("expected 'deep/nested/path/data', got %q", result)
 	}
+}
+
+func TestBackupWriteReadLocalKV(t *testing.T) {
+	// Mock a Vault KV v1 server using httptest — no external dependencies needed.
+	// This validates that KvPutSecret/KvGetSecret use the correct KV v1 paths
+	// and that data round-trips correctly with the backup policy path format.
+
+	kvEngine := "aead-monitoring/data"
+	secretName := "config_backup"
+	expectedPath := "/v1/" + kvEngine + "/" + secretName
+
+	var mu sync.Mutex
+	storedData := make(map[string]interface{})
+
+	mockVault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		switch {
+		case r.Method == "PUT" && r.URL.Path == expectedPath:
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, `{"errors":["bad request"]}`, http.StatusBadRequest)
+				return
+			}
+			storedData = body
+			w.WriteHeader(http.StatusNoContent)
+
+		case r.Method == "GET" && r.URL.Path == expectedPath:
+			if len(storedData) == 0 {
+				http.Error(w, `{"errors":[]}`, http.StatusNotFound)
+				return
+			}
+			resp := map[string]interface{}{
+				"data": storedData,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
+		default:
+			t.Logf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.Error(w, `{"errors":["not found"]}`, http.StatusNotFound)
+		}
+	}))
+	defer mockVault.Close()
+
+	// Create a vault client pointing to the mock server
+	config := vault.DefaultConfig()
+	config.Address = mockVault.URL
+	client, err := vault.NewClient(config)
+	if err != nil {
+		t.Fatalf("failed to create vault client: %v", err)
+	}
+	client.SetToken("test-token")
+
+	// Write the backup using KvPutSecret (KV v1)
+	configBackup := map[string]interface{}{
+		"VAULT_KV_ACTIVE":   "true",
+		"VAULT_KV_URL":      "https://test-vault.example.com",
+		"VAULT_KV_VERSION":  "v1",
+		"BQ_DATASET":        "test_dataset",
+		"_backup_timestamp": time.Now().UTC().Format(time.RFC3339),
+		"_mount_point":      vault_backup_test_mount,
+	}
+	_, err = kvutils.KvPutSecret(client, kvEngine, "v1", secretName, configBackup)
+	if err != nil {
+		t.Fatalf("KvPutSecret failed: %v", err)
+	}
+
+	// Read the backup back using KvGetSecret (KV v1)
+	secret, err := kvutils.KvGetSecret(client, kvEngine, "v1", secretName)
+	if err != nil {
+		t.Fatalf("KvGetSecret failed: %v", err)
+	}
+	if secret == nil || secret.Data == nil {
+		t.Fatal("backup read returned nil data")
+	}
+
+	// Validate round-trip
+	if secret.Data["VAULT_KV_ACTIVE"] != "true" {
+		t.Errorf("expected VAULT_KV_ACTIVE=true, got %v", secret.Data["VAULT_KV_ACTIVE"])
+	}
+	if secret.Data["_mount_point"] != vault_backup_test_mount {
+		t.Errorf("expected _mount_point=%s, got %v", vault_backup_test_mount, secret.Data["_mount_point"])
+	}
+	if secret.Data["BQ_DATASET"] != "test_dataset" {
+		t.Errorf("expected BQ_DATASET=test_dataset, got %v", secret.Data["BQ_DATASET"])
+	}
+
+	// Validate the derived engine path matches what backupConfigToLocalKV would compute
+	derivedEngine := deriveLocalKVEngine(vault_backup_test_mount)
+	if derivedEngine != kvEngine {
+		t.Errorf("deriveLocalKVEngine(%q) = %q, want %q", vault_backup_test_mount, derivedEngine, kvEngine)
+	}
+
+	t.Logf("Backup write+read validated on KV v1 engine=%s with policy path=%s", kvEngine, expectedPath)
 }
 
 func TestCacheInvalidation(t *testing.T) {

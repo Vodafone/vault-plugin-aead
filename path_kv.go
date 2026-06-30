@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -826,24 +827,40 @@ func deriveLocalKVEngine(mountPoint string) string {
 	return mp + "/data"
 }
 
+func deriveBackupIAMRole(mountPoint string) string {
+	mp := strings.TrimSuffix(mountPoint, "/")
+	firstSlash := strings.Index(mp, "/")
+	tenant := mp
+	if firstSlash >= 0 {
+		tenant = mp[:firstSlash]
+	}
+	return tenant + "-backup-iam"
+}
+
 func (b *backend) backupConfigToLocalKV(mountPoint string) {
 	kvActive, ok := b.aeadConfig.Get("VAULT_KV_ACTIVE")
 	if !ok || fmt.Sprintf("%v", kvActive) != "true" {
 		return
 	}
 
-	var kvOptions kvutils.KVOptions
-	if err := resolveKvOptions(&kvOptions, b.aeadConfig); err != nil {
-		b.Logger().Error("backupConfigToLocalKV: failed to resolve KV options", "error", err)
+	vaultAddr := os.Getenv("VAULT_ADDR")
+	if vaultAddr == "" {
+		b.Logger().Error("backupConfigToLocalKV: VAULT_ADDR environment variable not set")
 		return
 	}
 
 	localKVEngine := deriveLocalKVEngine(mountPoint)
+	iamRole := deriveBackupIAMRole(mountPoint)
 
-	client, err := kvutils.KvGetClientWithApprole(kvOptions.Vault_kv_url, "", kvOptions.Vault_kv_approle_id, kvOptions.Vault_kv_secret_id, kvOptions.Vault_kv_writer_role, kvOptions.Vault_secretgenerator_iam_role)
+	client, err := kvutils.KvGetClientWithIAM(vaultAddr, iamRole)
 	if err != nil {
-		b.Logger().Error("backupConfigToLocalKV: failed to create client", "error", err)
+		b.Logger().Error("backupConfigToLocalKV: failed to authenticate to local vault", "error", err, "role", iamRole)
 		return
+	}
+
+	kvVersion := "v1"
+	if v, ok := b.aeadConfig.Get("VAULT_KV_VERSION"); ok {
+		kvVersion = fmt.Sprintf("%v", v)
 	}
 
 	configBackup := make(map[string]interface{})
@@ -858,7 +875,7 @@ func (b *backend) backupConfigToLocalKV(mountPoint string) {
 	configBackup["_backup_timestamp"] = time.Now().UTC().Format(time.RFC3339)
 	configBackup["_mount_point"] = mountPoint
 
-	_, err = kvutils.KvPutSecret(client, localKVEngine, kvOptions.Vault_kv_version, "_aead_config_backup", configBackup)
+	_, err = kvutils.KvPutSecret(client, localKVEngine, kvVersion, "config_backup", configBackup)
 	if err != nil {
 		b.Logger().Error("backupConfigToLocalKV: failed to write backup", "error", err, "engine", localKVEngine)
 	} else {

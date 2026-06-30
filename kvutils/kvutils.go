@@ -977,6 +977,18 @@ func getVaultTokenGCPAuthIAM(serviceAccount string, vaultAddress string, vaultIA
 	return client, ti, nil
 }
 
+func KvGetClientWithIAM(vaultAddress string, iamRole string) (*vault.Client, error) {
+	saEmail, _, err := getMetadataInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GCP metadata: %w", err)
+	}
+	client, _, err := getVaultTokenGCPAuthIAM(saEmail, vaultAddress, iamRole)
+	if err != nil {
+		return nil, fmt.Errorf("failed to authenticate with IAM role %s: %w", iamRole, err)
+	}
+	return client, nil
+}
+
 func createSecretIdForRole(vaulturl string, token string, approle string) (string, error) {
 
 	var tr *http.Transport
