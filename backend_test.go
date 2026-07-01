@@ -2741,6 +2741,140 @@ func TestBackupWriteReadLocalKV(t *testing.T) {
 	t.Logf("Backup write+read validated on KV v1 engine=%s with policy path=%s", kvEngine, expectedPath)
 }
 
+func TestRecoverConfigFromLocalKV(t *testing.T) {
+	// Mock a Vault KV v1 server that returns a config backup on GET.
+	kvEngine := "aead-monitoring/data"
+	secretName := "config_backup"
+	expectedPath := "/v1/" + kvEngine + "/" + secretName
+
+	backupData := map[string]interface{}{
+		"VAULT_KV_ACTIVE":   "true",
+		"VAULT_KV_URL":      "https://beta-gvp.vault.example.com",
+		"VAULT_KV_VERSION":  "v1",
+		"BQ_DATASET":        "test_dataset",
+		"_backup_timestamp": "2026-06-30T10:00:00Z",
+		"_mount_point":      "aead-monitoring/aead/",
+	}
+
+	mockVault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && r.URL.Path == expectedPath {
+			resp := map[string]interface{}{"data": backupData}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		http.Error(w, `{"errors":["not found"]}`, http.StatusNotFound)
+	}))
+	defer mockVault.Close()
+
+	// Point VAULT_ADDR to the mock
+	originalAddr := os.Getenv("VAULT_ADDR")
+	os.Setenv("VAULT_ADDR", mockVault.URL)
+	defer os.Setenv("VAULT_ADDR", originalAddr)
+
+	originalToken := os.Getenv("VAULT_TOKEN")
+	os.Setenv("VAULT_TOKEN", "test-token")
+	defer os.Setenv("VAULT_TOKEN", originalToken)
+
+	b, _ := testBackend(t)
+	recovered, err := b.recoverConfigFromLocalKV("aead-monitoring/aead/")
+	if err != nil {
+		t.Fatalf("recoverConfigFromLocalKV failed: %v", err)
+	}
+	if recovered == nil {
+		t.Fatal("expected recovered config, got nil")
+	}
+
+	// Metadata fields should be filtered out
+	if _, exists := recovered["_backup_timestamp"]; exists {
+		t.Error("_backup_timestamp should be filtered from recovered config")
+	}
+	if _, exists := recovered["_mount_point"]; exists {
+		t.Error("_mount_point should be filtered from recovered config")
+	}
+
+	// Config fields should be present
+	if recovered["VAULT_KV_ACTIVE"] != "true" {
+		t.Errorf("expected VAULT_KV_ACTIVE=true, got %v", recovered["VAULT_KV_ACTIVE"])
+	}
+	if recovered["BQ_DATASET"] != "test_dataset" {
+		t.Errorf("expected BQ_DATASET=test_dataset, got %v", recovered["BQ_DATASET"])
+	}
+}
+
+func TestRecoveryTriggersOnNilConfig(t *testing.T) {
+	// Mock vault serves backup data
+	kvEngine := "aead-test/data"
+	secretName := "config_backup"
+	expectedPath := "/v1/" + kvEngine + "/" + secretName
+
+	backupData := map[string]interface{}{
+		"VAULT_KV_ACTIVE":   "true",
+		"VAULT_KV_URL":      "https://test-vault.example.com",
+		"VAULT_KV_VERSION":  "v1",
+		"_backup_timestamp": "2026-06-30T10:00:00Z",
+		"_mount_point":      "aead-test/aead/",
+	}
+
+	mockVault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && r.URL.Path == expectedPath {
+			resp := map[string]interface{}{"data": backupData}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		http.Error(w, `{"errors":["not found"]}`, http.StatusNotFound)
+	}))
+	defer mockVault.Close()
+
+	originalAddr := os.Getenv("VAULT_ADDR")
+	os.Setenv("VAULT_ADDR", mockVault.URL)
+	defer os.Setenv("VAULT_ADDR", originalAddr)
+
+	originalToken := os.Getenv("VAULT_TOKEN")
+	os.Setenv("VAULT_TOKEN", "test-token")
+	defer os.Setenv("VAULT_TOKEN", originalToken)
+
+	b, storage := testBackend(t)
+	// Clear cache to force a cache miss
+	for k := range b.aeadConfig.Items() {
+		b.aeadConfig.Remove(k)
+	}
+	b.cacheValid.Store(false)
+
+	// Do NOT write any config to storage — simulates missing/deleted config
+	req := &logical.Request{
+		Storage:    storage,
+		MountPoint: "aead-test/aead/",
+	}
+
+	err := b.getAeadConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("getAeadConfig failed: %v", err)
+	}
+
+	// Verify cache was populated from recovery
+	if b.aeadConfig.Count() == 0 {
+		t.Fatal("expected cache to be populated after recovery, got 0 items")
+	}
+
+	kvActive, ok := b.aeadConfig.Get("VAULT_KV_ACTIVE")
+	if !ok || fmt.Sprintf("%v", kvActive) != "true" {
+		t.Errorf("expected VAULT_KV_ACTIVE=true in cache, got %v", kvActive)
+	}
+
+	// Verify config was persisted to Raft storage
+	entry, err := storage.Get(context.Background(), "config")
+	if err != nil {
+		t.Fatalf("failed to read config from storage: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("expected config to be persisted to storage after recovery")
+	}
+
+	t.Log("Recovery successfully triggered on nil config and persisted to Raft")
+}
+
 func TestCacheInvalidation(t *testing.T) {
 
 	t.Run("cache becomes valid after write", func(t *testing.T) {

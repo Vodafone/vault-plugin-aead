@@ -241,6 +241,26 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 		return err
 	}
 
+	// Recovery: if config missing from Raft, attempt restore from local KV backup
+	if consulConfig == nil && req.MountPoint != "" {
+		recovered, recoverErr := b.recoverConfigFromLocalKV(req.MountPoint)
+		if recoverErr != nil {
+			b.Logger().Error("recoverConfigFromLocalKV: failed", "error", recoverErr, "mount", req.MountPoint)
+		} else if recovered != nil && len(recovered) > 0 {
+			b.Logger().Warn("🔄 RECOVERY - restored config from local KV backup", "mount", req.MountPoint, "keys_count", len(recovered))
+			for k, v := range recovered {
+				b.aeadConfig.Set(k, v)
+			}
+			entry, err := logical.StorageEntryJSON("config", b.aeadConfig)
+			if err == nil {
+				if putErr := req.Storage.Put(ctx, entry); putErr != nil {
+					b.Logger().Error("recoverConfigFromLocalKV: failed to persist to Raft", "error", putErr)
+				}
+			}
+			consulConfig = recovered
+		}
+	}
+
 	// if the config retrieved from the storage is null use the in memory config
 	// add config from consul into the per-mount cache
 	for k, v := range consulConfig {

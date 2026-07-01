@@ -837,6 +837,28 @@ func deriveBackupIAMRole(mountPoint string) string {
 	return tenant + "-backup-iam"
 }
 
+func getLocalVaultClient(vaultAddr, iamRole string) (*vault.Client, error) {
+	client, err := kvutils.KvGetClientWithIAM(vaultAddr, iamRole)
+	if err == nil {
+		return client, nil
+	}
+
+	// Fallback: use VAULT_TOKEN if GCP IAM auth is unavailable (dev/test environments)
+	token := os.Getenv("VAULT_TOKEN")
+	if token == "" {
+		return nil, err
+	}
+
+	config := vault.DefaultConfig()
+	config.Address = vaultAddr
+	client, clientErr := vault.NewClient(config)
+	if clientErr != nil {
+		return nil, clientErr
+	}
+	client.SetToken(token)
+	return client, nil
+}
+
 func (b *backend) backupConfigToLocalKV(mountPoint string) {
 	kvActive, ok := b.aeadConfig.Get("VAULT_KV_ACTIVE")
 	if !ok || fmt.Sprintf("%v", kvActive) != "true" {
@@ -852,7 +874,7 @@ func (b *backend) backupConfigToLocalKV(mountPoint string) {
 	localKVEngine := deriveLocalKVEngine(mountPoint)
 	iamRole := deriveBackupIAMRole(mountPoint)
 
-	client, err := kvutils.KvGetClientWithIAM(vaultAddr, iamRole)
+	client, err := getLocalVaultClient(vaultAddr, iamRole)
 	if err != nil {
 		b.Logger().Error("backupConfigToLocalKV: failed to authenticate to local vault", "error", err, "role", iamRole)
 		return
@@ -881,6 +903,43 @@ func (b *backend) backupConfigToLocalKV(mountPoint string) {
 	} else {
 		b.Logger().Info("backupConfigToLocalKV: config backed up to local KV", "engine", localKVEngine)
 	}
+}
+
+func (b *backend) recoverConfigFromLocalKV(mountPoint string) (map[string]interface{}, error) {
+	vaultAddr := os.Getenv("VAULT_ADDR")
+	if vaultAddr == "" {
+		return nil, fmt.Errorf("VAULT_ADDR environment variable not set")
+	}
+
+	localKVEngine := deriveLocalKVEngine(mountPoint)
+	iamRole := deriveBackupIAMRole(mountPoint)
+
+	client, err := getLocalVaultClient(vaultAddr, iamRole)
+	if err != nil {
+		return nil, fmt.Errorf("failed to authenticate to local vault: %w", err)
+	}
+
+	secret, err := kvutils.KvGetSecret(client, localKVEngine, "v1", "config_backup")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read backup from %s: %w", localKVEngine, err)
+	}
+	if secret == nil || secret.Data == nil || len(secret.Data) == 0 {
+		return nil, nil
+	}
+
+	recovered := make(map[string]interface{})
+	for k, v := range secret.Data {
+		if k == "_backup_timestamp" || k == "_mount_point" {
+			continue
+		}
+		recovered[k] = v
+	}
+
+	if len(recovered) == 0 {
+		return nil, nil
+	}
+
+	return recovered, nil
 }
 
 func SyncFromExternalKV(b *backend, ctx context.Context, req *logical.Request, data *framework.FieldData) (map[string]interface{}, error) {
