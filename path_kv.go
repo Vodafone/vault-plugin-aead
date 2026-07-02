@@ -865,9 +865,9 @@ func (b *backend) backupConfigToLocalKV(mountPoint string) {
 		return
 	}
 
-	vaultAddr := os.Getenv("VAULT_ADDR")
+	vaultAddr := b.localVaultAddr
 	if vaultAddr == "" {
-		b.Logger().Error("backupConfigToLocalKV: VAULT_ADDR environment variable not set")
+		b.Logger().Error("backupConfigToLocalKV: localVaultAddr not set (VAULT_ADDR was empty at startup)")
 		return
 	}
 
@@ -906,9 +906,9 @@ func (b *backend) backupConfigToLocalKV(mountPoint string) {
 }
 
 func (b *backend) recoverConfigFromLocalKV(mountPoint string) (map[string]interface{}, error) {
-	vaultAddr := os.Getenv("VAULT_ADDR")
+	vaultAddr := b.localVaultAddr
 	if vaultAddr == "" {
-		return nil, fmt.Errorf("VAULT_ADDR environment variable not set")
+		return nil, fmt.Errorf("localVaultAddr not set (VAULT_ADDR was empty at startup)")
 	}
 
 	localKVEngine := deriveLocalKVEngine(mountPoint)

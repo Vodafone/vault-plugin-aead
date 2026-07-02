@@ -2624,12 +2624,10 @@ func TestBackupConfigToLocalKVNoVaultAddr(t *testing.T) {
 	}
 	saveConfig(b, storage, data, false, t)
 
-	// Unset VAULT_ADDR to test the env var check
-	originalAddr := os.Getenv("VAULT_ADDR")
-	os.Unsetenv("VAULT_ADDR")
-	defer os.Setenv("VAULT_ADDR", originalAddr)
+	// Clear localVaultAddr to test the check
+	b.localVaultAddr = ""
 
-	// Should return silently when VAULT_ADDR is not set
+	// Should return silently when localVaultAddr is not set
 	b.backupConfigToLocalKV("aead-test/aead/")
 }
 
@@ -2767,16 +2765,12 @@ func TestRecoverConfigFromLocalKV(t *testing.T) {
 	}))
 	defer mockVault.Close()
 
-	// Point VAULT_ADDR to the mock
-	originalAddr := os.Getenv("VAULT_ADDR")
-	os.Setenv("VAULT_ADDR", mockVault.URL)
-	defer os.Setenv("VAULT_ADDR", originalAddr)
-
 	originalToken := os.Getenv("VAULT_TOKEN")
 	os.Setenv("VAULT_TOKEN", "test-token")
 	defer os.Setenv("VAULT_TOKEN", originalToken)
 
 	b, _ := testBackend(t)
+	b.localVaultAddr = mockVault.URL
 	recovered, err := b.recoverConfigFromLocalKV("aead-monitoring/aead/")
 	if err != nil {
 		t.Fatalf("recoverConfigFromLocalKV failed: %v", err)
@@ -2827,15 +2821,12 @@ func TestRecoveryTriggersOnNilConfig(t *testing.T) {
 	}))
 	defer mockVault.Close()
 
-	originalAddr := os.Getenv("VAULT_ADDR")
-	os.Setenv("VAULT_ADDR", mockVault.URL)
-	defer os.Setenv("VAULT_ADDR", originalAddr)
-
 	originalToken := os.Getenv("VAULT_TOKEN")
 	os.Setenv("VAULT_TOKEN", "test-token")
 	defer os.Setenv("VAULT_TOKEN", originalToken)
 
 	b, storage := testBackend(t)
+	b.localVaultAddr = mockVault.URL
 	// Clear cache to force a cache miss
 	for k := range b.aeadConfig.Items() {
 		b.aeadConfig.Remove(k)

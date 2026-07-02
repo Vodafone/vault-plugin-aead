@@ -3,6 +3,7 @@ package aeadplugin
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -37,6 +38,10 @@ type backend struct {
 	// Set to false by Vault's InvalidateKey callback when a follower detects a storage mutation.
 	// Set to true after a successful reload from storage.
 	cacheValid atomic.Bool
+
+	// localVaultAddr is captured at startup from VAULT_ADDR before KV sync operations
+	// can overwrite the env var. Used by backup/recovery to connect to the local EaaS vault.
+	localVaultAddr string
 }
 
 // Backend creates a new backend.
@@ -480,6 +485,8 @@ func Backend(c *logical.BackendConfig) *backend {
 	// Initialize the per-mount cache. Each backend instance gets its own isolated cache.
 	// This ensures aead-greece, aead-monitoring, etc. don't share or overwrite each other's keys.
 	b.aeadConfig = cmap.New()
+
+	b.localVaultAddr = os.Getenv("VAULT_ADDR")
 
 	return &b
 }
