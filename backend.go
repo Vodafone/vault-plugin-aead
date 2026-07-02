@@ -120,6 +120,11 @@ func Backend(c *logical.BackendConfig) *backend {
 						ForwardPerformanceStandby:   true,
 						ForwardPerformanceSecondary: true,
 					},
+					logical.DeleteOperation: &framework.PathOperation{
+						Callback:                    b.pathConfigClear,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
 				},
 			},
 			// aead/configOverwrite

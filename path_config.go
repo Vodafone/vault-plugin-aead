@@ -109,6 +109,24 @@ func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, da
 	return nil, nil
 }
 
+func (b *backend) pathConfigClear(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	b.Logger().Warn("⚠️ CONFIG CLEAR - deleting config entry from Raft storage", "mount", req.MountPoint)
+
+	if err := req.Storage.Delete(ctx, "config"); err != nil {
+		return nil, fmt.Errorf("failed to delete config from storage: %w", err)
+	}
+
+	b.aeadConfig = cmap.New()
+	b.cacheValid.Store(false)
+
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"status":  "cleared",
+			"message": "Config entry deleted from Raft storage. Next read will trigger recovery from local KV backup if available.",
+		},
+	}, nil
+}
+
 func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
 	// retrieve the config from storage
