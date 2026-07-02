@@ -2619,13 +2619,13 @@ func TestBackupConfigToLocalKVNoIAMRole(t *testing.T) {
 func TestBackupConfigToLocalKVNoVaultAddr(t *testing.T) {
 	b, storage := testBackend(t)
 
+	// Clear localVaultAddr BEFORE saveConfig to avoid race with the backup goroutine
+	b.localVaultAddr = ""
+
 	data := map[string]interface{}{
 		"VAULT_KV_ACTIVE": "true",
 	}
 	saveConfig(b, storage, data, false, t)
-
-	// Clear localVaultAddr to test the check
-	b.localVaultAddr = ""
 
 	// Should return silently when localVaultAddr is not set
 	b.backupConfigToLocalKV("aead-test/aead/")
