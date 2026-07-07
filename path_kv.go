@@ -923,7 +923,11 @@ func (b *backend) backupConfigToLocalKV(mountPoint string) {
 	if err != nil {
 		b.Logger().Error("backupConfigToLocalKV: failed to write backup", "error", err, "engine", localKVEngine)
 	} else {
-		b.Logger().Info("backupConfigToLocalKV: config backed up to local KV", "engine", localKVEngine)
+		if isValidated {
+			b.Logger().Info("backupConfigToLocalKV: backup updated (7 KV params locked, preserved from validated backup)", "engine", localKVEngine)
+		} else {
+			b.Logger().Info("backupConfigToLocalKV: config backed up to local KV (not yet validated)", "engine", localKVEngine)
+		}
 	}
 }
 

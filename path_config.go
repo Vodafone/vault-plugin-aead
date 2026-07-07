@@ -57,13 +57,14 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 				}
 			}
 			if needsRepair {
+				b.Logger().Warn("⚠️ CORRUPTION DETECTED - incoming KV param differs from validated backup, starting auto-repair", "mount", req.MountPoint)
 				for _, key := range criticalKVParams {
 					if val, ok := validatedParams[key]; ok {
 						b.aeadConfig.Set(key, val)
 					}
 				}
-				warnings = append(warnings, "KV params are locked after validation. Corrupted values restored from validated backup.")
-				b.Logger().Warn("⚠️ AUTO-REPAIR: KV params restored from validated local KV backup", "mount", req.MountPoint)
+				warnings = append(warnings, "⚠️ KV params are LOCKED. Corrupted value rejected — all 7 KV params auto-repaired from validated local KV backup.")
+				b.Logger().Warn("✅ AUTO-REPAIR COMPLETE - all KV params restored from validated local KV backup", "mount", req.MountPoint)
 			}
 		}
 	}
@@ -118,7 +119,9 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 
 	b.cacheValid.Store(true)
 
-	go b.backupConfigToLocalKV(req.MountPoint)
+	if !b.isKVBackupValidated(req.MountPoint) {
+		go b.backupConfigToLocalKV(req.MountPoint)
+	}
 
 	if len(warnings) > 0 {
 		return &logical.Response{
@@ -352,14 +355,28 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 	b.cacheValid.Store(true)
 	b.Logger().Warn("✅ CACHE LOADED - marked valid", "mount", req.MountPoint, "keys_count", b.aeadConfig.Count())
 
-	// Phase 3: On cache miss, compare KV params against validated local KV backup
+	// Phase 3: On cache miss, if validated backup exists, compare and repair KV params
 	if consulConfig != nil && req.MountPoint != "" && b.aeadConfig.Count() > 0 {
-		if b.repairKVParamsFromLocalKV(ctx, req) {
-			b.Logger().Warn("🔧 CONFIG REPAIRED - KV params restored from validated local KV backup", "mount", req.MountPoint)
+		if b.isKVBackupValidated(req.MountPoint) {
+			if b.repairKVParamsFromLocalKV(ctx, req) {
+				b.Logger().Warn("🔧 AUTO-REPAIR on cache miss - KV params restored from validated local KV backup", "mount", req.MountPoint)
+			}
+		} else if allCriticalKVParamsPresent(b.aeadConfig) {
+			// Existing engine with all params but no validated backup yet — validate and lock now
+			b.Logger().Info("🔑 All 7 KV params present on cache miss, attempting initial validation", "mount", req.MountPoint)
+			if valErr := b.validateKVConnectivity(); valErr != nil {
+				b.Logger().Warn("KV connectivity validation failed on cache miss (will retry on next write)", "error", valErr, "mount", req.MountPoint)
+			} else {
+				if backupErr := b.backupValidatedKVConfig(req.MountPoint); backupErr != nil {
+					b.Logger().Error("Failed to backup validated KV config on cache miss", "error", backupErr)
+				} else {
+					b.Logger().Warn("✅ KV CONFIG VALIDATED AND LOCKED on first load - backed up to local KV", "mount", req.MountPoint)
+				}
+			}
 		}
 	}
 
-	if consulConfig != nil && b.aeadConfig.Count() > 0 {
+	if consulConfig != nil && b.aeadConfig.Count() > 0 && !b.isKVBackupValidated(req.MountPoint) {
 		go b.backupConfigToLocalKV(req.MountPoint)
 	}
 
