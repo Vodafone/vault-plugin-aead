@@ -479,6 +479,20 @@ func Backend(c *logical.BackendConfig) *backend {
 					},
 				},
 			},
+			// aead/kvconfigsrevalidate
+			&framework.Path{
+				Pattern:         "kvconfigsrevalidate",
+				HelpSynopsis:    "Re-validate and update locked KV config params.",
+				HelpDescription: "Admin endpoint to update one or more of the 7 critical KV params. Validates connectivity to GVP before updating local KV backup and plugin storage.",
+				Fields:          map[string]*framework.FieldSchema{},
+				Operations: map[logical.Operation]framework.OperationHandler{
+					logical.UpdateOperation: &framework.PathOperation{
+						Callback:                    b.pathKVConfigsRevalidate,
+						ForwardPerformanceStandby:   true,
+						ForwardPerformanceSecondary: true,
+					},
+				},
+			},
 		},
 	}
 
@@ -503,6 +517,38 @@ func (b *backend) invalidate(ctx context.Context, key string) {
 		b.Logger().Warn("🔴 CACHE INVALIDATED - InvalidateKey callback fired", "key", key)
 		b.cacheValid.Store(false)
 	}
+}
+
+// criticalKVParams defines the 7 KV connectivity params that are locked after initial validation.
+// Once validated (plugin successfully connects to GVP), these params are backed up to local KV
+// and auto-repaired if corrupted in plugin storage.
+var criticalKVParams = []string{
+	"VAULT_KV_ACTIVE",
+	"VAULT_KV_URL",
+	"VAULT_KV_APPROLE_ID",
+	"VAULT_KV_SECRET_ID",
+	"VAULT_KV_ENGINE",
+	"VAULT_KV_VERSION",
+	"VAULT_KV_WRITER_ROLE",
+	"VAULT_KV_SECRETGENERATOR_IAM_ROLE",
+}
+
+func isCriticalKVParam(key string) bool {
+	for _, p := range criticalKVParams {
+		if p == key {
+			return true
+		}
+	}
+	return false
+}
+
+func allCriticalKVParamsPresent(aeadConfig cmap.ConcurrentMap) bool {
+	for _, p := range criticalKVParams {
+		if _, ok := aeadConfig.Get(p); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 const backendHelp = "The aead secrets engine generates aead tokens."

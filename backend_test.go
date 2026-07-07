@@ -26,6 +26,7 @@ import (
 	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
 	vault "github.com/hashicorp/vault/api"
+	"github.com/hashicorp/vault/sdk/framework"
 	"github.com/hashicorp/vault/sdk/logical"
 	cmap "github.com/orcaman/concurrent-map"
 )
@@ -2864,6 +2865,426 @@ func TestRecoveryTriggersOnNilConfig(t *testing.T) {
 	}
 
 	t.Log("Recovery successfully triggered on nil config and persisted to Raft")
+}
+
+func TestValidateKVConnectivity(t *testing.T) {
+	t.Run("passes when GVP is reachable", func(t *testing.T) {
+		mockGVP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "auth/approle/login") {
+				resp := map[string]interface{}{
+					"auth": map[string]interface{}{"client_token": "test-token", "policies": []string{"default"}},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+				return
+			}
+			// PUT (write test) and GET (read test)
+			if strings.Contains(r.URL.Path, "_connectivity_test") {
+				if r.Method == "GET" {
+					resp := map[string]interface{}{"data": map[string]interface{}{"_test": "validation"}}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(resp)
+					return
+				}
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			http.Error(w, "not found", http.StatusNotFound)
+		}))
+		defer mockGVP.Close()
+
+		b, _ := testBackend(t)
+		b.aeadConfig.Set("VAULT_KV_ACTIVE", "true")
+		b.aeadConfig.Set("VAULT_KV_URL", mockGVP.URL)
+		b.aeadConfig.Set("VAULT_KV_APPROLE_ID", "test-approle")
+		b.aeadConfig.Set("VAULT_KV_SECRET_ID", "test-secret")
+		b.aeadConfig.Set("VAULT_KV_ENGINE", "test-engine/data")
+		b.aeadConfig.Set("VAULT_KV_VERSION", "v1")
+		b.aeadConfig.Set("VAULT_KV_WRITER_ROLE", "test-writer")
+		b.aeadConfig.Set("VAULT_KV_SECRETGENERATOR_IAM_ROLE", "test-iam")
+
+		err := b.validateKVConnectivity()
+		if err != nil {
+			t.Fatalf("expected validation to pass, got: %v", err)
+		}
+	})
+
+	t.Run("fails when GVP is unreachable", func(t *testing.T) {
+		b, _ := testBackend(t)
+		b.aeadConfig.Set("VAULT_KV_ACTIVE", "true")
+		b.aeadConfig.Set("VAULT_KV_URL", "http://127.0.0.1:1")
+		b.aeadConfig.Set("VAULT_KV_APPROLE_ID", "test-approle")
+		b.aeadConfig.Set("VAULT_KV_SECRET_ID", "test-secret")
+		b.aeadConfig.Set("VAULT_KV_ENGINE", "test-engine/data")
+		b.aeadConfig.Set("VAULT_KV_VERSION", "v1")
+		b.aeadConfig.Set("VAULT_KV_WRITER_ROLE", "test-writer")
+		b.aeadConfig.Set("VAULT_KV_SECRETGENERATOR_IAM_ROLE", "test-iam")
+
+		err := b.validateKVConnectivity()
+		if err == nil {
+			t.Fatal("expected validation to fail for unreachable vault")
+		}
+	})
+}
+
+func TestAutoRepairOnCorruptedWrite(t *testing.T) {
+	backupData := map[string]interface{}{
+		"VAULT_KV_ACTIVE":                  "true",
+		"VAULT_KV_URL":                     "https://correct-vault.example.com",
+		"VAULT_KV_APPROLE_ID":              "correct-approle-id",
+		"VAULT_KV_SECRET_ID":               "correct-secret",
+		"VAULT_KV_ENGINE":                  "correct-engine/data",
+		"VAULT_KV_VERSION":                 "v1",
+		"VAULT_KV_WRITER_ROLE":             "correct-writer",
+		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": "correct-iam",
+		"_validated":                        "true",
+		"_backup_timestamp":                 "2026-07-02T10:00:00Z",
+		"_mount_point":                      "aead-test/aead/",
+	}
+
+	mockVault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "config_backup") {
+			resp := map[string]interface{}{"data": backupData}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		http.Error(w, `{"errors":["not found"]}`, http.StatusNotFound)
+	}))
+	defer mockVault.Close()
+
+	originalToken := os.Getenv("VAULT_TOKEN")
+	os.Setenv("VAULT_TOKEN", "test-token")
+	defer os.Setenv("VAULT_TOKEN", originalToken)
+
+	b, storage := testBackend(t)
+	b.localVaultAddr = mockVault.URL
+
+	// Set correct config first
+	for k, v := range backupData {
+		if k[0] != '_' {
+			b.aeadConfig.Set(k, v)
+		}
+	}
+
+	// Now simulate a corrupted write via configOverwrite
+	req := &logical.Request{
+		Operation:  logical.UpdateOperation,
+		Path:       "configOverwrite",
+		Storage:    storage,
+		MountPoint: "aead-test/aead/",
+		Data:       map[string]interface{}{"VAULT_KV_APPROLE_ID": "corrupted-value"},
+	}
+	data := &framework.FieldData{Raw: req.Data, Schema: map[string]*framework.FieldSchema{}}
+
+	resp, err := b.configWriteOverwriteCheck(context.Background(), req, data, true, false)
+	if err != nil {
+		t.Fatalf("configWriteOverwriteCheck failed: %v", err)
+	}
+
+	// Should have a warning about auto-repair
+	if resp == nil || len(resp.Warnings) == 0 {
+		t.Fatal("expected warning about auto-repair")
+	}
+
+	// Verify the param was repaired to the correct value
+	val, ok := b.aeadConfig.Get("VAULT_KV_APPROLE_ID")
+	if !ok || fmt.Sprintf("%v", val) != "correct-approle-id" {
+		t.Errorf("expected VAULT_KV_APPROLE_ID to be repaired to 'correct-approle-id', got %v", val)
+	}
+}
+
+func TestAutoRepairSameValueNoOp(t *testing.T) {
+	backupData := map[string]interface{}{
+		"VAULT_KV_ACTIVE":                  "true",
+		"VAULT_KV_URL":                     "https://correct-vault.example.com",
+		"VAULT_KV_APPROLE_ID":              "correct-approle-id",
+		"VAULT_KV_SECRET_ID":               "correct-secret",
+		"VAULT_KV_ENGINE":                  "correct-engine/data",
+		"VAULT_KV_VERSION":                 "v1",
+		"VAULT_KV_WRITER_ROLE":             "correct-writer",
+		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": "correct-iam",
+		"_validated":                        "true",
+		"_backup_timestamp":                 "2026-07-02T10:00:00Z",
+		"_mount_point":                      "aead-test/aead/",
+	}
+
+	mockVault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "config_backup") {
+			resp := map[string]interface{}{"data": backupData}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		http.Error(w, `{"errors":["not found"]}`, http.StatusNotFound)
+	}))
+	defer mockVault.Close()
+
+	originalToken := os.Getenv("VAULT_TOKEN")
+	os.Setenv("VAULT_TOKEN", "test-token")
+	defer os.Setenv("VAULT_TOKEN", originalToken)
+
+	b, storage := testBackend(t)
+	b.localVaultAddr = mockVault.URL
+
+	for k, v := range backupData {
+		if k[0] != '_' {
+			b.aeadConfig.Set(k, v)
+		}
+	}
+
+	// Write the SAME value — should not trigger repair
+	req := &logical.Request{
+		Operation:  logical.UpdateOperation,
+		Path:       "configOverwrite",
+		Storage:    storage,
+		MountPoint: "aead-test/aead/",
+		Data:       map[string]interface{}{"VAULT_KV_APPROLE_ID": "correct-approle-id"},
+	}
+	data := &framework.FieldData{Raw: req.Data, Schema: map[string]*framework.FieldSchema{}}
+
+	resp, err := b.configWriteOverwriteCheck(context.Background(), req, data, true, false)
+	if err != nil {
+		t.Fatalf("configWriteOverwriteCheck failed: %v", err)
+	}
+
+	// No warning expected — value matches
+	if resp != nil && len(resp.Warnings) > 0 {
+		t.Errorf("expected no warnings for same-value write, got: %v", resp.Warnings)
+	}
+}
+
+func TestCacheMissRepair(t *testing.T) {
+	backupData := map[string]interface{}{
+		"VAULT_KV_ACTIVE":                  "true",
+		"VAULT_KV_URL":                     "https://correct-vault.example.com",
+		"VAULT_KV_APPROLE_ID":              "correct-approle-id",
+		"VAULT_KV_SECRET_ID":               "correct-secret",
+		"VAULT_KV_ENGINE":                  "correct-engine/data",
+		"VAULT_KV_VERSION":                 "v1",
+		"VAULT_KV_WRITER_ROLE":             "correct-writer",
+		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": "correct-iam",
+		"_validated":                        "true",
+		"_backup_timestamp":                 "2026-07-02T10:00:00Z",
+		"_mount_point":                      "aead-test/aead/",
+	}
+
+	mockVault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "config_backup") {
+			resp := map[string]interface{}{"data": backupData}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		http.Error(w, `{"errors":["not found"]}`, http.StatusNotFound)
+	}))
+	defer mockVault.Close()
+
+	originalToken := os.Getenv("VAULT_TOKEN")
+	os.Setenv("VAULT_TOKEN", "test-token")
+	defer os.Setenv("VAULT_TOKEN", originalToken)
+
+	b, storage := testBackend(t)
+	b.localVaultAddr = mockVault.URL
+
+	// Write corrupted config directly to Raft storage
+	corruptedConfig := map[string]interface{}{
+		"VAULT_KV_ACTIVE":                  "true",
+		"VAULT_KV_URL":                     "https://wrong-vault.example.com",
+		"VAULT_KV_APPROLE_ID":              "wrong-approle",
+		"VAULT_KV_SECRET_ID":               "correct-secret",
+		"VAULT_KV_ENGINE":                  "correct-engine/data",
+		"VAULT_KV_VERSION":                 "v1",
+		"VAULT_KV_WRITER_ROLE":             "correct-writer",
+		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": "correct-iam",
+	}
+	entry, _ := logical.StorageEntryJSON("config", corruptedConfig)
+	storage.Put(context.Background(), entry)
+
+	// Trigger cache miss
+	b.cacheValid.Store(false)
+	for k := range b.aeadConfig.Items() {
+		b.aeadConfig.Remove(k)
+	}
+
+	req := &logical.Request{
+		Storage:    storage,
+		MountPoint: "aead-test/aead/",
+	}
+
+	err := b.getAeadConfig(context.Background(), req)
+	if err != nil {
+		t.Fatalf("getAeadConfig failed: %v", err)
+	}
+
+	// Verify corrupted params were repaired
+	url, _ := b.aeadConfig.Get("VAULT_KV_URL")
+	if fmt.Sprintf("%v", url) != "https://correct-vault.example.com" {
+		t.Errorf("expected VAULT_KV_URL repaired to 'https://correct-vault.example.com', got %v", url)
+	}
+
+	approle, _ := b.aeadConfig.Get("VAULT_KV_APPROLE_ID")
+	if fmt.Sprintf("%v", approle) != "correct-approle-id" {
+		t.Errorf("expected VAULT_KV_APPROLE_ID repaired to 'correct-approle-id', got %v", approle)
+	}
+
+	t.Log("Cache miss repair successfully restored corrupted KV params from validated local KV backup")
+}
+
+func TestBackupPreservesValidatedParams(t *testing.T) {
+	var writtenData map[string]interface{}
+	existingBackup := map[string]interface{}{
+		"VAULT_KV_ACTIVE":                  "true",
+		"VAULT_KV_URL":                     "https://locked-vault.example.com",
+		"VAULT_KV_APPROLE_ID":              "locked-approle",
+		"VAULT_KV_SECRET_ID":               "locked-secret",
+		"VAULT_KV_ENGINE":                  "locked-engine/data",
+		"VAULT_KV_VERSION":                 "v1",
+		"VAULT_KV_WRITER_ROLE":             "locked-writer",
+		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": "locked-iam",
+		"_validated":                        "true",
+		"_backup_timestamp":                 "2026-07-02T10:00:00Z",
+		"_mount_point":                      "aead-test/aead/",
+		"BQ_PROJECT":                        "old-project",
+	}
+
+	mockVault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "config_backup") {
+			resp := map[string]interface{}{"data": existingBackup}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		if r.Method == "PUT" && strings.Contains(r.URL.Path, "config_backup") {
+			json.NewDecoder(r.Body).Decode(&writtenData)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.Error(w, `{"errors":["not found"]}`, http.StatusNotFound)
+	}))
+	defer mockVault.Close()
+
+	originalToken := os.Getenv("VAULT_TOKEN")
+	os.Setenv("VAULT_TOKEN", "test-token")
+	defer os.Setenv("VAULT_TOKEN", originalToken)
+
+	b, _ := testBackend(t)
+	b.localVaultAddr = mockVault.URL
+
+	// Plugin has different KV_URL in memory (simulating corruption attempt)
+	b.aeadConfig.Set("VAULT_KV_ACTIVE", "true")
+	b.aeadConfig.Set("VAULT_KV_URL", "https://corrupted-url.example.com")
+	b.aeadConfig.Set("VAULT_KV_APPROLE_ID", "locked-approle")
+	b.aeadConfig.Set("VAULT_KV_SECRET_ID", "locked-secret")
+	b.aeadConfig.Set("VAULT_KV_ENGINE", "locked-engine/data")
+	b.aeadConfig.Set("VAULT_KV_VERSION", "v1")
+	b.aeadConfig.Set("VAULT_KV_WRITER_ROLE", "locked-writer")
+	b.aeadConfig.Set("VAULT_KV_SECRETGENERATOR_IAM_ROLE", "locked-iam")
+	b.aeadConfig.Set("BQ_PROJECT", "new-project")
+
+	b.backupConfigToLocalKV("aead-test/aead/")
+
+	if writtenData == nil {
+		t.Fatal("expected backup to be written")
+	}
+
+	// Validated KV params should be preserved from existing backup (not overwritten)
+	if fmt.Sprintf("%v", writtenData["VAULT_KV_URL"]) != "https://locked-vault.example.com" {
+		t.Errorf("expected VAULT_KV_URL preserved as 'https://locked-vault.example.com', got %v", writtenData["VAULT_KV_URL"])
+	}
+
+	// BQ params should be updated
+	if fmt.Sprintf("%v", writtenData["BQ_PROJECT"]) != "new-project" {
+		t.Errorf("expected BQ_PROJECT updated to 'new-project', got %v", writtenData["BQ_PROJECT"])
+	}
+
+	// _validated flag should be preserved
+	if fmt.Sprintf("%v", writtenData["_validated"]) != "true" {
+		t.Errorf("expected _validated to remain 'true', got %v", writtenData["_validated"])
+	}
+}
+
+func TestKVConfigsRevalidate(t *testing.T) {
+	mockGVP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "auth/approle/login") {
+			resp := map[string]interface{}{
+				"auth": map[string]interface{}{"client_token": "test-token", "policies": []string{"default"}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		if strings.Contains(r.URL.Path, "_connectivity_test") {
+			if r.Method == "GET" {
+				resp := map[string]interface{}{"data": map[string]interface{}{"_test": "validation"}}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if strings.Contains(r.URL.Path, "config_backup") {
+			if r.Method == "PUT" {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			// Return existing validated backup for isKVBackupValidated check
+			resp := map[string]interface{}{"data": map[string]interface{}{"_validated": "true"}}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer mockGVP.Close()
+
+	originalToken := os.Getenv("VAULT_TOKEN")
+	os.Setenv("VAULT_TOKEN", "test-token")
+	defer os.Setenv("VAULT_TOKEN", originalToken)
+
+	b, storage := testBackend(t)
+	b.localVaultAddr = mockGVP.URL
+
+	// Set existing config
+	b.aeadConfig.Set("VAULT_KV_ACTIVE", "true")
+	b.aeadConfig.Set("VAULT_KV_URL", mockGVP.URL)
+	b.aeadConfig.Set("VAULT_KV_APPROLE_ID", "old-approle")
+	b.aeadConfig.Set("VAULT_KV_SECRET_ID", "test-secret")
+	b.aeadConfig.Set("VAULT_KV_ENGINE", "test-engine/data")
+	b.aeadConfig.Set("VAULT_KV_VERSION", "v1")
+	b.aeadConfig.Set("VAULT_KV_WRITER_ROLE", "test-writer")
+	b.aeadConfig.Set("VAULT_KV_SECRETGENERATOR_IAM_ROLE", "test-iam")
+	b.cacheValid.Store(true)
+
+	// Save initial config to storage
+	entry, _ := logical.StorageEntryJSON("config", b.aeadConfig.Items())
+	storage.Put(context.Background(), entry)
+
+	req := &logical.Request{
+		Operation:  logical.UpdateOperation,
+		Path:       "kvconfigsrevalidate",
+		Storage:    storage,
+		MountPoint: "aead-test/aead/",
+		Data:       map[string]interface{}{"VAULT_KV_APPROLE_ID": "new-approle-id"},
+	}
+	data := &framework.FieldData{Raw: req.Data, Schema: map[string]*framework.FieldSchema{}}
+
+	resp, err := b.pathKVConfigsRevalidate(context.Background(), req, data)
+	if err != nil {
+		t.Fatalf("pathKVConfigsRevalidate failed: %v", err)
+	}
+	if resp != nil && resp.IsError() {
+		t.Fatalf("pathKVConfigsRevalidate returned error: %s", resp.Error().Error())
+	}
+
+	// Verify the param was updated
+	val, _ := b.aeadConfig.Get("VAULT_KV_APPROLE_ID")
+	if fmt.Sprintf("%v", val) != "new-approle-id" {
+		t.Errorf("expected VAULT_KV_APPROLE_ID updated to 'new-approle-id', got %v", val)
+	}
+
+	t.Log("kvconfigsrevalidate successfully updated and revalidated partial params")
 }
 
 func TestCacheInvalidation(t *testing.T) {
