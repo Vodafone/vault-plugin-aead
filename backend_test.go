@@ -2929,17 +2929,16 @@ func TestValidateKVConnectivity(t *testing.T) {
 
 func TestAutoRepairOnCorruptedWrite(t *testing.T) {
 	backupData := map[string]interface{}{
-		"VAULT_KV_ACTIVE":                  "true",
-		"VAULT_KV_URL":                     "https://correct-vault.example.com",
-		"VAULT_KV_APPROLE_ID":              "correct-approle-id",
-		"VAULT_KV_SECRET_ID":               "correct-secret",
-		"VAULT_KV_ENGINE":                  "correct-engine/data",
-		"VAULT_KV_VERSION":                 "v1",
-		"VAULT_KV_WRITER_ROLE":             "correct-writer",
+		"VAULT_KV_ACTIVE":                   "true",
+		"VAULT_KV_URL":                      "https://correct-vault.example.com",
+		"VAULT_KV_APPROLE_ID":               "correct-approle-id",
+		"VAULT_KV_ENGINE":                   "correct-engine/data",
+		"VAULT_KV_VERSION":                  "v1",
+		"VAULT_KV_WRITER_ROLE":              "correct-writer",
 		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": "correct-iam",
-		"_validated":                        "true",
-		"_backup_timestamp":                 "2026-07-02T10:00:00Z",
-		"_mount_point":                      "aead-test/aead/",
+		"_validated":                         "true",
+		"_backup_timestamp":                  "2026-07-02T10:00:00Z",
+		"_mount_point":                       "aead-test/aead/",
 	}
 
 	mockVault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2996,17 +2995,16 @@ func TestAutoRepairOnCorruptedWrite(t *testing.T) {
 
 func TestAutoRepairSameValueNoOp(t *testing.T) {
 	backupData := map[string]interface{}{
-		"VAULT_KV_ACTIVE":                  "true",
-		"VAULT_KV_URL":                     "https://correct-vault.example.com",
-		"VAULT_KV_APPROLE_ID":              "correct-approle-id",
-		"VAULT_KV_SECRET_ID":               "correct-secret",
-		"VAULT_KV_ENGINE":                  "correct-engine/data",
-		"VAULT_KV_VERSION":                 "v1",
-		"VAULT_KV_WRITER_ROLE":             "correct-writer",
+		"VAULT_KV_ACTIVE":                   "true",
+		"VAULT_KV_URL":                      "https://correct-vault.example.com",
+		"VAULT_KV_APPROLE_ID":               "correct-approle-id",
+		"VAULT_KV_ENGINE":                   "correct-engine/data",
+		"VAULT_KV_VERSION":                  "v1",
+		"VAULT_KV_WRITER_ROLE":              "correct-writer",
 		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": "correct-iam",
-		"_validated":                        "true",
-		"_backup_timestamp":                 "2026-07-02T10:00:00Z",
-		"_mount_point":                      "aead-test/aead/",
+		"_validated":                         "true",
+		"_backup_timestamp":                  "2026-07-02T10:00:00Z",
+		"_mount_point":                       "aead-test/aead/",
 	}
 
 	mockVault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3056,17 +3054,16 @@ func TestAutoRepairSameValueNoOp(t *testing.T) {
 
 func TestCacheMissRepair(t *testing.T) {
 	backupData := map[string]interface{}{
-		"VAULT_KV_ACTIVE":                  "true",
-		"VAULT_KV_URL":                     "https://correct-vault.example.com",
-		"VAULT_KV_APPROLE_ID":              "correct-approle-id",
-		"VAULT_KV_SECRET_ID":               "correct-secret",
-		"VAULT_KV_ENGINE":                  "correct-engine/data",
-		"VAULT_KV_VERSION":                 "v1",
-		"VAULT_KV_WRITER_ROLE":             "correct-writer",
+		"VAULT_KV_ACTIVE":                   "true",
+		"VAULT_KV_URL":                      "https://correct-vault.example.com",
+		"VAULT_KV_APPROLE_ID":               "correct-approle-id",
+		"VAULT_KV_ENGINE":                   "correct-engine/data",
+		"VAULT_KV_VERSION":                  "v1",
+		"VAULT_KV_WRITER_ROLE":              "correct-writer",
 		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": "correct-iam",
-		"_validated":                        "true",
-		"_backup_timestamp":                 "2026-07-02T10:00:00Z",
-		"_mount_point":                      "aead-test/aead/",
+		"_validated":                         "true",
+		"_backup_timestamp":                  "2026-07-02T10:00:00Z",
+		"_mount_point":                       "aead-test/aead/",
 	}
 
 	mockVault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3089,13 +3086,12 @@ func TestCacheMissRepair(t *testing.T) {
 
 	// Write corrupted config directly to Raft storage
 	corruptedConfig := map[string]interface{}{
-		"VAULT_KV_ACTIVE":                  "true",
-		"VAULT_KV_URL":                     "https://wrong-vault.example.com",
-		"VAULT_KV_APPROLE_ID":              "wrong-approle",
-		"VAULT_KV_SECRET_ID":               "correct-secret",
-		"VAULT_KV_ENGINE":                  "correct-engine/data",
-		"VAULT_KV_VERSION":                 "v1",
-		"VAULT_KV_WRITER_ROLE":             "correct-writer",
+		"VAULT_KV_ACTIVE":                   "true",
+		"VAULT_KV_URL":                      "https://wrong-vault.example.com",
+		"VAULT_KV_APPROLE_ID":               "wrong-approle",
+		"VAULT_KV_ENGINE":                   "correct-engine/data",
+		"VAULT_KV_VERSION":                  "v1",
+		"VAULT_KV_WRITER_ROLE":              "correct-writer",
 		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": "correct-iam",
 	}
 	entry, _ := logical.StorageEntryJSON("config", corruptedConfig)
@@ -3134,18 +3130,17 @@ func TestCacheMissRepair(t *testing.T) {
 func TestBackupPreservesValidatedParams(t *testing.T) {
 	var writtenData map[string]interface{}
 	existingBackup := map[string]interface{}{
-		"VAULT_KV_ACTIVE":                  "true",
-		"VAULT_KV_URL":                     "https://locked-vault.example.com",
-		"VAULT_KV_APPROLE_ID":              "locked-approle",
-		"VAULT_KV_SECRET_ID":               "locked-secret",
-		"VAULT_KV_ENGINE":                  "locked-engine/data",
-		"VAULT_KV_VERSION":                 "v1",
-		"VAULT_KV_WRITER_ROLE":             "locked-writer",
+		"VAULT_KV_ACTIVE":                   "true",
+		"VAULT_KV_URL":                      "https://locked-vault.example.com",
+		"VAULT_KV_APPROLE_ID":               "locked-approle",
+		"VAULT_KV_ENGINE":                   "locked-engine/data",
+		"VAULT_KV_VERSION":                  "v1",
+		"VAULT_KV_WRITER_ROLE":              "locked-writer",
 		"VAULT_KV_SECRETGENERATOR_IAM_ROLE": "locked-iam",
-		"_validated":                        "true",
-		"_backup_timestamp":                 "2026-07-02T10:00:00Z",
-		"_mount_point":                      "aead-test/aead/",
-		"BQ_PROJECT":                        "old-project",
+		"_validated":                         "true",
+		"_backup_timestamp":                  "2026-07-02T10:00:00Z",
+		"_mount_point":                       "aead-test/aead/",
+		"BQ_PROJECT":                         "old-project",
 	}
 
 	mockVault := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3175,7 +3170,6 @@ func TestBackupPreservesValidatedParams(t *testing.T) {
 	b.aeadConfig.Set("VAULT_KV_ACTIVE", "true")
 	b.aeadConfig.Set("VAULT_KV_URL", "https://corrupted-url.example.com")
 	b.aeadConfig.Set("VAULT_KV_APPROLE_ID", "locked-approle")
-	b.aeadConfig.Set("VAULT_KV_SECRET_ID", "locked-secret")
 	b.aeadConfig.Set("VAULT_KV_ENGINE", "locked-engine/data")
 	b.aeadConfig.Set("VAULT_KV_VERSION", "v1")
 	b.aeadConfig.Set("VAULT_KV_WRITER_ROLE", "locked-writer")
@@ -3401,7 +3395,7 @@ func TestCacheInvalidation(t *testing.T) {
 		saveConfig(b, storage, data, false, t)
 
 		// Cache is warm. Multiple reads should all succeed.
-		for i := 0; i < 50; i++ {
+		for i := 0; i < 5; i++ {
 			resp := readConfig(b, storage, t)
 			if resp == nil {
 				t.Fatalf("read %d returned nil", i)

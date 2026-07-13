@@ -303,11 +303,8 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 	// Fast path: if cache is valid, skip the storage read entirely.
 	// This is the hot path for encrypt/decrypt — zero disk I/O.
 	if b.cacheValid.Load() && b.aeadConfig.Count() > 0 {
-		b.Logger().Warn("🟢 CACHE HIT - serving from memory, skipping storage read", "mount", req.MountPoint)
 		return nil
 	}
-
-	b.Logger().Warn("🔴 CACHE MISS - reading from Raft storage", "mount", req.MountPoint)
 
 	consulConfig, err := b.readConsulConfig(ctx, req.Storage)
 
@@ -353,7 +350,6 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 
 	// Mark cache as valid — subsequent reads skip storage until invalidated
 	b.cacheValid.Store(true)
-	b.Logger().Warn("✅ CACHE LOADED - marked valid", "mount", req.MountPoint, "keys_count", b.aeadConfig.Count())
 
 	// Phase 3: On cache miss, if validated backup exists, compare and repair KV params
 	if consulConfig != nil && req.MountPoint != "" && b.aeadConfig.Count() > 0 {
