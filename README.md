@@ -32,6 +32,7 @@ VAULT AEAD SECRETS PLUGIN
     - [/readkv](#readkv)
     - [/synckv](#synckv)
     - [/synctransitkv](#synctransitkv)
+    - [/kvconfigsrevalidate](#kvconfigsrevalidate)
   - [KEYSET EXAMPLE](#keyset-example)
   - [BULK DATA EXAMPLE](#bulk-data-example)
 - [DESIGNS](#designs)
@@ -690,6 +691,35 @@ Note the following config must be set:
 "VAULT_TRANSIT_KEK"
 ```
 
+### /kvconfigsrevalidate
+Admin endpoint to legitimately update one or more of the 7 locked KV connectivity params. Accepts partial params (only the ones you want to change), merges them with the existing validated config, re-validates connectivity to GVP, and only applies the change if validation passes.
+
+```
+curl -sk --header "X-Vault-Token: "${VAULT_TOKEN} --request POST ${VAULT_ADDR}/v1/${AEAD_ENGINE}/kvconfigsrevalidate -H "Content-Type: application/json" -d '{"VAULT_KV_APPROLE_ID": "new-approle-id"}'
+```
+
+**Success response:**
+```json
+{
+  "data": {
+    "message": "KV config revalidated and locked successfully",
+    "updated_params": ["VAULT_KV_APPROLE_ID"]
+  }
+}
+```
+
+**Failure response (connectivity test failed):**
+```json
+{
+  "errors": ["KV connectivity validation failed with new params: <error detail>"]
+}
+```
+
+**Notes:**
+- Only accepts the 7 critical KV params (`VAULT_KV_ACTIVE`, `VAULT_KV_URL`, `VAULT_KV_APPROLE_ID`, `VAULT_KV_ENGINE`, `VAULT_KV_VERSION`, `VAULT_KV_WRITER_ROLE`, `VAULT_KV_SECRETGENERATOR_IAM_ROLE`)
+- Non-KV params (BQ params, etc.) are ignored — use `/configOverwrite` for those
+- If validation fails, nothing changes — the existing locked config remains intact
+
 
 ## KEYSET EXAMPLE
 Note that a keyset for 1 field, with in this case 2 keys looks like this (this is not in use - so safe to publish here):
@@ -946,23 +976,45 @@ The plugin implements a high-performance in-memory cache with proper isolation a
 **Per-Mount Isolation**
 - Each mount point maintains its own isolated cache instance (`b.aeadConfig`)
 - Prevents cross-tenant data leakage between separate mount points
-- Ensures `aead-greece`, `aead-monitoring`, etc. operate independently
 
 **Raft-Aware Invalidation**
 - Leverages Vault SDK's `InvalidateKey` callback for automatic cache invalidation
 - When leader writes to Raft storage, followers receive invalidation events
 - Cache validity tracked via atomic boolean flag (`b.cacheValid`)
-- Next read after invalidation triggers fresh load from Raft storage
+- Next read after invalidation triggers fresh load from Raft storage (~1ms)
 
-**Performance Benefits**
-- Eliminates redundant Raft storage reads (~50-100ms saved per request)
-- Maintains strong consistency through push-based invalidation
-- Supports high-throughput read operations while ensuring data freshness
+# KV CONFIG VALIDATION, LOCKING & SELF-HEALING
 
-**Observable Logging**
-- All cache operations logged via Vault's structured logger (`b.Logger()`)
-- Cache hits, misses, loads, and invalidations visible in production logs
-- Enables real-time monitoring and debugging of cache behavior
+The plugin protects 7 critical KV connectivity parameters from accidental corruption. Once validated, these params are locked in a local KV backup and automatically restored if they're ever changed or corrupted.
+
+**The 7 Protected Parameters:**
+```
+VAULT_KV_ACTIVE
+VAULT_KV_URL
+VAULT_KV_APPROLE_ID
+VAULT_KV_ENGINE
+VAULT_KV_VERSION
+VAULT_KV_WRITER_ROLE
+VAULT_KV_SECRETGENERATOR_IAM_ROLE
+```
+
+**How It Works:**
+
+1. **Initial Validation** — When all 7 params are configured, the plugin tests connectivity to GVP (authenticate + test write/read). On success, the config is backed up to local KV with a `_validated: true` flag. The params are now locked.
+
+2. **Auto-Repair on Write** — If anyone attempts to change a locked param via `/configOverwrite`, the plugin detects the mismatch against local KV and restores all 7 params from the validated backup. A warning is returned.
+
+3. **Auto-Repair on Cache Miss** — On plugin restart or cache invalidation, if Raft storage contains corrupted KV params, the plugin compares against local KV and repairs them automatically.
+
+4. **Admin Re-validation** — The only legitimate way to change locked params is via `/kvconfigsrevalidate`, which validates connectivity with the new values before accepting.
+
+**Non-KV params** (BQ config, telemetry, etc.) are unaffected — they can be written freely via `/configOverwrite` and are backed up alongside the locked params but never restricted.
+
+**Prerequisites:**
+- `VAULT_KV_ACTIVE` set to `true`
+- `VAULT_ADDR` environment variable set on the pod
+- GCP IAM auth role `{tenant}-backup-iam` configured on local EaaS vault
+- Vault policy granting create/update/read on `{tenant}/data/config_backup`
 
 
 # INFRASTRUCTURE

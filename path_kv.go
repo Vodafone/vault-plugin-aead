@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/Vodafone/vault-plugin-aead/aeadutils"
 	"github.com/Vodafone/vault-plugin-aead/kvutils"
@@ -816,6 +818,156 @@ func SyncToExternalKV(b *backend, ctx context.Context, req *logical.Request, dat
 	return rtnMap, nil
 }
 
+func deriveLocalKVEngine(mountPoint string) string {
+	mp := strings.TrimSuffix(mountPoint, "/")
+	lastSlash := strings.LastIndex(mp, "/")
+	if lastSlash >= 0 {
+		return mp[:lastSlash] + "/data"
+	}
+	return mp + "/data"
+}
+
+func deriveBackupIAMRole(mountPoint string) string {
+	mp := strings.TrimSuffix(mountPoint, "/")
+	firstSlash := strings.Index(mp, "/")
+	tenant := mp
+	if firstSlash >= 0 {
+		tenant = mp[:firstSlash]
+	}
+	return tenant + "-backup-iam"
+}
+
+func getLocalVaultClient(vaultAddr, iamRole string) (*vault.Client, error) {
+	client, err := kvutils.KvGetClientWithIAM(vaultAddr, iamRole)
+	if err == nil {
+		return client, nil
+	}
+
+	// Fallback: use VAULT_TOKEN if GCP IAM auth is unavailable (dev/test environments)
+	token := os.Getenv("VAULT_TOKEN")
+	if token == "" {
+		return nil, err
+	}
+
+	config := vault.DefaultConfig()
+	config.Address = vaultAddr
+	client, clientErr := vault.NewClient(config)
+	if clientErr != nil {
+		return nil, clientErr
+	}
+	client.SetToken(token)
+	return client, nil
+}
+
+func (b *backend) backupConfigToLocalKV(mountPoint string) {
+	kvActive, ok := b.aeadConfig.Get("VAULT_KV_ACTIVE")
+	if !ok || fmt.Sprintf("%v", kvActive) != "true" {
+		return
+	}
+
+	vaultAddr := b.localVaultAddr
+	if vaultAddr == "" {
+		b.Logger().Error("backupConfigToLocalKV: localVaultAddr not set (VAULT_ADDR was empty at startup)")
+		return
+	}
+
+	localKVEngine := deriveLocalKVEngine(mountPoint)
+	iamRole := deriveBackupIAMRole(mountPoint)
+
+	client, err := getLocalVaultClient(vaultAddr, iamRole)
+	if err != nil {
+		b.Logger().Error("backupConfigToLocalKV: failed to authenticate to local vault", "error", err, "role", iamRole)
+		return
+	}
+
+	existing, _ := kvutils.KvGetSecret(client, localKVEngine, "v1", "config_backup")
+	isValidated := false
+	if existing != nil && existing.Data != nil {
+		if v, ok := existing.Data["_validated"]; ok && fmt.Sprintf("%v", v) == "true" {
+			isValidated = true
+		}
+	}
+
+	configBackup := make(map[string]interface{})
+
+	if isValidated && existing != nil {
+		for _, key := range criticalKVParams {
+			if v, ok := existing.Data[key]; ok {
+				configBackup[key] = v
+			}
+		}
+		configBackup["_validated"] = "true"
+	} else {
+		for _, key := range criticalKVParams {
+			if v, ok := b.aeadConfig.Get(key); ok {
+				configBackup[key] = v
+			}
+		}
+	}
+
+	for k, v := range b.aeadConfig.Items() {
+		if isCriticalKVParam(k) {
+			continue
+		}
+		valStr := fmt.Sprintf("%v", v)
+		_, validateErr := aeadutils.ValidateKeySetJson(valStr)
+		if validateErr != nil {
+			configBackup[k] = v
+		}
+	}
+
+	configBackup["_backup_timestamp"] = time.Now().UTC().Format(time.RFC3339)
+	configBackup["_mount_point"] = mountPoint
+
+	_, err = kvutils.KvPutSecret(client, localKVEngine, "v1", "config_backup", configBackup)
+	if err != nil {
+		b.Logger().Error("backupConfigToLocalKV: failed to write backup", "error", err, "engine", localKVEngine)
+	} else {
+		if isValidated {
+			b.Logger().Info("backupConfigToLocalKV: backup updated (7 KV params locked, preserved from validated backup)", "engine", localKVEngine)
+		} else {
+			b.Logger().Info("backupConfigToLocalKV: config backed up to local KV (not yet validated)", "engine", localKVEngine)
+		}
+	}
+}
+
+func (b *backend) recoverConfigFromLocalKV(mountPoint string) (map[string]interface{}, error) {
+	vaultAddr := b.localVaultAddr
+	if vaultAddr == "" {
+		return nil, fmt.Errorf("localVaultAddr not set (VAULT_ADDR was empty at startup)")
+	}
+
+	localKVEngine := deriveLocalKVEngine(mountPoint)
+	iamRole := deriveBackupIAMRole(mountPoint)
+
+	client, err := getLocalVaultClient(vaultAddr, iamRole)
+	if err != nil {
+		return nil, fmt.Errorf("failed to authenticate to local vault: %w", err)
+	}
+
+	secret, err := kvutils.KvGetSecret(client, localKVEngine, "v1", "config_backup")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read backup from %s: %w", localKVEngine, err)
+	}
+	if secret == nil || secret.Data == nil || len(secret.Data) == 0 {
+		return nil, nil
+	}
+
+	recovered := make(map[string]interface{})
+	for k, v := range secret.Data {
+		if k == "_backup_timestamp" || k == "_mount_point" {
+			continue
+		}
+		recovered[k] = v
+	}
+
+	if len(recovered) == 0 {
+		return nil, nil
+	}
+
+	return recovered, nil
+}
+
 func SyncFromExternalKV(b *backend, ctx context.Context, req *logical.Request, data *framework.FieldData) (map[string]interface{}, error) {
 
 	rtnMap := make(map[string]interface{})
@@ -906,4 +1058,249 @@ func SyncFromExternalKV(b *backend, ctx context.Context, req *logical.Request, d
 
 	}
 	return rtnMap, nil
+}
+
+func (b *backend) validateKVConnectivity() error {
+	kvActive, ok := b.aeadConfig.Get("VAULT_KV_ACTIVE")
+	if !ok || fmt.Sprintf("%v", kvActive) != "true" {
+		return fmt.Errorf("VAULT_KV_ACTIVE is not set to true")
+	}
+
+	var kvOptions kvutils.KVOptions
+	if err := resolveKvOptions(&kvOptions, b.aeadConfig); err != nil {
+		return fmt.Errorf("failed to resolve KV options: %w", err)
+	}
+
+	client, err := kvutils.KvGetClientWithApprole(
+		kvOptions.Vault_kv_url, "",
+		kvOptions.Vault_kv_approle_id,
+		kvOptions.Vault_kv_secret_id,
+		kvOptions.Vault_kv_writer_role,
+		kvOptions.Vault_secretgenerator_iam_role,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to authenticate to GVP: %w", err)
+	}
+
+	testPath := "_connectivity_test"
+	testData := map[string]interface{}{"_test": "validation"}
+	_, err = kvutils.KvPutSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, testPath, testData)
+	if err != nil {
+		return fmt.Errorf("failed to write test secret to GVP: %w", err)
+	}
+
+	secret, err := kvutils.KvGetSecret(client, kvOptions.Vault_kv_engine, kvOptions.Vault_kv_version, testPath)
+	if err != nil {
+		return fmt.Errorf("failed to read test secret from GVP: %w", err)
+	}
+	if secret == nil {
+		return fmt.Errorf("test secret read returned nil from GVP")
+	}
+
+	return nil
+}
+
+func (b *backend) isKVBackupValidated(mountPoint string) bool {
+	vaultAddr := b.localVaultAddr
+	if vaultAddr == "" {
+		return false
+	}
+
+	localKVEngine := deriveLocalKVEngine(mountPoint)
+	iamRole := deriveBackupIAMRole(mountPoint)
+
+	client, err := getLocalVaultClient(vaultAddr, iamRole)
+	if err != nil {
+		return false
+	}
+
+	secret, err := kvutils.KvGetSecret(client, localKVEngine, "v1", "config_backup")
+	if err != nil || secret == nil || secret.Data == nil {
+		return false
+	}
+
+	validated, ok := secret.Data["_validated"]
+	if !ok {
+		return false
+	}
+	return fmt.Sprintf("%v", validated) == "true"
+}
+
+func (b *backend) getValidatedKVParams(mountPoint string) (map[string]string, error) {
+	vaultAddr := b.localVaultAddr
+	if vaultAddr == "" {
+		return nil, fmt.Errorf("localVaultAddr not set")
+	}
+
+	localKVEngine := deriveLocalKVEngine(mountPoint)
+	iamRole := deriveBackupIAMRole(mountPoint)
+
+	client, err := getLocalVaultClient(vaultAddr, iamRole)
+	if err != nil {
+		return nil, fmt.Errorf("failed to authenticate to local vault: %w", err)
+	}
+
+	secret, err := kvutils.KvGetSecret(client, localKVEngine, "v1", "config_backup")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read backup: %w", err)
+	}
+	if secret == nil || secret.Data == nil {
+		return nil, nil
+	}
+
+	validated, ok := secret.Data["_validated"]
+	if !ok || fmt.Sprintf("%v", validated) != "true" {
+		return nil, nil
+	}
+
+	params := make(map[string]string)
+	for _, key := range criticalKVParams {
+		if v, ok := secret.Data[key]; ok {
+			params[key] = fmt.Sprintf("%v", v)
+		}
+	}
+	return params, nil
+}
+
+func (b *backend) repairKVParamsFromLocalKV(ctx context.Context, req *logical.Request) bool {
+	if req.MountPoint == "" {
+		return false
+	}
+
+	validatedParams, err := b.getValidatedKVParams(req.MountPoint)
+	if err != nil {
+		b.Logger().Warn("repairKVParamsFromLocalKV: failed to read validated params", "error", err)
+		return false
+	}
+	if validatedParams == nil {
+		return false
+	}
+
+	repaired := false
+	for _, key := range criticalKVParams {
+		expectedVal, exists := validatedParams[key]
+		if !exists {
+			continue
+		}
+		currentVal, ok := b.aeadConfig.Get(key)
+		if !ok || fmt.Sprintf("%v", currentVal) != expectedVal {
+			b.Logger().Warn("🔧 REPAIRING param from local KV", "key", key, "mount", req.MountPoint)
+			b.aeadConfig.Set(key, expectedVal)
+			repaired = true
+		}
+	}
+
+	if repaired {
+		entry, err := logical.StorageEntryJSON("config", b.aeadConfig)
+		if err == nil {
+			if putErr := req.Storage.Put(ctx, entry); putErr != nil {
+				b.Logger().Warn("repairKVParamsFromLocalKV: failed to persist to Raft (may be standby)", "error", putErr)
+			}
+		}
+		b.cacheValid.Store(true)
+	}
+	return repaired
+}
+
+func (b *backend) backupValidatedKVConfig(mountPoint string) error {
+	vaultAddr := b.localVaultAddr
+	if vaultAddr == "" {
+		return fmt.Errorf("localVaultAddr not set")
+	}
+
+	localKVEngine := deriveLocalKVEngine(mountPoint)
+	iamRole := deriveBackupIAMRole(mountPoint)
+
+	client, err := getLocalVaultClient(vaultAddr, iamRole)
+	if err != nil {
+		return fmt.Errorf("failed to authenticate to local vault: %w", err)
+	}
+
+	configBackup := make(map[string]interface{})
+	for _, key := range criticalKVParams {
+		if v, ok := b.aeadConfig.Get(key); ok {
+			configBackup[key] = v
+		}
+	}
+
+	for k, v := range b.aeadConfig.Items() {
+		if isCriticalKVParam(k) {
+			continue
+		}
+		valStr := fmt.Sprintf("%v", v)
+		_, validateErr := aeadutils.ValidateKeySetJson(valStr)
+		if validateErr != nil {
+			configBackup[k] = v
+		}
+	}
+
+	configBackup["_validated"] = "true"
+	configBackup["_backup_timestamp"] = time.Now().UTC().Format(time.RFC3339)
+	configBackup["_mount_point"] = mountPoint
+
+	_, err = kvutils.KvPutSecret(client, localKVEngine, "v1", "config_backup", configBackup)
+	if err != nil {
+		return fmt.Errorf("failed to write validated backup: %w", err)
+	}
+
+	b.Logger().Info("backupValidatedKVConfig: validated config backed up to local KV", "engine", localKVEngine)
+	return nil
+}
+
+func (b *backend) pathKVConfigsRevalidate(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	err := b.getAeadConfig(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	hasCriticalParam := false
+	for k := range data.Raw {
+		if isCriticalKVParam(k) {
+			hasCriticalParam = true
+			break
+		}
+	}
+	if !hasCriticalParam {
+		return logical.ErrorResponse("must provide at least one critical KV param: %v", criticalKVParams), nil
+	}
+
+	for k, v := range data.Raw {
+		if isCriticalKVParam(k) {
+			b.aeadConfig.Set(k, v)
+		}
+	}
+
+	if err := b.validateKVConnectivity(); err != nil {
+		for k := range data.Raw {
+			if isCriticalKVParam(k) {
+				if validatedParams, getErr := b.getValidatedKVParams(req.MountPoint); getErr == nil && validatedParams != nil {
+					if oldVal, ok := validatedParams[k]; ok {
+						b.aeadConfig.Set(k, oldVal)
+					}
+				}
+			}
+		}
+		return logical.ErrorResponse("validation failed with new params: %s", err.Error()), nil
+	}
+
+	entry, err := logical.StorageEntryJSON("config", b.aeadConfig)
+	if err != nil {
+		return nil, err
+	}
+	if err := req.Storage.Put(ctx, entry); err != nil {
+		return nil, err
+	}
+	b.cacheValid.Store(true)
+
+	if err := b.backupValidatedKVConfig(req.MountPoint); err != nil {
+		b.Logger().Error("pathKVConfigsRevalidate: failed to update local KV backup", "error", err)
+		return logical.ErrorResponse("params updated in plugin storage but failed to update local KV backup: %s", err.Error()), nil
+	}
+
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"status":  "revalidated",
+			"message": "KV params updated, validated, and backed up to local KV",
+		},
+	}, nil
 }

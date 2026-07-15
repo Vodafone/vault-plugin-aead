@@ -34,14 +34,51 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 		return nil, err
 	}
 
+	// Check if any incoming params are critical KV params and if backup is validated
+	var warnings []string
+	touchesCritical := false
+	for k := range data.Raw {
+		if isCriticalKVParam(k) {
+			touchesCritical = true
+			break
+		}
+	}
+
+	if touchesCritical && req.MountPoint != "" && b.isKVBackupValidated(req.MountPoint) {
+		validatedParams, getErr := b.getValidatedKVParams(req.MountPoint)
+		if getErr == nil && validatedParams != nil {
+			needsRepair := false
+			for k, v := range data.Raw {
+				if isCriticalKVParam(k) {
+					if expectedVal, ok := validatedParams[k]; ok && fmt.Sprintf("%v", v) != expectedVal {
+						needsRepair = true
+						break
+					}
+				}
+			}
+			if needsRepair {
+				b.Logger().Warn("⚠️ CORRUPTION DETECTED - incoming KV param differs from validated backup, starting auto-repair", "mount", req.MountPoint)
+				for _, key := range criticalKVParams {
+					if val, ok := validatedParams[key]; ok {
+						b.aeadConfig.Set(key, val)
+					}
+				}
+				warnings = append(warnings, "⚠️ KV params are LOCKED. Corrupted value rejected — all 7 KV params auto-repaired from validated local KV backup.")
+				b.Logger().Warn("✅ AUTO-REPAIR COMPLETE - all KV params restored from validated local KV backup", "mount", req.MountPoint)
+			}
+		}
+	}
+
 	// iterate through the supplied map, adding it to the config map
 	for k, v := range data.Raw {
+		if touchesCritical && isCriticalKVParam(k) && len(warnings) > 0 {
+			continue
+		}
 
 		prefix := aeadutils.GetKeyPrefix(k, fmt.Sprintf("%v", v), nil)
 		k = prefix + k
 
 		if !overwriteConfig {
-			// don't do this if we already have a key in the config - prevents overwrite
 			_, ok := b.aeadConfig.Get(k)
 			if ok {
 				b.Logger().Info("configWriteOverwriteCheck - key already exists " + k)
@@ -57,8 +94,21 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 		}
 	}
 
+	// Phase 1: if all 7 critical params are present and no validated backup exists, validate and lock
+	if req.MountPoint != "" && allCriticalKVParamsPresent(b.aeadConfig) && !b.isKVBackupValidated(req.MountPoint) {
+		if valErr := b.validateKVConnectivity(); valErr != nil {
+			b.Logger().Warn("KV connectivity validation failed (all params present but cannot connect)", "error", valErr)
+			warnings = append(warnings, fmt.Sprintf("All KV params present but validation failed: %s. Backup not taken.", valErr.Error()))
+		} else {
+			if backupErr := b.backupValidatedKVConfig(req.MountPoint); backupErr != nil {
+				b.Logger().Error("Failed to backup validated KV config", "error", backupErr)
+			} else {
+				b.Logger().Warn("✅ KV CONFIG VALIDATED AND LOCKED - backed up to local KV", "mount", req.MountPoint)
+			}
+		}
+	}
+
 	entry, err := logical.StorageEntryJSON("config", b.aeadConfig)
-	// entry, err := logical.StorageEntryJSON("config", data.Raw)
 	if err != nil {
 		return nil, err
 	}
@@ -67,9 +117,17 @@ func (b *backend) configWriteOverwriteCheck(ctx context.Context, req *logical.Re
 		return nil, err
 	}
 
-	// Cache is in sync with what we just wrote — mark valid so the leader
-	// doesn't re-read its own write on the next request.
 	b.cacheValid.Store(true)
+
+	if !b.isKVBackupValidated(req.MountPoint) {
+		go b.backupConfigToLocalKV(req.MountPoint)
+	}
+
+	if len(warnings) > 0 {
+		return &logical.Response{
+			Warnings: warnings,
+		}, nil
+	}
 
 	return nil, nil
 }
@@ -107,6 +165,24 @@ func (b *backend) pathConfigDelete(ctx context.Context, req *logical.Request, da
 	return nil, nil
 }
 
+func (b *backend) pathConfigClear(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
+	b.Logger().Warn("⚠️ CONFIG CLEAR - deleting config entry from Raft storage", "mount", req.MountPoint)
+
+	if err := req.Storage.Delete(ctx, "config"); err != nil {
+		return nil, fmt.Errorf("failed to delete config from storage: %w", err)
+	}
+
+	b.aeadConfig = cmap.New()
+	b.cacheValid.Store(false)
+
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"status":  "cleared",
+			"message": "Config entry deleted from Raft storage. Next read will trigger recovery from local KV backup if available.",
+		},
+	}, nil
+}
+
 func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data *framework.FieldData) (*logical.Response, error) {
 
 	// retrieve the config from storage
@@ -114,6 +190,7 @@ func (b *backend) pathConfigRead(ctx context.Context, req *logical.Request, data
 	if err != nil {
 		return nil, err
 	}
+
 	result := make(map[string]interface{}, len(b.aeadConfig.Items()))
 	keyCount := 0
 	for k, v := range b.aeadConfig.Items() {
@@ -226,16 +303,33 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 	// Fast path: if cache is valid, skip the storage read entirely.
 	// This is the hot path for encrypt/decrypt — zero disk I/O.
 	if b.cacheValid.Load() && b.aeadConfig.Count() > 0 {
-		b.Logger().Warn("🟢 CACHE HIT - serving from memory, skipping storage read", "mount", req.MountPoint)
 		return nil
 	}
-
-	b.Logger().Warn("🔴 CACHE MISS - reading from Raft storage", "mount", req.MountPoint)
 
 	consulConfig, err := b.readConsulConfig(ctx, req.Storage)
 
 	if err != nil {
 		return err
+	}
+
+	// Recovery: if config missing from Raft, attempt restore from local KV backup
+	if consulConfig == nil && req.MountPoint != "" {
+		recovered, recoverErr := b.recoverConfigFromLocalKV(req.MountPoint)
+		if recoverErr != nil {
+			b.Logger().Error("recoverConfigFromLocalKV: failed", "error", recoverErr, "mount", req.MountPoint)
+		} else if recovered != nil && len(recovered) > 0 {
+			b.Logger().Warn("🔄 RECOVERY - restored config from local KV backup", "mount", req.MountPoint, "keys_count", len(recovered))
+			for k, v := range recovered {
+				b.aeadConfig.Set(k, v)
+			}
+			entry, err := logical.StorageEntryJSON("config", b.aeadConfig)
+			if err == nil {
+				if putErr := req.Storage.Put(ctx, entry); putErr != nil {
+					b.Logger().Error("recoverConfigFromLocalKV: failed to persist to Raft", "error", putErr)
+				}
+			}
+			consulConfig = recovered
+		}
 	}
 
 	// if the config retrieved from the storage is null use the in memory config
@@ -256,7 +350,31 @@ func (b *backend) getAeadConfig(ctx context.Context, req *logical.Request) error
 
 	// Mark cache as valid — subsequent reads skip storage until invalidated
 	b.cacheValid.Store(true)
-	b.Logger().Warn("✅ CACHE LOADED - marked valid", "mount", req.MountPoint, "keys_count", b.aeadConfig.Count())
+
+	// Phase 3: On cache miss, if validated backup exists, compare and repair KV params
+	if consulConfig != nil && req.MountPoint != "" && b.aeadConfig.Count() > 0 {
+		if b.isKVBackupValidated(req.MountPoint) {
+			if b.repairKVParamsFromLocalKV(ctx, req) {
+				b.Logger().Warn("🔧 AUTO-REPAIR on cache miss - KV params restored from validated local KV backup", "mount", req.MountPoint)
+			}
+		} else if allCriticalKVParamsPresent(b.aeadConfig) {
+			// Existing engine with all params but no validated backup yet — validate and lock now
+			b.Logger().Info("🔑 All 7 KV params present on cache miss, attempting initial validation", "mount", req.MountPoint)
+			if valErr := b.validateKVConnectivity(); valErr != nil {
+				b.Logger().Warn("KV connectivity validation failed on cache miss (will retry on next write)", "error", valErr, "mount", req.MountPoint)
+			} else {
+				if backupErr := b.backupValidatedKVConfig(req.MountPoint); backupErr != nil {
+					b.Logger().Error("Failed to backup validated KV config on cache miss", "error", backupErr)
+				} else {
+					b.Logger().Warn("✅ KV CONFIG VALIDATED AND LOCKED on first load - backed up to local KV", "mount", req.MountPoint)
+				}
+			}
+		}
+	}
+
+	if consulConfig != nil && b.aeadConfig.Count() > 0 && !b.isKVBackupValidated(req.MountPoint) {
+		go b.backupConfigToLocalKV(req.MountPoint)
+	}
 
 	return nil
 }
